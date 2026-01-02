@@ -1,0 +1,44 @@
+{
+  "name": "@agora/web",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "generate-client": "openapi-typescript-codegen --input http://localhost:4000/api/swagger-json --output ./src/lib/api/generated --client axios"
+  },
+  "dependencies": {
+    "@reduxjs/toolkit": "^2.0.1",
+    "axios": "^1.6.5",
+    "clsx": "^2.1.1",
+    "date-fns": "^4.1.0",
+    "framer-motion": "^10.16.16",
+    "lucide-react": "^0.554.0",
+    "next": "14.1.0",
+    "react": "^18.2.0",
+    "react-big-calendar": "^1.19.4",
+    "react-dom": "^18.2.0",
+    "react-easy-crop": "^5.5.6",
+    "react-hot-toast": "^2.6.0",
+    "react-redux": "^9.0.4",
+    "recharts": "^2.10.3",
+    "redux-persist": "^6.0.0",
+    "tailwind-merge": "^2.6.0",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.5",
+    "@types/react": "^18.2.48",
+    "@types/react-big-calendar": "^1.16.3",
+    "@types/react-dom": "^18.2.18",
+    "autoprefixer": "^10.4.17",
+    "eslint": "^8.56.0",
+    "eslint-config-next": "14.1.0",
+    "openapi-typescript-codegen": "^0.25.0",
+    "postcss": "^8.4.33",
+    "tailwindcss": "^3.4.1",
+    "typescript": "^5.3.3"
+  }
+}

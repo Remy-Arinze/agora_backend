@@ -1,0 +1,198 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Light Mode Colors - using hex for better compatibility */
+    --light-bg: #e4edff; /* gray-200 */
+    --light-card: #ffffff; /* Pure white for cards */
+    --light-surface: #f8fafc; /* slate-50 - subtle surface color */
+    --light-hover: #f1f5f9; /* slate-100 - hover background */
+    --light-input: #ffffff; /* White input background */
+    --light-text-primary: #111827; /* gray-900 */
+    --light-text-secondary: #4b5563; /* gray-600 */
+    --light-text-muted: #6b7280; /* gray-500 */
+    --light-border: #1a3262; /* gray-100 - very light gray border */
+    
+    /* Dark Mode Colors - using hex for better compatibility */
+    --dark-bg: #000000; /* Very dark, almost black */
+    --dark-surface: #080a10; /* Deep greyish blue for cards */
+    --dark-border: #05070b; /* Border color */
+    --dark-input: #1e2433; /* Dark bluish grey for inputs */
+    --dark-text-primary: #f1f5f9; /* Lighter text for better contrast */
+    --dark-text-secondary: #cbd5e1; /* Secondary text */
+    --dark-text-muted: #94a3b8; /* Muted text */
+    --dark-hover: #1e293b; /* Hover background - slate-800 for visibility */
+  }
+
+  /* Border colors are applied via Tailwind classes, not globally */
+
+  body {
+    /* Background is handled by layout.tsx div, not body */
+    color: var(--light-text-primary);
+    transition: color 200ms;
+  }
+
+  .dark body {
+    /* Background is handled by layout.tsx div, not body */
+    color: var(--dark-text-primary);
+  }
+
+  /* Hide scrollbar but allow scrolling */
+  .scrollbar-hide {
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;  /* Chrome, Safari and Opera */
+  }
+
+  /* Continuous horizontal scroll animation (right to left) */
+  @keyframes scroll {
+    0% {
+      transform: translateX(0);
+    }
+    100% {
+      transform: translateX(-50%);
+    }
+  }
+
+  /* Continuous horizontal scroll animation (left to right) */
+  @keyframes scroll-reverse {
+    0% {
+      transform: translateX(-50%);
+    }
+    100% {
+      transform: translateX(0);
+    }
+  }
+
+  .animate-scroll {
+    animation: scroll 30s linear infinite;
+    display: flex;
+    width: max-content;
+  }
+
+  .animate-scroll-reverse {
+    animation: scroll-reverse 30s linear infinite;
+    display: flex;
+    width: max-content;
+  }
+
+  .animate-scroll:hover,
+  .animate-scroll-reverse:hover {
+    animation-play-state: paused;
+  }
+
+  /* ========================================
+     Dark Mode Form Elements
+     ======================================== */
+  
+  /* Force dark color scheme for native browser elements */
+  .dark {
+    color-scheme: dark;
+  }
+
+  /* All form inputs in dark mode */
+  .dark input,
+  .dark select,
+  .dark textarea {
+    background-color: var(--dark-input) !important;
+    color: var(--dark-text-primary) !important;
+    border-color: var(--dark-border) !important;
+  }
+
+  .dark input::placeholder,
+  .dark textarea::placeholder {
+    color: var(--dark-text-muted) !important;
+  }
+
+  .dark input:focus,
+  .dark select:focus,
+  .dark textarea:focus {
+    border-color: #3b82f6 !important;
+    outline: none;
+  }
+
+  .dark input:disabled,
+  .dark select:disabled,
+  .dark textarea:disabled {
+    background-color: #1f2937 !important;
+    color: var(--dark-text-muted) !important;
+    opacity: 0.7;
+  }
+
+  /* Date/Time picker icons */
+  .dark input[type="date"]::-webkit-calendar-picker-indicator,
+  .dark input[type="time"]::-webkit-calendar-picker-indicator,
+  .dark input[type="datetime-local"]::-webkit-calendar-picker-indicator,
+  .dark input[type="month"]::-webkit-calendar-picker-indicator,
+  .dark input[type="week"]::-webkit-calendar-picker-indicator {
+    filter: invert(0.8);
+    cursor: pointer;
+  }
+
+  /* Select dropdown arrow */
+  .dark select {
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%2394a3b8' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e") !important;
+    background-position: right 0.5rem center;
+    background-repeat: no-repeat;
+    background-size: 1.5em 1.5em;
+    padding-right: 2.5rem;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+  }
+
+  /* Light mode select arrow (for consistency) */
+  select {
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+    background-position: right 0.5rem center;
+    background-repeat: no-repeat;
+    background-size: 1.5em 1.5em;
+    padding-right: 2.5rem;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+  }
+
+  /* Autofill background override */
+  .dark input:-webkit-autofill,
+  .dark input:-webkit-autofill:hover,
+  .dark input:-webkit-autofill:focus,
+  .dark select:-webkit-autofill,
+  .dark textarea:-webkit-autofill {
+    -webkit-box-shadow: 0 0 0 30px var(--dark-input) inset !important;
+    -webkit-text-fill-color: var(--dark-text-primary) !important;
+    caret-color: var(--dark-text-primary) !important;
+  }
+
+  /* Number input spinners */
+  .dark input[type="number"]::-webkit-inner-spin-button,
+  .dark input[type="number"]::-webkit-outer-spin-button {
+    filter: invert(0.8);
+  }
+
+  /* Checkbox and Radio */
+  .dark input[type="checkbox"],
+  .dark input[type="radio"] {
+    accent-color: #3b82f6;
+  }
+
+  /* File input button */
+  .dark input[type="file"]::file-selector-button {
+    background-color: var(--dark-hover);
+    color: var(--dark-text-primary);
+    border: 1px solid var(--dark-border);
+    border-radius: 0.375rem;
+    padding: 0.5rem 1rem;
+    cursor: pointer;
+  }
+
+  .dark input[type="file"]::file-selector-button:hover {
+    background-color: #334155;
+  }
+}
+
