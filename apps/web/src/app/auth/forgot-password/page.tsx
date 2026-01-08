@@ -98,17 +98,25 @@ export default function ForgotPasswordPage() {
             <p className="text-center text-light-text-secondary dark:text-dark-text-secondary">
               {isSuccess
                 ? 'Check your email for a password reset link'
-                : 'Enter your email address and we'll send you a link to reset your password'}
+                : "Enter your email address and we'll send you a link to reset your password"}
             </p>
           </CardHeader>
           <CardContent>
             {isSuccess ? (
               <div className="space-y-4">
-                <Alert
-                  variant="success"
-                  message="If an account exists with this email, a password reset link has been sent. Please check your inbox and follow the instructions."
-                  className="mb-4"
-                />
+                <Alert variant="success" className="mb-4">
+                  <div>
+                    <p className="font-semibold mb-2">Password reset email sent!</p>
+                    <p className="text-sm">
+                      If an account exists with this email, a password reset link has been sent. 
+                      Please check your inbox (and spam folder) and follow the instructions.
+                    </p>
+                    <p className="text-sm mt-2 text-light-text-secondary dark:text-dark-text-secondary">
+                      <strong>Note:</strong> If you have accounts at multiple schools, the email will 
+                      include all your schools and Public IDs. You can log in with your email or any Public ID.
+                    </p>
+                  </div>
+                </Alert>
                 <div className="text-center space-y-2">
                   <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary">
                     Didn't receive the email? Check your spam folder or try again.
@@ -128,7 +136,9 @@ export default function ForgotPasswordPage() {
             ) : (
               <>
                 {error && (
-                  <Alert variant="error" message={error} className="mb-4" />
+                  <Alert variant="error" className="mb-4">
+                    {error}
+                  </Alert>
                 )}
 
                 <form onSubmit={handleSubmit} className="space-y-4">
@@ -177,4 +187,3 @@ export default function ForgotPasswordPage() {
     </div>
   );
 }
-

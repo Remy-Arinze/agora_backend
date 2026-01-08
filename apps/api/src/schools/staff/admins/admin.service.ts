@@ -11,7 +11,7 @@ import { AddAdminDto } from '../../dto/add-admin.dto';
 import { UpdateAdminDto } from '../../dto/update-admin.dto';
 import { CloudinaryService } from '../../../storage/cloudinary/cloudinary.service';
 import { PermissionResource, PermissionType, isPrincipalRole } from '../../dto/permission.dto';
-import * as bcrypt from 'bcrypt';
+import { generateSecurePasswordHash } from '../../../common/utils/password.utils';
 
 /**
  * Service for managing school administrators
@@ -90,7 +90,7 @@ export class AdminService {
       );
     }
 
-    const defaultPassword = await bcrypt.hash('Password123!', 10);
+    const defaultPassword = await generateSecurePasswordHash();
 
     // Generate admin ID and public ID
     const adminId = isPrincipal

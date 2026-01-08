@@ -105,7 +105,9 @@ export default function ResetPasswordPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <Alert variant="error" message="The password reset link is invalid or has expired." />
+            <Alert variant="error">
+              The password reset link is invalid or has expired.
+            </Alert>
             <Button
               variant="primary"
               className="w-full mt-4"
@@ -147,10 +149,15 @@ export default function ResetPasswordPage() {
             <p className="text-center text-light-text-secondary dark:text-dark-text-secondary">
               Enter your new password to complete account setup
             </p>
+            <p className="text-center text-xs text-light-text-muted dark:text-dark-text-muted mt-2">
+              Note: If you have accounts at multiple schools, resetting your password will update it for all schools.
+            </p>
           </CardHeader>
           <CardContent>
             {error && (
-              <Alert variant="error" message={error} className="mb-4" />
+              <Alert variant="error" className="mb-4">
+                {error}
+              </Alert>
             )}
 
             <form onSubmit={handleSubmit} className="space-y-4">

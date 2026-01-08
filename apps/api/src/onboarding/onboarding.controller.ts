@@ -6,6 +6,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
 import { ApiTags, ApiOperation, ApiResponse, ApiConsumes, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
@@ -22,11 +23,18 @@ export class OnboardingController {
   constructor(private readonly onboardingService: OnboardingService) {}
 
   @Post('bulk-import')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: {
+        fileSize: 10 * 1024 * 1024, // 10MB max for bulk import files
+      },
+    })
+  )
   @ApiOperation({
     summary: 'Bulk import students from Excel/CSV file',
     description:
-      'Upload an Excel file with columns: firstName, lastName, dateOfBirth, class, parentPhone, parentEmail. Creates shadow profiles for students and parents.',
+      'Upload an Excel file with columns: firstName, lastName, dateOfBirth, class, parentPhone, parentEmail. Creates shadow profiles for students and parents. Maximum file size: 10MB.',
   })
   @ApiConsumes('multipart/form-data')
   @ApiResponse({

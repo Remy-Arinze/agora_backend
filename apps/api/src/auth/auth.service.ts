@@ -7,6 +7,7 @@ import { RequestPasswordResetDto, ResetPasswordDto } from './dto/password-reset.
 import { JwtPayload } from './types/user-with-context.type';
 import * as bcrypt from 'bcrypt';
 import { randomBytes } from 'crypto';
+import { generateSecurePasswordHash } from '../common/utils/password.utils';
 
 @Injectable()
 export class AuthService {
@@ -264,7 +265,7 @@ export class AuthService {
     let updatedUser;
     if (!parent.userId) {
       // Create User account for parent (they're claiming their account via OTP)
-      const defaultPassword = await bcrypt.hash('Password123!', 10);
+      const defaultPassword = await generateSecurePasswordHash();
       const newUser = await this.prisma.user.create({
         data: {
           email: parent.email || null,
@@ -440,7 +441,7 @@ export class AuthService {
     // Generate reset token
     const token = randomBytes(32).toString('hex');
     const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 14); // 2 weeks (14 days) expiry
+    expiresAt.setTime(expiresAt.getTime() + 60 * 60 * 1000); // 1 hour expiry for security
 
     // Create reset token
     await this.prisma.passwordResetToken.create({
@@ -451,38 +452,67 @@ export class AuthService {
       },
     });
 
-    // Get user name, role, and school name for email
+    // Get user name, role, and ALL schools/profiles for multi-school users
     let name = email;
     let role = 'User';
-    let schoolName: string | undefined;
+    const schools: Array<{ name: string; publicId: string; role: string }> = [];
     
+    // Collect ALL school admin profiles
     if (user.schoolAdmins && user.schoolAdmins.length > 0) {
       name = `${user.schoolAdmins[0].firstName} ${user.schoolAdmins[0].lastName}`;
-      role = user.schoolAdmins[0].role === 'PRINCIPAL' ? 'Principal' : 'Administrator';
-      // Get school name
-      if (user.schoolAdmins[0].schoolId) {
-        const school = await this.prisma.school.findUnique({
-          where: { id: user.schoolAdmins[0].schoolId },
-          select: { name: true },
-        });
-        schoolName = school?.name;
+      role = 'Administrator';
+      
+      // Get all schools for this admin
+      const schoolIds = [...new Set(user.schoolAdmins.map(admin => admin.schoolId))];
+      const schoolsData = await this.prisma.school.findMany({
+        where: { id: { in: schoolIds } },
+        select: { id: true, name: true },
+      });
+      
+      for (const admin of user.schoolAdmins) {
+        const school = schoolsData.find(s => s.id === admin.schoolId);
+        if (school) {
+          schools.push({
+            name: school.name,
+            publicId: admin.publicId,
+            role: admin.role === 'Principal' ? 'Principal' : 'Administrator',
+          });
+        }
       }
-    } else if (user.teacherProfiles && user.teacherProfiles.length > 0) {
+    } 
+    // Collect ALL teacher profiles
+    else if (user.teacherProfiles && user.teacherProfiles.length > 0) {
       name = `${user.teacherProfiles[0].firstName} ${user.teacherProfiles[0].lastName}`;
       role = 'Teacher';
-      // Get school name
-      if (user.teacherProfiles[0].schoolId) {
-        const school = await this.prisma.school.findUnique({
-          where: { id: user.teacherProfiles[0].schoolId },
-          select: { name: true },
-        });
-        schoolName = school?.name;
+      
+      // Get all schools for this teacher
+      const schoolIds = [...new Set(user.teacherProfiles.map(teacher => teacher.schoolId))];
+      const schoolsData = await this.prisma.school.findMany({
+        where: { id: { in: schoolIds } },
+        select: { id: true, name: true },
+      });
+      
+      for (const teacher of user.teacherProfiles) {
+        const school = schoolsData.find(s => s.id === teacher.schoolId);
+        if (school) {
+          schools.push({
+            name: school.name,
+            publicId: teacher.publicId,
+            role: 'Teacher',
+          });
+        }
       }
     }
 
-    // Send email
+    // Send email with all schools information
     try {
-      await this.emailService.sendPasswordResetEmail(email, name, token, role, undefined, schoolName);
+      await this.emailService.sendPasswordResetEmail(
+        email, 
+        name, 
+        token, 
+        role, 
+        schools.length > 0 ? schools : undefined
+      );
     } catch (error) {
       // Log error but don't fail the request
       this.logger.error('Failed to send password reset email:', error instanceof Error ? error.stack : error);
@@ -604,7 +634,7 @@ export class AuthService {
     // Generate reset token
     const token = randomBytes(32).toString('hex');
     const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 14); // 2 weeks (14 days) expiry
+    expiresAt.setTime(expiresAt.getTime() + 24 * 60 * 60 * 1000); // 24 hours for new user activation
 
     // Create reset token
     await this.prisma.passwordResetToken.create({
@@ -633,25 +663,42 @@ export class AuthService {
     schoolId?: string
   ): Promise<void> {
     // Get user with profiles
+    // If schoolId is provided, filter by it; otherwise get all schools
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       include: {
-        schoolAdmins: {
-          where: schoolId ? { schoolId } : undefined,
-          include: {
-            school: {
-              select: { name: true },
+        schoolAdmins: schoolId 
+          ? {
+              where: { schoolId },
+              include: {
+                school: {
+                  select: { name: true },
+                },
+              },
+            }
+          : {
+              include: {
+                school: {
+                  select: { name: true },
+                },
+              },
             },
-          },
-        },
-        teacherProfiles: {
-          where: schoolId ? { schoolId } : undefined,
-          include: {
-            school: {
-              select: { name: true },
+        teacherProfiles: schoolId
+          ? {
+              where: { schoolId },
+              include: {
+                school: {
+                  select: { name: true },
+                },
+              },
+            }
+          : {
+              include: {
+                school: {
+                  select: { name: true },
+                },
+              },
             },
-          },
-        },
         studentProfile: true,
       },
     });
@@ -675,28 +722,46 @@ export class AuthService {
       },
     });
 
-    // Get user name, role, public ID, and school name
+    // Get user name, role, and ALL schools/profiles for multi-school users
     let name = user.email;
     let role = 'User';
-    let publicId: string | undefined;
-    let schoolName: string | undefined;
+    const schools: Array<{ name: string; publicId: string; role: string }> = [];
 
+    // Collect ALL school admin profiles (or filtered by schoolId if provided)
     if (user.schoolAdmins && user.schoolAdmins.length > 0) {
-      const admin = user.schoolAdmins[0];
-      name = `${admin.firstName} ${admin.lastName}`;
-      role = admin.role === 'PRINCIPAL' ? 'Principal' : 'Administrator';
-      publicId = admin.publicId || undefined;
-      schoolName = admin.school?.name;
-    } else if (user.teacherProfiles && user.teacherProfiles.length > 0) {
-      const teacher = user.teacherProfiles[0];
-      name = `${teacher.firstName} ${teacher.lastName}`;
+      name = `${user.schoolAdmins[0].firstName} ${user.schoolAdmins[0].lastName}`;
+      role = 'Administrator';
+      
+      for (const admin of user.schoolAdmins) {
+        if (admin.school) {
+          schools.push({
+            name: admin.school.name,
+            publicId: admin.publicId,
+            role: admin.role === 'Principal' ? 'Principal' : 'Administrator',
+          });
+        }
+      }
+    } 
+    // Collect ALL teacher profiles (or filtered by schoolId if provided)
+    else if (user.teacherProfiles && user.teacherProfiles.length > 0) {
+      name = `${user.teacherProfiles[0].firstName} ${user.teacherProfiles[0].lastName}`;
       role = 'Teacher';
-      publicId = teacher.publicId || undefined;
-      schoolName = teacher.school?.name;
-    } else if (user.studentProfile) {
+      
+      for (const teacher of user.teacherProfiles) {
+        if (teacher.school) {
+          schools.push({
+            name: teacher.school.name,
+            publicId: teacher.publicId,
+            role: 'Teacher',
+          });
+        }
+      }
+    } 
+    // Students - single school only
+    else if (user.studentProfile) {
       name = `${user.studentProfile.firstName} ${user.studentProfile.lastName}`;
       role = 'Student';
-      publicId = user.studentProfile.publicId || undefined;
+      
       // Get school name from student's enrollment
       const enrollment = await this.prisma.enrollment.findFirst({
         where: {
@@ -712,13 +777,20 @@ export class AuthService {
           enrollmentDate: 'desc',
         },
       });
-      schoolName = enrollment?.school?.name;
+      
+      if (enrollment?.school && user.studentProfile.publicId) {
+        schools.push({
+          name: enrollment.school.name,
+          publicId: user.studentProfile.publicId,
+          role: 'Student',
+        });
+      }
     }
 
     // Generate new reset token
     const token = randomBytes(32).toString('hex');
     const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 14); // 2 weeks (14 days) expiry
+    expiresAt.setTime(expiresAt.getTime() + 24 * 60 * 60 * 1000); // 24 hours for resent activation
 
     // Create new reset token
     await this.prisma.passwordResetToken.create({
@@ -729,9 +801,15 @@ export class AuthService {
       },
     });
 
-    // Send email with public ID and school name if provided
+    // Send email with all schools information
     try {
-      await this.emailService.sendPasswordResetEmail(user.email, name, token, role, publicId, schoolName);
+      await this.emailService.sendPasswordResetEmail(
+        user.email, 
+        name, 
+        token, 
+        role, 
+        schools.length > 0 ? schools : undefined
+      );
     } catch (error) {
       // Log error but don't fail the request
       this.logger.error('Failed to resend password reset email:', error instanceof Error ? error.stack : error);

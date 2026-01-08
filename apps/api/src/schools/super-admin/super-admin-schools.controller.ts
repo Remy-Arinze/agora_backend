@@ -6,10 +6,13 @@ import { UpdateSchoolDto } from '../dto/update-school.dto';
 import { SchoolDto } from '../dto/school.dto';
 import { ResponseDto } from '../../common/dto/response.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
 
 @ApiTags('schools')
 @Controller('schools')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('SUPER_ADMIN')
 @ApiBearerAuth()
 export class SuperAdminSchoolsController {
   constructor(private readonly superAdminSchoolsService: SuperAdminSchoolsService) {}

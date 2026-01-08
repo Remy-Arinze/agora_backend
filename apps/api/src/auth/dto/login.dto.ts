@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsEmail, IsString, MinLength } from 'class-validator';
+import { IsString, MinLength, MaxLength, Matches } from 'class-validator';
 
 export class LoginDto {
   @ApiProperty({
@@ -29,13 +29,15 @@ export class VerifyOtpDto {
   phone: string;
 
   @ApiProperty({
-    description: 'OTP code sent via SMS',
+    description: 'OTP code sent via SMS (6 digits)',
     example: '123456',
-    minLength: 4,
+    minLength: 6,
     maxLength: 6,
   })
   @IsString()
-  @MinLength(4)
+  @MinLength(6, { message: 'OTP code must be exactly 6 digits' })
+  @MaxLength(6, { message: 'OTP code must be exactly 6 digits' })
+  @Matches(/^\d{6}$/, { message: 'OTP code must contain only digits' })
   code: string;
 }
 

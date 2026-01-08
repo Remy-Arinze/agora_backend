@@ -557,10 +557,17 @@ export class StaffController {
   // Bulk import staff
   @Post('staff/bulk-import')
   @RequirePermission(PermissionResource.STAFF, PermissionType.WRITE)
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: {
+        fileSize: 10 * 1024 * 1024, // 10MB max for bulk import files
+      },
+    })
+  )
   @ApiOperation({ 
     summary: 'Bulk import staff from CSV/Excel file',
-    description: 'Upload a CSV or Excel file to import multiple staff members (teachers and admins) at once. Each row must specify type as "teacher" or "admin".'
+    description: 'Upload a CSV or Excel file to import multiple staff members (teachers and admins) at once. Each row must specify type as "teacher" or "admin". Maximum file size: 10MB.'
   })
   @ApiResponse({
     status: 200,

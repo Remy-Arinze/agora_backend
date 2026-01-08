@@ -4,7 +4,12 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { Button } from './Button';
 
 export function ThemeToggle() {
-  const { theme, toggleTheme } = useTheme();
+  const { theme, toggleTheme, isDashboardRoute } = useTheme();
+
+  // Hide theme toggle on non-dashboard routes (landing, auth pages)
+  if (!isDashboardRoute) {
+    return null;
+  }
 
   return (
     <Button

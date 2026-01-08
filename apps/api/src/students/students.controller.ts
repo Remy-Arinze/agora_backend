@@ -193,10 +193,17 @@ export class SchoolStudentAdmissionController {
 
   @Post('bulk-import')
   @RequirePermission(PermissionResource.STUDENTS, PermissionType.WRITE)
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: {
+        fileSize: 10 * 1024 * 1024, // 10MB max for bulk import files
+      },
+    })
+  )
   @ApiOperation({ 
     summary: 'Bulk import students from CSV/Excel file',
-    description: 'Upload a CSV or Excel file to import multiple students at once. Uses the same validation and flow as individual student admission.'
+    description: 'Upload a CSV or Excel file to import multiple students at once. Uses the same validation and flow as individual student admission. Maximum file size: 10MB.'
   })
   @ApiConsumes('multipart/form-data')
   @ApiResponse({

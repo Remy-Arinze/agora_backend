@@ -9,7 +9,7 @@ import { StaffValidatorService } from '../../shared/staff-validator.service';
 import { AddTeacherDto } from '../../dto/add-teacher.dto';
 import { UpdateTeacherDto } from '../../dto/update-teacher.dto';
 import { CloudinaryService } from '../../../storage/cloudinary/cloudinary.service';
-import * as bcrypt from 'bcrypt';
+import { generateSecurePasswordHash } from '../../../common/utils/password.utils';
 
 /**
  * Service for managing teachers
@@ -45,7 +45,7 @@ export class TeacherService {
     await this.staffValidator.validateEmailUniqueInSchool(teacherData.email, school.id);
     await this.staffValidator.validatePhoneUniqueInSchool(teacherData.phone, school.id);
 
-    const defaultPassword = await bcrypt.hash('Password123!', 10);
+    const defaultPassword = await generateSecurePasswordHash();
 
     // Generate teacher ID and public ID
     const teacherId = await this.idGenerator.generateTeacherId();

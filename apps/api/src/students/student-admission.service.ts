@@ -5,7 +5,7 @@ import { IdGeneratorService } from '../schools/shared/id-generator.service';
 import { AuthService } from '../auth/auth.service';
 import { AddStudentDto } from '../schools/dto/add-student.dto';
 import { TermStatus, SessionStatus } from '@prisma/client';
-import * as bcrypt from 'bcrypt';
+import { generateSecurePasswordHash } from '../common/utils/password.utils';
 
 @Injectable()
 export class StudentAdmissionService {
@@ -56,7 +56,7 @@ export class StudentAdmissionService {
       throw new BadRequestException('Parent/Guardian name and phone are required');
     }
 
-    const defaultPassword = await bcrypt.hash('Password123!', 10);
+    const defaultPassword = await generateSecurePasswordHash();
 
     // Generate student ID and public ID
     const studentUid = await this.idGenerator.generateStudentId();

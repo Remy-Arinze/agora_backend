@@ -10,7 +10,7 @@ import { StaffValidatorService } from '../shared/staff-validator.service';
 import { CreateSchoolDto } from '../dto/create-school.dto';
 import { UpdateSchoolDto } from '../dto/update-school.dto';
 import { SchoolDto } from '../dto/school.dto';
-import * as bcrypt from 'bcrypt';
+import { generateSecurePasswordHash } from '../../common/utils/password.utils';
 
 /**
  * Service for super admin school management operations
@@ -67,7 +67,7 @@ export class SuperAdminSchoolsService {
     }
 
     // Generate default password for admins
-    const defaultPassword = await bcrypt.hash('ChangeMe123!', 10);
+    const defaultPassword = await generateSecurePasswordHash();
 
     try {
       // Create school with admins in a transaction

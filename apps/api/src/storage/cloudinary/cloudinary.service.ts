@@ -1,7 +1,29 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { v2 as cloudinary } from 'cloudinary';
 import { Readable } from 'stream';
+
+// Allowed file types for raw uploads (documents, spreadsheets, presentations)
+const ALLOWED_RAW_EXTENSIONS = [
+  'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
+  'txt', 'csv', 'rtf', 'odt', 'ods', 'odp',
+];
+
+const ALLOWED_RAW_MIMETYPES = [
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'text/plain',
+  'text/csv',
+  'application/rtf',
+  'application/vnd.oasis.opendocument.text',
+  'application/vnd.oasis.opendocument.spreadsheet',
+  'application/vnd.oasis.opendocument.presentation',
+];
 
 @Injectable()
 export class CloudinaryService {
@@ -117,6 +139,22 @@ export class CloudinaryService {
     // Validate file buffer exists
     if (!file || !file.buffer) {
       throw new Error('File buffer is not available. Ensure FileInterceptor is configured with memoryStorage.');
+    }
+
+    // Validate file type for security - prevent malicious file uploads
+    const fileExtension = file.originalname.split('.').pop()?.toLowerCase();
+    const mimeType = file.mimetype?.toLowerCase();
+
+    if (!fileExtension || !ALLOWED_RAW_EXTENSIONS.includes(fileExtension)) {
+      throw new BadRequestException(
+        `File type not allowed. Allowed types: ${ALLOWED_RAW_EXTENSIONS.join(', ')}`
+      );
+    }
+
+    if (!mimeType || !ALLOWED_RAW_MIMETYPES.includes(mimeType)) {
+      throw new BadRequestException(
+        `Invalid file MIME type. Please upload a valid document file.`
+      );
     }
 
     // Validate Cloudinary is configured

@@ -79,7 +79,7 @@ export function Sidebar() {
   );
 
   return (
-    <aside className="w-64 bg-white dark:bg-dark-surface border-r border-gray-200 dark:border-dark-border h-[calc(100vh-4rem)] fixed left-0 top-16 transition-colors duration-200 flex flex-col z-20">
+    <aside className="w-64 dark:bg-dark-surface border-r border-gray-200 dark:border-dark-border h-[calc(100vh-4rem)] fixed left-0 top-16 transition-colors duration-200 flex flex-col z-20">
       <div className="p-4 overflow-y-auto flex-1 scrollbar-hide">
         <nav className="space-y-1">
           {filteredNavItems.map((item) => {

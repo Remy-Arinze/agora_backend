@@ -48,8 +48,9 @@ export class EmailService {
     name: string,
     resetToken: string,
     role: string,
-    publicId?: string,
-    schoolName?: string
+    schools?: Array<{ name: string; publicId: string; role: string }>,
+    publicId?: string, // Legacy parameter for backward compatibility
+    schoolName?: string // Legacy parameter for backward compatibility
   ): Promise<void> {
     const frontendUrl = this.configService.get<string>('FRONTEND_URL') || 'http://localhost:3000';
     const resetUrl = `${frontendUrl}/auth/reset-password?token=${resetToken}`;
@@ -63,41 +64,105 @@ export class EmailService {
       this.logger.error('No FROM email address configured. Check MAIL_FROM or SMTP_FROM environment variable.');
       throw new Error('Email configuration error: No FROM address');
     }
+
+    // Build schools section HTML
+    let schoolsSection = '';
+    if (schools && schools.length > 0) {
+      if (schools.length === 1) {
+        // Single school - show simple format
+        schoolsSection = `
+          <div style="background-color: #eff6ff; border-left: 4px solid #3b82f6; padding: 15px; margin: 20px 0; border-radius: 4px;">
+            <p style="margin: 0; color: #1e40af; font-weight: bold;">School: <strong>${schools[0].name}</strong></p>
+            <p style="margin: 10px 0 0 0; color: #1e40af; font-weight: bold;">Your Public ID: <code style="background-color: white; padding: 4px 8px; border-radius: 4px; font-size: 16px;">${schools[0].publicId}</code></p>
+            <p style="margin: 10px 0 0 0; color: #1e40af; font-size: 14px;">Use this Public ID along with your password to log in to your account.</p>
+          </div>
+        `;
+      } else {
+        // Multiple schools - show all
+        const schoolsList = schools.map(school => `
+          <div style="background-color: white; padding: 12px; margin: 8px 0; border-radius: 4px; border: 1px solid #dbeafe;">
+            <p style="margin: 0; color: #1e40af; font-weight: bold;">${school.name} (${school.role})</p>
+            <p style="margin: 5px 0 0 0; color: #1e40af; font-size: 14px;">Public ID: <code style="background-color: #f3f4f6; padding: 2px 6px; border-radius: 3px; font-size: 14px;">${school.publicId}</code></p>
+          </div>
+        `).join('');
+        
+        schoolsSection = `
+          <div style="background-color: #eff6ff; border-left: 4px solid #3b82f6; padding: 15px; margin: 20px 0; border-radius: 4px;">
+            <p style="margin: 0; color: #1e40af; font-weight: bold; font-size: 16px;">Your Schools & Public IDs:</p>
+            <p style="margin: 10px 0; color: #1e40af; font-size: 14px;">You have accounts at multiple schools. After resetting your password, you can log in using:</p>
+            <div style="margin-top: 15px;">
+              ${schoolsList}
+            </div>
+            <p style="margin: 15px 0 0 0; color: #1e40af; font-size: 14px;">
+              <strong>Note:</strong> Resetting your password will update it for <strong>all schools</strong>. You can log in with your email (goes to first school) or any Public ID above (goes to that specific school).
+            </p>
+          </div>
+        `;
+      }
+    } else if (publicId && schoolName) {
+      // Legacy format for backward compatibility
+      schoolsSection = `
+        <div style="background-color: #eff6ff; border-left: 4px solid #3b82f6; padding: 15px; margin: 20px 0; border-radius: 4px;">
+          <p style="margin: 0; color: #1e40af; font-weight: bold;">Your Public ID: <code style="background-color: white; padding: 4px 8px; border-radius: 4px; font-size: 16px;">${publicId}</code></p>
+          <p style="margin: 10px 0 0 0; color: #1e40af; font-size: 14px;">Use this Public ID along with your password to log in to your account.</p>
+        </div>
+      `;
+    }
+    
+    // Determine if this is a password reset request or new account setup
+    // If schools array is provided (even with 1 school), it's a password reset request
+    // If schools is undefined but schoolName/publicId are provided, it's a new account setup
+    const isPasswordReset = schools !== undefined; // schools array provided = password reset
+    const isNewAccount = !isPasswordReset && (schoolName || publicId); // legacy params = new account
     
     const mailOptions = {
       from: fromEmail,
       to: email,
-      subject: 'Set Your Password - Agora Education Platform',
+      subject: isPasswordReset ? 'Reset Your Password - Agora Education Platform' : 'Set Your Password - Agora Education Platform',
       html: `
         <!DOCTYPE html>
         <html>
         <head>
           <meta charset="utf-8">
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>Set Your Password</title>
+          <title>${isPasswordReset ? 'Reset Your Password' : 'Set Your Password'}</title>
         </head>
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="background-color: #3b82f6; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
-            <h1 style="color: white; margin: 0;">Agora Education Platform</h1>
+          <div style="background-color: #f9fafb; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; border-bottom: 2px solid #e5e7eb;">
+            <h1 style="color: #1f2937; margin: 0; font-size: 24px;">Agora Education Platform</h1>
           </div>
           <div style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px;">
+            ${isPasswordReset ? `
+            <h2 style="color: #1f2937; margin-top: 0;">Password Reset Request</h2>
+            <p>Hello ${name},</p>
+            <p>We received a request to reset your password for your <strong>${role}</strong> account on the Agora Education Platform.</p>
+            <p>If you didn't make this request, you can safely ignore this email. Your password will remain unchanged.</p>
+            ` : `
             <h2 style="color: #1f2937; margin-top: 0;">Welcome, ${name}!</h2>
             <p>Your account has been created${schoolName ? ` at <strong>${schoolName}</strong>` : ''} on the Agora Education Platform as a <strong>${role}</strong>.</p>
-            ${publicId ? `
-            <div style="background-color: #eff6ff; border-left: 4px solid #3b82f6; padding: 15px; margin: 20px 0; border-radius: 4px;">
-              <p style="margin: 0; color: #1e40af; font-weight: bold;">Your Public ID: <code style="background-color: white; padding: 4px 8px; border-radius: 4px; font-size: 16px;">${publicId}</code></p>
-              <p style="margin: 10px 0 0 0; color: #1e40af; font-size: 14px;">Use this Public ID along with your password to log in to your account.</p>
+            <p>To get started, please set your password using the link below.</p>
+            `}
+            ${schoolsSection}
+            <div style="background-color: #fff; border: 1px solid #e5e7eb; border-radius: 6px; padding: 20px; margin: 25px 0;">
+              <p style="margin: 0 0 15px 0; color: #374151; font-weight: 600;">${isPasswordReset ? 'Click the button below to reset your password:' : 'Click the button below to set your password:'}</p>
+              <div style="text-align: center;">
+                <a href="${resetUrl}" style="background-color: #3b82f6; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: bold; font-size: 16px;">${isPasswordReset ? 'Reset Password' : 'Set Password'}</a>
+              </div>
             </div>
-            ` : ''}
-            <p>To get started, please set your password by clicking the button below:</p>
-            <div style="text-align: center; margin: 30px 0;">
-              <a href="${resetUrl}" style="background-color: #3b82f6; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: bold;">Set Password</a>
-            </div>
-            <p style="color: #6b7280; font-size: 14px;">Or copy and paste this link into your browser:</p>
-            <p style="color: #6b7280; font-size: 12px; word-break: break-all;">${resetUrl}</p>
-            <p style="color: #6b7280; font-size: 14px; margin-top: 30px;">
-              <strong>Note:</strong> This link will expire in 24 hours. If you didn't request this, please ignore this email.
+            <p style="color: #6b7280; font-size: 14px; margin-top: 20px;">
+              <strong>Alternative:</strong> Copy and paste this link into your browser:
             </p>
+            <p style="color: #6b7280; font-size: 12px; word-break: break-all; background-color: #f3f4f6; padding: 10px; border-radius: 4px; font-family: monospace;">${resetUrl}</p>
+            <div style="background-color: #fef3c7; border-left: 4px solid #f59e0b; padding: 12px; margin: 25px 0; border-radius: 4px;">
+              <p style="margin: 0; color: #92400e; font-size: 13px;">
+                <strong>⏱️ Important:</strong> This link will expire in ${isPasswordReset ? '1 hour' : '24 hours'}. ${isPasswordReset ? 'For security reasons, password reset links expire quickly.' : 'Please set your password as soon as possible.'}
+              </p>
+            </div>
+            ${isPasswordReset ? `
+            <p style="color: #6b7280; font-size: 14px; margin-top: 20px;">
+              <strong>Security Tip:</strong> If you didn't request this password reset, please ignore this email. Your account remains secure, and no changes will be made.
+            </p>
+            ` : ''}
             <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
             <p style="color: #9ca3af; font-size: 12px; text-align: center; margin: 0;">
               © ${new Date().getFullYear()} Agora Education Platform. All rights reserved.

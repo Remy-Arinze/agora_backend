@@ -16,6 +16,7 @@ async function bootstrap() {
 
   // Security: Helmet middleware for HTTP security headers
   // Protects against XSS, clickjacking, MIME sniffing, and other attacks
+  const isProduction = process.env.NODE_ENV === 'production';
   app.use(helmet({
     contentSecurityPolicy: {
       directives: {
@@ -25,7 +26,8 @@ async function bootstrap() {
         imgSrc: ["'self'", 'data:', 'https:'],
       },
     },
-    crossOriginEmbedderPolicy: false, // Allow embedding for Swagger UI
+    // Only disable crossOriginEmbedderPolicy in development for Swagger UI
+    crossOriginEmbedderPolicy: isProduction,
   }));
 
   // Cookie parser for httpOnly refresh token cookies
@@ -55,48 +57,53 @@ async function bootstrap() {
     allowedHeaders: ['Content-Type', 'Authorization', 'x-tenant-id'],
   });
 
-  // Swagger/OpenAPI configuration
-  const config = new DocumentBuilder()
-    .setTitle('Agora API')
-    .setDescription(
-      'Multi-Tenant Digital Education Identity Platform - Chain-of-Trust Registry'
-    )
-    .setVersion('1.0.0')
-    .addBearerAuth(
-      {
-        type: 'http',
-        scheme: 'bearer',
-        bearerFormat: 'JWT',
-        name: 'JWT',
-        description: 'Enter JWT token',
-        in: 'header',
+  // Swagger/OpenAPI configuration - ONLY enabled in non-production environments
+  if (!isProduction) {
+    const config = new DocumentBuilder()
+      .setTitle('Agora API')
+      .setDescription(
+        'Multi-Tenant Digital Education Identity Platform - Chain-of-Trust Registry'
+      )
+      .setVersion('1.0.0')
+      .addBearerAuth(
+        {
+          type: 'http',
+          scheme: 'bearer',
+          bearerFormat: 'JWT',
+          name: 'JWT',
+          description: 'Enter JWT token',
+          in: 'header',
+        },
+        'JWT-auth'
+      )
+      .addTag('auth', 'Authentication endpoints')
+      .addTag('onboarding', 'Student onboarding and bulk import')
+      .addTag('students', 'Student management')
+      .addTag('schools', 'School/tenant management')
+      .addTag('transfers', 'Student transfer requests')
+      .build();
+
+    const document = SwaggerModule.createDocument(app, config);
+    SwaggerModule.setup('swagger', app, document, {
+      swaggerOptions: {
+        persistAuthorization: true,
       },
-      'JWT-auth'
-    )
-    .addTag('auth', 'Authentication endpoints')
-    .addTag('onboarding', 'Student onboarding and bulk import')
-    .addTag('students', 'Student management')
-    .addTag('schools', 'School/tenant management')
-    .addTag('transfers', 'Student transfer requests')
-    .build();
+    });
 
-  const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('swagger', app, document, {
-    swaggerOptions: {
-      persistAuthorization: true,
-    },
-  });
+    // Expose swagger JSON for codegen (development only)
+    app.getHttpAdapter().get('/swagger-json', (req, res) => {
+      res.json(document);
+    });
 
-  // Expose swagger JSON for codegen
-  app.getHttpAdapter().get('/swagger-json', (req, res) => {
-    res.json(document);
-  });
+    logger.log(`📚 Swagger docs available at http://localhost:${process.env.PORT || 4000}/api/swagger`);
+    logger.log(`📦 Swagger JSON at http://localhost:${process.env.PORT || 4000}/api/swagger-json`);
+  } else {
+    logger.log('🔒 Swagger documentation disabled in production');
+  }
 
   const port = process.env.PORT || 4000;
   await app.listen(port);
   logger.log(`🚀 Agora API running on http://localhost:${port}`);
-  logger.log(`📚 Swagger docs available at http://localhost:${port}/api/swagger`);
-  logger.log(`📦 Swagger JSON at http://localhost:${port}/api/swagger-json`);
 }
 
 bootstrap();
