@@ -1,8 +1,8 @@
 trigger:
-  - main
+  - develop
 
 pool:
-  vmImage: 'ubuntu-latest'
+  name: 'SandboxAgent'
 
 variables:
   azureSubscription: 'agora-current-sc' # Name of the Service Connection in DevOps
