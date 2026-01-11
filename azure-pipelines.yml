@@ -11,7 +11,7 @@ variables:
 
 stages:
 # ==========================================================
-# STAGE 1: INTELLIGENT CHANGE DETECTION (PowerShell Version)
+# STAGE 1: FORCE TRIGGER (Bypasses Git Diff)
 # ==========================================================
 - stage: CheckChanges
   displayName: 'Analyze Changed Paths'
@@ -19,9 +19,9 @@ stages:
   - job: Check
     displayName: 'Force Trigger'
     steps:
-    - checkout: none # We don't even need to download code for this step now
+    - checkout: none # We don't need code for this step
     
-    # REPLACEMENT: Force both variables to 'true' immediately
+    # FORCE BOTH DEPLOYMENTS TO TRUE
     - powershell: |
         Write-Host "Forcing deployment for API and Web..."
         
@@ -55,6 +55,9 @@ stages:
     - script: npm run build
       workingDirectory: $(workingDir)
       displayName: 'Build NestJS'
+      # MEMORY FIX: Increases Node memory limit to ~4GB to prevent crashes
+      env:
+        NODE_OPTIONS: '--max-old-space-size=4096'
 
     - script: npm prune --production
       workingDirectory: $(workingDir)
@@ -99,8 +102,11 @@ stages:
     - script: npm run build
       workingDirectory: $(workingDir)
       displayName: 'Build Next.js'
+      # MEMORY FIX: Increases Node memory limit to ~4GB to prevent crashes
+      env:
+        NODE_OPTIONS: '--max-old-space-size=4096'
 
-    # CHANGED: Replaced 'cp' (Linux) with 'Copy-Item' (PowerShell)
+    # WINDOWS COMPATIBLE COPY SCRIPT
     - powershell: |
         # Create destination directories first to avoid errors
         New-Item -ItemType Directory -Force -Path .next/standalone/apps/web/public
