@@ -1,4 +1,9 @@
-import { Injectable, BadRequestException, NotFoundException, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { UserWithContext } from '../auth/types/user-with-context.type';
 import {
@@ -56,7 +61,9 @@ export class CourseRegistrationService {
 
     // Verify this is a TERTIARY institution
     if (!school.hasTertiary) {
-      throw new BadRequestException('Course registration is only available for TERTIARY institutions');
+      throw new BadRequestException(
+        'Course registration is only available for TERTIARY institutions'
+      );
     }
 
     // Verify student's class is TERTIARY type
@@ -134,7 +141,9 @@ export class CourseRegistrationService {
 
     // Verify this is a TERTIARY institution
     if (!school.hasTertiary) {
-      throw new BadRequestException('Course registration is only available for TERTIARY institutions');
+      throw new BadRequestException(
+        'Course registration is only available for TERTIARY institutions'
+      );
     }
 
     // Verify student's class is TERTIARY type
@@ -262,10 +271,7 @@ export class CourseRegistrationService {
   /**
    * Delete (deactivate) a course registration
    */
-  async deleteCourseRegistration(
-    user: UserWithContext,
-    registrationId: string
-  ): Promise<void> {
+  async deleteCourseRegistration(user: UserWithContext, registrationId: string): Promise<void> {
     if (user.role !== 'STUDENT') {
       throw new ForbiddenException('Access denied. Student role required.');
     }
@@ -324,4 +330,3 @@ export class CourseRegistrationService {
     };
   }
 }
-

@@ -1,4 +1,10 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+  Logger,
+} from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { StudentDto, StudentWithEnrollmentDto } from './dto/student.dto';
 import { PaginationDto, PaginatedResponseDto } from '../common/dto/pagination.dto';
@@ -18,7 +24,7 @@ export class StudentsService {
     private readonly timetableService: TimetableService,
     private readonly gradesService: GradesService,
     private readonly eventService: EventService,
-    private readonly cloudinaryService: CloudinaryService,
+    private readonly cloudinaryService: CloudinaryService
   ) {}
 
   async findAll(
@@ -32,8 +38,8 @@ export class StudentsService {
     // If schoolType is provided, get classes AND classArms of that type to filter enrollments
     let classIds: string[] = [];
     let classLevels: string[] = [];
-    let classArmIds: string[] = [];
-    
+    const classArmIds: string[] = [];
+
     if (schoolType) {
       // Get Class records of this type (for backward compatibility and TERTIARY)
       const classes = await this.prisma.class.findMany({
@@ -49,7 +55,7 @@ export class StudentsService {
       });
       classIds = classes.map((c) => c.id);
       classLevels = classes.map((c) => c.name);
-      
+
       // Also get ClassLevel + ClassArm records for PRIMARY/SECONDARY (new system)
       if (schoolType === 'PRIMARY' || schoolType === 'SECONDARY') {
         const classLevelRecords = await this.prisma.classLevel.findMany({
@@ -65,7 +71,7 @@ export class StudentsService {
             },
           },
         });
-        
+
         // Add ClassLevel names and ClassArm IDs
         for (const cl of classLevelRecords) {
           classLevels.push(cl.name);
@@ -76,7 +82,7 @@ export class StudentsService {
           }
         }
       }
-      
+
       // Remove duplicates
       classLevels = [...new Set(classLevels)];
     }
@@ -93,7 +99,7 @@ export class StudentsService {
       if (classIds.length === 0 && classLevels.length === 0 && classArmIds.length === 0) {
         return new PaginatedResponseDto([], 0, page, limit);
       }
-      
+
       // Add the type filter
       enrollmentFilter.OR = [
         ...(classIds.length > 0 ? [{ classId: { in: classIds } }] : []),
@@ -349,12 +355,14 @@ export class StudentsService {
       healthInfo: healthInfo,
       createdAt: student.createdAt.toISOString(),
       updatedAt: student.updatedAt.toISOString(),
-      user: student.user ? {
-        id: student.user.id,
-        email: student.user.email,
-        phone: student.user.phone,
-        accountStatus: student.user.accountStatus,
-      } : undefined,
+      user: student.user
+        ? {
+            id: student.user.id,
+            email: student.user.email,
+            phone: student.user.phone,
+            accountStatus: student.user.accountStatus,
+          }
+        : undefined,
     };
   }
 
@@ -497,7 +505,7 @@ export class StudentsService {
   async getMyTimetable(
     user: UserWithContext,
     schoolId: string | null,
-    termId?: string,
+    termId?: string
   ): Promise<any[]> {
     if (user.role !== 'STUDENT') {
       throw new ForbiddenException('Access denied. Student role required.');
@@ -557,7 +565,7 @@ export class StudentsService {
     // Derive schoolType from student's enrollment for correct session lookup
     const enrollment = student.enrollments[0];
     let schoolType: string | null = null;
-    
+
     // Check classArm's classLevel type first (for ClassArm-based enrollments)
     if (enrollment.classArm?.classLevel?.type) {
       schoolType = enrollment.classArm.classLevel.type;
@@ -570,7 +578,7 @@ export class StudentsService {
     // Always find the correct active term for this student's schoolType
     // This ensures we use the right term even if frontend passes wrong termId
     let activeTermId = termId;
-    
+
     // Find active session for this student's schoolType
     const activeSession = await this.prisma.academicSession.findFirst({
       where: {
@@ -642,7 +650,7 @@ export class StudentsService {
   async getMyGrades(
     user: UserWithContext,
     schoolId: string | null,
-    filters?: { classId?: string; termId?: string; subject?: string },
+    filters?: { classId?: string; termId?: string; subject?: string }
   ): Promise<any[]> {
     if (user.role !== 'STUDENT') {
       throw new ForbiddenException('Access denied. Student role required.');
@@ -748,11 +756,7 @@ export class StudentsService {
           },
         },
       },
-      orderBy: [
-        { academicYear: 'desc' },
-        { term: 'desc' },
-        { createdAt: 'desc' },
-      ],
+      orderBy: [{ academicYear: 'desc' }, { term: 'desc' }, { createdAt: 'desc' }],
     });
 
     return grades.map((grade) => {
@@ -770,9 +774,10 @@ export class StudentsService {
         assessmentName: grade.assessmentName,
         score: grade.score.toNumber(),
         maxScore: grade.maxScore.toNumber(),
-        percentage: grade.maxScore.toNumber() > 0 
-          ? (grade.score.toNumber() / grade.maxScore.toNumber()) * 100 
-          : 0,
+        percentage:
+          grade.maxScore.toNumber() > 0
+            ? (grade.score.toNumber() / grade.maxScore.toNumber()) * 100
+            : 0,
         remarks: grade.remarks,
         assessmentDate: grade.assessmentDate?.toISOString(),
         academicYear: grade.academicYear,
@@ -786,11 +791,13 @@ export class StudentsService {
           classLevel: grade.enrollment.classLevel,
           className: className,
           class: grade.enrollment.class,
-          classArm: grade.enrollment.classArm ? {
-            id: grade.enrollment.classArm.id,
-            name: grade.enrollment.classArm.name,
-            classLevel: grade.enrollment.classArm.classLevel,
-          } : null,
+          classArm: grade.enrollment.classArm
+            ? {
+                id: grade.enrollment.classArm.id,
+                name: grade.enrollment.classArm.name,
+                classLevel: grade.enrollment.classArm.classLevel,
+              }
+            : null,
         },
         teacher: grade.teacher,
       };
@@ -803,7 +810,7 @@ export class StudentsService {
   async getMyAttendance(
     user: UserWithContext,
     schoolId: string | null,
-    filters?: { classId?: string; termId?: string; startDate?: string; endDate?: string },
+    filters?: { classId?: string; termId?: string; startDate?: string; endDate?: string }
   ): Promise<any[]> {
     if (user.role !== 'STUDENT') {
       throw new ForbiddenException('Access denied. Student role required.');
@@ -894,7 +901,7 @@ export class StudentsService {
   async getMyResources(
     user: UserWithContext,
     schoolId: string | null,
-    filters?: { classId?: string; resourceType?: string },
+    filters?: { classId?: string; resourceType?: string }
   ): Promise<any[]> {
     if (user.role !== 'STUDENT') {
       throw new ForbiddenException('Access denied. Student role required.');
@@ -998,8 +1005,8 @@ export class StudentsService {
       fileType: r.fileType,
       description: r.description,
       createdAt: r.createdAt.toISOString(),
-      className: r.classArm 
-        ? `${r.classArm.classLevel.name} ${r.classArm.name}` 
+      className: r.classArm
+        ? `${r.classArm.classLevel.name} ${r.classArm.name}`
         : r.class?.name || 'Unknown',
       class: r.class,
     }));
@@ -1008,9 +1015,7 @@ export class StudentsService {
   /**
    * Get personal resources for current student
    */
-  async getMyPersonalResources(
-    user: UserWithContext,
-  ): Promise<any[]> {
+  async getMyPersonalResources(user: UserWithContext): Promise<any[]> {
     if (user.role !== 'STUDENT') {
       throw new ForbiddenException('Access denied. Student role required.');
     }
@@ -1058,7 +1063,7 @@ export class StudentsService {
   async uploadPersonalResource(
     user: UserWithContext,
     file: Express.Multer.File,
-    description?: string,
+    description?: string
   ): Promise<any> {
     if (user.role !== 'STUDENT') {
       throw new ForbiddenException('Access denied. Student role required.');
@@ -1100,7 +1105,9 @@ export class StudentsService {
     ];
 
     if (!allowedMimeTypes.includes(file.mimetype)) {
-      throw new BadRequestException(`File type ${file.mimetype} is not allowed. Only documents and spreadsheets are permitted (PDF, DOC, DOCX, XLS, XLSX, PPT, PPTX, TXT, CSV). Images are not allowed.`);
+      throw new BadRequestException(
+        `File type ${file.mimetype} is not allowed. Only documents and spreadsheets are permitted (PDF, DOC, DOCX, XLS, XLSX, PPT, PPTX, TXT, CSV). Images are not allowed.`
+      );
     }
 
     // Determine file type
@@ -1109,7 +1116,7 @@ export class StudentsService {
     // Generate unique filename
     const path = require('path');
     const { v4: uuidv4 } = require('uuid');
-    
+
     const fileExtension = path.extname(file.originalname);
     const uniqueFileName = `${uuidv4()}${fileExtension}`;
 
@@ -1125,16 +1132,12 @@ export class StudentsService {
     });
 
     const schoolId = enrollment?.schoolId || 'unknown';
-    
+
     // Upload to Cloudinary
     const folder = `schools/${schoolId}/students/${student.id}/resources`;
     const publicId = `resource-${uuidv4()}`;
-    
-    const { url: fileUrl } = await this.cloudinaryService.uploadRawFile(
-      file,
-      folder,
-      publicId
-    );
+
+    const { url: fileUrl } = await this.cloudinaryService.uploadRawFile(file, folder, publicId);
 
     // Create resource record
     const resource = await this.prisma.studentResource.create({
@@ -1170,10 +1173,7 @@ export class StudentsService {
   /**
    * Delete personal resource for current student
    */
-  async deletePersonalResource(
-    user: UserWithContext,
-    resourceId: string,
-  ): Promise<void> {
+  async deletePersonalResource(user: UserWithContext, resourceId: string): Promise<void> {
     if (user.role !== 'STUDENT') {
       throw new ForbiddenException('Access denied. Student role required.');
     }
@@ -1203,8 +1203,9 @@ export class StudentsService {
 
     // Delete file from Cloudinary or local storage
     if (resource.filePath) {
-      const isCloudinaryUrl = resource.filePath.startsWith('http://') || resource.filePath.startsWith('https://');
-      
+      const isCloudinaryUrl =
+        resource.filePath.startsWith('http://') || resource.filePath.startsWith('https://');
+
       if (isCloudinaryUrl) {
         // Delete from Cloudinary
         const publicId = this.cloudinaryService.extractPublicId(resource.filePath);
@@ -1212,7 +1213,10 @@ export class StudentsService {
           try {
             await this.cloudinaryService.deleteRawFile(publicId);
           } catch (error) {
-            this.logger.error('Error deleting file from Cloudinary:', error instanceof Error ? error.stack : error);
+            this.logger.error(
+              'Error deleting file from Cloudinary:',
+              error instanceof Error ? error.stack : error
+            );
             // Continue with database deletion even if Cloudinary deletion fails
           }
         }
@@ -1223,7 +1227,10 @@ export class StudentsService {
           try {
             fs.unlinkSync(resource.filePath);
           } catch (error) {
-            this.logger.error('Error deleting file from local storage:', error instanceof Error ? error.stack : error);
+            this.logger.error(
+              'Error deleting file from local storage:',
+              error instanceof Error ? error.stack : error
+            );
             // Continue with database deletion even if file deletion fails
           }
         }
@@ -1243,7 +1250,7 @@ export class StudentsService {
    */
   async getPersonalResourceFile(
     user: UserWithContext,
-    resourceId: string,
+    resourceId: string
   ): Promise<{ buffer: Buffer; resource: any }> {
     if (user.role !== 'STUDENT') {
       throw new ForbiddenException('Access denied. Student role required.');
@@ -1277,8 +1284,9 @@ export class StudentsService {
     }
 
     // Check if filePath is a Cloudinary URL (starts with http/https and contains cloudinary.com)
-    const isCloudinaryUrl = resource.filePath.startsWith('http://') || resource.filePath.startsWith('https://');
-    
+    const isCloudinaryUrl =
+      resource.filePath.startsWith('http://') || resource.filePath.startsWith('https://');
+
     if (isCloudinaryUrl) {
       // Fetch file from Cloudinary URL
       try {
@@ -1288,7 +1296,7 @@ export class StudentsService {
         }
         const arrayBuffer = await response.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
-        
+
         return {
           buffer,
           resource: {
@@ -1307,7 +1315,10 @@ export class StudentsService {
           },
         };
       } catch (error) {
-        this.logger.error('Error fetching file from Cloudinary:', error instanceof Error ? error.stack : error);
+        this.logger.error(
+          'Error fetching file from Cloudinary:',
+          error instanceof Error ? error.stack : error
+        );
         throw new NotFoundException('Failed to fetch file from Cloudinary');
       }
     } else {
@@ -1317,7 +1328,7 @@ export class StudentsService {
         throw new NotFoundException('File not found on disk');
       }
       const buffer = fs.readFileSync(resource.filePath);
-      
+
       return {
         buffer,
         resource: {
@@ -1346,11 +1357,20 @@ export class StudentsService {
       return 'IMAGE';
     } else if (mimeType === 'application/pdf') {
       return 'PDF';
-    } else if (mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || mimeType === 'application/msword') {
+    } else if (
+      mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+      mimeType === 'application/msword'
+    ) {
       return 'DOCX';
-    } else if (mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || mimeType === 'application/vnd.ms-excel') {
+    } else if (
+      mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+      mimeType === 'application/vnd.ms-excel'
+    ) {
       return 'XLSX';
-    } else if (mimeType === 'application/vnd.openxmlformats-officedocument.presentationml.presentation' || mimeType === 'application/vnd.ms-powerpoint') {
+    } else if (
+      mimeType === 'application/vnd.openxmlformats-officedocument.presentationml.presentation' ||
+      mimeType === 'application/vnd.ms-powerpoint'
+    ) {
       return 'PPTX';
     } else {
       return 'OTHER';
@@ -1364,7 +1384,7 @@ export class StudentsService {
     user: UserWithContext,
     schoolId: string | null,
     startDate?: string,
-    endDate?: string,
+    endDate?: string
   ): Promise<any> {
     if (user.role !== 'STUDENT') {
       throw new ForbiddenException('Access denied. Student role required.');
@@ -1427,7 +1447,7 @@ export class StudentsService {
    */
   async getMyTranscript(
     user: UserWithContext,
-    filters?: { startDate?: string; endDate?: string; schoolId?: string },
+    filters?: { startDate?: string; endDate?: string; schoolId?: string }
   ): Promise<any> {
     if (user.role !== 'STUDENT') {
       throw new ForbiddenException('Access denied. Student role required.');
@@ -1537,11 +1557,7 @@ export class StudentsService {
           },
         },
       },
-      orderBy: [
-        { academicYear: 'desc' },
-        { term: 'desc' },
-        { createdAt: 'desc' },
-      ],
+      orderBy: [{ academicYear: 'desc' }, { term: 'desc' }, { createdAt: 'desc' }],
     });
 
     // Get all transfers
@@ -1602,9 +1618,10 @@ export class StudentsService {
           gradeType: grade.gradeType,
           score: grade.score.toNumber(),
           maxScore: grade.maxScore.toNumber(),
-          percentage: grade.maxScore.toNumber() > 0 
-            ? (grade.score.toNumber() / grade.maxScore.toNumber()) * 100 
-            : 0,
+          percentage:
+            grade.maxScore.toNumber() > 0
+              ? (grade.score.toNumber() / grade.maxScore.toNumber()) * 100
+              : 0,
           academicYear: grade.academicYear,
           term: grade.term,
           termId: grade.termId,
@@ -1675,10 +1692,7 @@ export class StudentsService {
   /**
    * Get all transfers for current student
    */
-  async getMyTransfers(
-    user: UserWithContext,
-    filters?: { status?: string },
-  ): Promise<any[]> {
+  async getMyTransfers(user: UserWithContext, filters?: { status?: string }): Promise<any[]> {
     if (user.role !== 'STUDENT') {
       throw new ForbiddenException('Access denied. Student role required.');
     }
@@ -1802,9 +1816,9 @@ export class StudentsService {
         // 2. The ClassArm's primary class teacher (classTeacherId)
         // 3. SubjectTeacher for subjects taught at this class level
         // 4. Teachers assigned to timetable periods for this classArm
-        
+
         const teacherMap = new Map<string, any>();
-        
+
         // Source 1: ClassTeacher records
         const classArmTeachers = await this.prisma.classTeacher.findMany({
           where: {
@@ -1829,8 +1843,8 @@ export class StudentsService {
             },
           },
         });
-        
-        classArmTeachers.forEach(ct => {
+
+        classArmTeachers.forEach((ct) => {
           if (!teacherMap.has(ct.teacher.id)) {
             teacherMap.set(ct.teacher.id, {
               id: ct.teacher.id,
@@ -1844,7 +1858,7 @@ export class StudentsService {
             });
           }
         });
-        
+
         // Source 2: ClassArm's primary class teacher
         if (classArm.classTeacherId) {
           const primaryTeacher = await this.prisma.teacher.findUnique({
@@ -1866,7 +1880,7 @@ export class StudentsService {
             });
           }
         }
-        
+
         // Source 3: Teachers from timetable periods for this classArm
         // Get the active term - MUST filter by schoolType (classLevel.type) to get correct session
         const activeTerm = await this.prisma.term.findFirst({
@@ -1879,7 +1893,7 @@ export class StudentsService {
             },
           },
         });
-        
+
         if (activeTerm) {
           const timetablePeriods = await this.prisma.timetablePeriod.findMany({
             where: {
@@ -1906,8 +1920,8 @@ export class StudentsService {
               },
             },
           });
-          
-          timetablePeriods.forEach(period => {
+
+          timetablePeriods.forEach((period) => {
             if (period.teacher && !teacherMap.has(period.teacher.id)) {
               teacherMap.set(period.teacher.id, {
                 id: period.teacher.id,
@@ -1922,7 +1936,7 @@ export class StudentsService {
             }
           });
         }
-        
+
         const allTeachers = Array.from(teacherMap.values());
 
         // Get ClassArm resources (or ClassLevel resources if shared)
@@ -1990,10 +2004,7 @@ export class StudentsService {
             schoolId: enrollment.schoolId,
             isActive: true,
             academicYear: enrollment.academicYear,
-            OR: [
-              { name: enrollment.classLevel },
-              { classLevel: enrollment.classLevel },
-            ],
+            OR: [{ name: enrollment.classLevel }, { classLevel: enrollment.classLevel }],
           },
           orderBy: {
             createdAt: 'desc',
@@ -2253,7 +2264,7 @@ export class StudentsService {
     if (school.hasTertiary) availableTypes.push('TERTIARY');
 
     const isMixed = availableTypes.length > 1;
-    const primaryType = isMixed ? 'MIXED' : (availableTypes[0] || 'PRIMARY');
+    const primaryType = isMixed ? 'MIXED' : availableTypes[0] || 'PRIMARY';
 
     return {
       ...school,
@@ -2293,17 +2304,22 @@ export class StudentsService {
     // Build update data
     const studentUpdateData: any = {};
     if (updateData.firstName !== undefined) studentUpdateData.firstName = updateData.firstName;
-    if (updateData.middleName !== undefined) studentUpdateData.middleName = updateData.middleName || null;
+    if (updateData.middleName !== undefined)
+      studentUpdateData.middleName = updateData.middleName || null;
     if (updateData.lastName !== undefined) studentUpdateData.lastName = updateData.lastName;
 
     // Build health info object
     const healthInfo: any = {};
     if (updateData.bloodGroup !== undefined) healthInfo.bloodGroup = updateData.bloodGroup || null;
     if (updateData.allergies !== undefined) healthInfo.allergies = updateData.allergies || null;
-    if (updateData.medications !== undefined) healthInfo.medications = updateData.medications || null;
-    if (updateData.emergencyContact !== undefined) healthInfo.emergencyContact = updateData.emergencyContact || null;
-    if (updateData.emergencyContactPhone !== undefined) healthInfo.emergencyContactPhone = updateData.emergencyContactPhone || null;
-    if (updateData.medicalNotes !== undefined) healthInfo.medicalNotes = updateData.medicalNotes || null;
+    if (updateData.medications !== undefined)
+      healthInfo.medications = updateData.medications || null;
+    if (updateData.emergencyContact !== undefined)
+      healthInfo.emergencyContact = updateData.emergencyContact || null;
+    if (updateData.emergencyContactPhone !== undefined)
+      healthInfo.emergencyContactPhone = updateData.emergencyContactPhone || null;
+    if (updateData.medicalNotes !== undefined)
+      healthInfo.medicalNotes = updateData.medicalNotes || null;
 
     // Only update healthInfo if at least one health field is provided
     if (Object.keys(healthInfo).length > 0) {
@@ -2377,10 +2393,7 @@ export class StudentsService {
   /**
    * Upload student profile image
    */
-  async uploadProfileImage(
-    user: UserWithContext,
-    file: Express.Multer.File
-  ): Promise<any> {
+  async uploadProfileImage(user: UserWithContext, file: Express.Multer.File): Promise<any> {
     if (user.role !== 'STUDENT') {
       throw new ForbiddenException('Access denied. Student role required.');
     }
@@ -2404,7 +2417,9 @@ export class StudentsService {
     // Validate file type
     const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
     if (!allowedMimeTypes.includes(file.mimetype)) {
-      throw new BadRequestException('Invalid file type. Only JPEG, PNG, GIF, and WebP images are allowed');
+      throw new BadRequestException(
+        'Invalid file type. Only JPEG, PNG, GIF, and WebP images are allowed'
+      );
     }
 
     // Validate file size (5MB max)
@@ -2444,7 +2459,10 @@ export class StudentsService {
         try {
           await this.cloudinaryService.deleteImage(oldPublicId);
         } catch (error) {
-          this.logger.error('Error deleting old profile image:', error instanceof Error ? error.stack : error);
+          this.logger.error(
+            'Error deleting old profile image:',
+            error instanceof Error ? error.stack : error
+          );
           // Continue even if deletion fails
         }
       }
@@ -2476,4 +2494,3 @@ export class StudentsService {
     return this.toDto(updatedStudent);
   }
 }
-

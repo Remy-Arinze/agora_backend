@@ -43,9 +43,12 @@ export class CreateEventDto {
   @IsOptional()
   isAllDay?: boolean;
 
-  @ApiProperty({ description: 'School type this event applies to (PRIMARY, SECONDARY, TERTIARY). Null means all types.', required: false })
+  @ApiProperty({
+    description:
+      'School type this event applies to (PRIMARY, SECONDARY, TERTIARY). Null means all types.',
+    required: false,
+  })
   @IsString()
   @IsOptional()
   schoolType?: 'PRIMARY' | 'SECONDARY' | 'TERTIARY';
 }
-

@@ -285,7 +285,10 @@ export class BulkClassSubjectAssignmentDto {
   @IsOptional()
   sessionId?: string;
 
-  @ApiProperty({ description: 'List of class-teacher assignments', type: [ClassAssignmentEntryDto] })
+  @ApiProperty({
+    description: 'List of class-teacher assignments',
+    type: [ClassAssignmentEntryDto],
+  })
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => ClassAssignmentEntryDto)
@@ -312,11 +315,14 @@ export class SubjectClassAssignmentsDto {
   }>;
 
   @ApiProperty({ description: 'Current assignments (classArmId -> teacher)' })
-  assignments: Record<string, {
-    assignmentId: string;
-    teacherId: string;
-    teacherName: string;
-  }>;
+  assignments: Record<
+    string,
+    {
+      assignmentId: string;
+      teacherId: string;
+      teacherName: string;
+    }
+  >;
 
   @ApiProperty({ description: 'Teachers competent to teach this subject' })
   competentTeachers: Array<{
@@ -356,7 +362,10 @@ export class TeacherWorkloadDto {
   @ApiProperty({ description: 'Periods breakdown by class' })
   periodsByClass: Record<string, number>;
 
-  @ApiProperty({ description: 'Workload status based on thresholds', enum: ['LOW', 'NORMAL', 'HIGH', 'OVERLOADED'] })
+  @ApiProperty({
+    description: 'Workload status based on thresholds',
+    enum: ['LOW', 'NORMAL', 'HIGH', 'OVERLOADED'],
+  })
   status: 'LOW' | 'NORMAL' | 'HIGH' | 'OVERLOADED';
 }
 
@@ -450,4 +459,3 @@ export class TimetableGenerationPreviewDto {
     teachersInvolved: number;
   };
 }
-

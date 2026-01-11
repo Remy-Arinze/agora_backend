@@ -84,4 +84,3 @@ export class SchoolDashboardDto {
   @ApiProperty({ description: 'Recent students', type: [RecentStudentDto] })
   recentStudents: RecentStudentDto[];
 }
-

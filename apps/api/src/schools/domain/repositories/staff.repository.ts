@@ -36,10 +36,7 @@ export class StaffRepository {
     });
   }
 
-  async updateAdmin(
-    id: string,
-    data: Prisma.SchoolAdminUpdateInput
-  ): Promise<SchoolAdmin> {
+  async updateAdmin(id: string, data: Prisma.SchoolAdminUpdateInput): Promise<SchoolAdmin> {
     return this.prisma.schoolAdmin.update({
       where: { id },
       data,
@@ -90,10 +87,7 @@ export class StaffRepository {
     });
   }
 
-  async updateTeacher(
-    id: string,
-    data: Prisma.TeacherUpdateInput
-  ): Promise<Teacher> {
+  async updateTeacher(id: string, data: Prisma.TeacherUpdateInput): Promise<Teacher> {
     return this.prisma.teacher.update({
       where: { id },
       data,
@@ -108,37 +102,25 @@ export class StaffRepository {
   }
 
   // Check for existing staff
-  async findAdminByEmailInSchool(
-    email: string,
-    schoolId: string
-  ): Promise<SchoolAdmin | null> {
+  async findAdminByEmailInSchool(email: string, schoolId: string): Promise<SchoolAdmin | null> {
     return this.prisma.schoolAdmin.findFirst({
       where: { email, schoolId },
     });
   }
 
-  async findTeacherByEmailInSchool(
-    email: string,
-    schoolId: string
-  ): Promise<Teacher | null> {
+  async findTeacherByEmailInSchool(email: string, schoolId: string): Promise<Teacher | null> {
     return this.prisma.teacher.findFirst({
       where: { email, schoolId },
     });
   }
 
-  async findAdminByPhoneInSchool(
-    phone: string,
-    schoolId: string
-  ): Promise<SchoolAdmin | null> {
+  async findAdminByPhoneInSchool(phone: string, schoolId: string): Promise<SchoolAdmin | null> {
     return this.prisma.schoolAdmin.findFirst({
       where: { phone, schoolId },
     });
   }
 
-  async findTeacherByPhoneInSchool(
-    phone: string,
-    schoolId: string
-  ): Promise<Teacher | null> {
+  async findTeacherByPhoneInSchool(phone: string, schoolId: string): Promise<Teacher | null> {
     return this.prisma.teacher.findFirst({
       where: { phone, schoolId },
     });
@@ -265,7 +247,7 @@ export class StaffRepository {
    * Counts from both ClassTeacher (PRIMARY) and TimetablePeriod (SECONDARY) tables
    */
   async getTeacherSubjectAssignmentCount(
-    teacherId: string, 
+    teacherId: string,
     subjectName: string,
     subjectId?: string
   ): Promise<number> {
@@ -291,10 +273,10 @@ export class StaffRepository {
         },
         distinct: ['classArmId', 'classId'],
       });
-      
+
       // Count unique classes (either classArmId or classId)
       const uniqueClasses = new Set<string>();
-      timetablePeriods.forEach(period => {
+      timetablePeriods.forEach((period) => {
         if (period.classArmId) {
           uniqueClasses.add(period.classArmId);
         } else if (period.classId) {
@@ -345,11 +327,7 @@ export class StaffRepository {
       include: {
         classLevel: true,
       },
-      orderBy: [
-        { schoolType: 'asc' },
-        { name: 'asc' },
-      ],
+      orderBy: [{ schoolType: 'asc' }, { name: 'asc' }],
     });
   }
 }
-

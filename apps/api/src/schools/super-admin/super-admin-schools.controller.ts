@@ -25,9 +25,7 @@ export class SuperAdminSchoolsController {
     type: ResponseDto<SchoolDto>,
   })
   @ApiResponse({ status: 409, description: 'School with subdomain already exists' })
-  async createSchool(
-    @Body() createSchoolDto: CreateSchoolDto
-  ): Promise<ResponseDto<SchoolDto>> {
+  async createSchool(@Body() createSchoolDto: CreateSchoolDto): Promise<ResponseDto<SchoolDto>> {
     const data = await this.superAdminSchoolsService.createSchool(createSchoolDto);
     return ResponseDto.ok(data, 'School created successfully');
   }
@@ -86,4 +84,3 @@ export class SuperAdminSchoolsController {
     return ResponseDto.ok(undefined, 'School deleted successfully');
   }
 }
-

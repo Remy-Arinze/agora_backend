@@ -33,7 +33,9 @@ export class EventService {
     if (dto.schoolType) {
       const validTypes = ['PRIMARY', 'SECONDARY', 'TERTIARY'];
       if (!validTypes.includes(dto.schoolType)) {
-        throw new BadRequestException('Invalid school type. Must be PRIMARY, SECONDARY, or TERTIARY');
+        throw new BadRequestException(
+          'Invalid school type. Must be PRIMARY, SECONDARY, or TERTIARY'
+        );
       }
       // Verify school has this type
       if (dto.schoolType === 'PRIMARY' && !school.hasPrimary) {
@@ -123,10 +125,7 @@ export class EventService {
               endDate: { gte: startDate, lte: endDate },
             },
             {
-              AND: [
-                { startDate: { lte: startDate } },
-                { endDate: { gte: endDate } },
-              ],
+              AND: [{ startDate: { lte: startDate } }, { endDate: { gte: endDate } }],
             },
           ],
         },
@@ -275,13 +274,11 @@ export class EventService {
 
     // Delete from Google Calendar if synced
     if (event.googleEventId && event.createdBy && this.googleCalendarService) {
-      this.googleCalendarService.deleteEventFromGoogle(
-        event.googleEventId,
-        event.createdBy,
-        school.id
-      ).catch((error) => {
-        this.logger.error(`Failed to delete event ${eventId} from Google Calendar`, error);
-      });
+      this.googleCalendarService
+        .deleteEventFromGoogle(event.googleEventId, event.createdBy, school.id)
+        .catch((error) => {
+          this.logger.error(`Failed to delete event ${eventId} from Google Calendar`, error);
+        });
     }
 
     await this.eventModel.delete({
@@ -314,17 +311,17 @@ export class EventService {
             googleEventId,
             syncStatus: 'SYNCED',
             syncedAt: new Date(),
-          }
+          },
         });
       }
     } catch (error) {
       // Log error but don't fail event creation
       this.logger.error(`Failed to sync event ${event.id} to Google Calendar`, error);
-      
+
       // Update sync status to failed
       await this.eventModel.update({
         where: { id: event.id },
-        data: { syncStatus: 'FAILED' }
+        data: { syncStatus: 'FAILED' },
       });
     }
   }
@@ -355,4 +352,3 @@ export class EventService {
     };
   }
 }
-

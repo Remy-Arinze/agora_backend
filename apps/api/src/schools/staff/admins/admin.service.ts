@@ -1,4 +1,11 @@
-import { Injectable, ConflictException, BadRequestException, NotFoundException, ForbiddenException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  ConflictException,
+  BadRequestException,
+  NotFoundException,
+  ForbiddenException,
+  Logger,
+} from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma.service';
 import { AuthService } from '../../../auth/auth.service';
 import { SchoolRepository } from '../../domain/repositories/school.repository';
@@ -59,7 +66,9 @@ export class AdminService {
     // Validate role - use strict principal role check
     const roleLower = adminData.role.trim().toLowerCase();
     const isPrincipal = isPrincipalRole(adminData.role);
-    this.logger.log(`[addAdmin] Role: "${adminData.role}", isPrincipal: ${isPrincipal}, permissions: ${adminData.permissions?.length || 0}`);
+    this.logger.log(
+      `[addAdmin] Role: "${adminData.role}", isPrincipal: ${isPrincipal}, permissions: ${adminData.permissions?.length || 0}`
+    );
 
     if (isPrincipal) {
       await this.staffValidator.validatePrincipalRole(school.id, adminData.role);
@@ -179,15 +188,22 @@ export class AdminService {
       try {
         if (adminData.permissions && adminData.permissions.length > 0) {
           // Use custom permissions provided in the request
-          this.logger.log(`[addAdmin] Assigning ${adminData.permissions.length} custom permissions to admin ${result.admin.id}`);
+          this.logger.log(
+            `[addAdmin] Assigning ${adminData.permissions.length} custom permissions to admin ${result.admin.id}`
+          );
           await this.assignCustomPermissions(result.admin.id, adminData.permissions);
         } else {
           // Fall back to default READ permissions for all resources
-          this.logger.log(`[addAdmin] No custom permissions, assigning default READ permissions to admin ${result.admin.id}`);
+          this.logger.log(
+            `[addAdmin] No custom permissions, assigning default READ permissions to admin ${result.admin.id}`
+          );
           await this.assignDefaultReadPermissions(result.admin.id);
         }
       } catch (error) {
-        this.logger.error('Failed to assign permissions:', error instanceof Error ? error.stack : error);
+        this.logger.error(
+          'Failed to assign permissions:',
+          error instanceof Error ? error.stack : error
+        );
         // Don't fail the request if permission assignment fails
       }
     } else {
@@ -200,11 +216,7 @@ export class AdminService {
   /**
    * Update an administrator
    */
-  async updateAdmin(
-    schoolId: string,
-    adminId: string,
-    updateData: UpdateAdminDto
-  ): Promise<any> {
+  async updateAdmin(schoolId: string, adminId: string, updateData: UpdateAdminDto): Promise<any> {
     // Validate school exists
     const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
     if (!school) {
@@ -550,7 +562,9 @@ export class AdminService {
     // Validate file type
     const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
     if (!allowedMimeTypes.includes(file.mimetype)) {
-      throw new BadRequestException('Invalid file type. Only JPEG, PNG, GIF, and WebP images are allowed');
+      throw new BadRequestException(
+        'Invalid file type. Only JPEG, PNG, GIF, and WebP images are allowed'
+      );
     }
 
     // Validate file size (5MB max)
@@ -593,7 +607,7 @@ export class AdminService {
    */
   private async assignDefaultReadPermissions(adminId: string): Promise<void> {
     this.logger.log(`[assignDefaultReadPermissions] Starting for admin ${adminId}`);
-    
+
     // Get all READ permissions
     let readPermissions = await this.prisma.permission.findMany({
       where: {
@@ -601,19 +615,25 @@ export class AdminService {
       },
     });
 
-    this.logger.log(`[assignDefaultReadPermissions] Found ${readPermissions.length} READ permissions in database`);
+    this.logger.log(
+      `[assignDefaultReadPermissions] Found ${readPermissions.length} READ permissions in database`
+    );
 
     if (readPermissions.length === 0) {
-      this.logger.warn('[assignDefaultReadPermissions] No READ permissions found in database! Initializing...');
+      this.logger.warn(
+        '[assignDefaultReadPermissions] No READ permissions found in database! Initializing...'
+      );
       await this.initializePermissions();
-      
+
       // Try again
       readPermissions = await this.prisma.permission.findMany({
         where: { type: PermissionType.READ },
       });
-      
+
       if (readPermissions.length === 0) {
-        this.logger.error('[assignDefaultReadPermissions] Still no permissions after initialization!');
+        this.logger.error(
+          '[assignDefaultReadPermissions] Still no permissions after initialization!'
+        );
         return;
       }
     }
@@ -627,7 +647,9 @@ export class AdminService {
       skipDuplicates: true,
     });
 
-    this.logger.log(`[assignDefaultReadPermissions] Created ${result.count} permission assignments for admin ${adminId}`);
+    this.logger.log(
+      `[assignDefaultReadPermissions] Created ${result.count} permission assignments for admin ${adminId}`
+    );
   }
 
   /**
@@ -637,10 +659,14 @@ export class AdminService {
     adminId: string,
     permissions: Array<{ resource: PermissionResource; type: PermissionType }>
   ): Promise<void> {
-    this.logger.log(`[assignCustomPermissions] Starting for admin ${adminId} with ${permissions.length} permissions`);
-    
+    this.logger.log(
+      `[assignCustomPermissions] Starting for admin ${adminId} with ${permissions.length} permissions`
+    );
+
     if (permissions.length === 0) {
-      this.logger.warn('[assignCustomPermissions] Empty permissions array, falling back to defaults');
+      this.logger.warn(
+        '[assignCustomPermissions] Empty permissions array, falling back to defaults'
+      );
       await this.assignDefaultReadPermissions(adminId);
       return;
     }
@@ -651,7 +677,9 @@ export class AdminService {
       type: p.type as PermissionType,
     }));
 
-    this.logger.log(`[assignCustomPermissions] Looking for ${permissionConditions.length} permissions`);
+    this.logger.log(
+      `[assignCustomPermissions] Looking for ${permissionConditions.length} permissions`
+    );
 
     // Fetch matching permissions from the database
     const dbPermissions = await this.prisma.permission.findMany({
@@ -660,22 +688,26 @@ export class AdminService {
       },
     });
 
-    this.logger.log(`[assignCustomPermissions] Found ${dbPermissions.length} matching permissions in database`);
+    this.logger.log(
+      `[assignCustomPermissions] Found ${dbPermissions.length} matching permissions in database`
+    );
 
     if (dbPermissions.length === 0) {
-      this.logger.warn('[assignCustomPermissions] No matching permissions found! Initializing and retrying...');
+      this.logger.warn(
+        '[assignCustomPermissions] No matching permissions found! Initializing and retrying...'
+      );
       await this.initializePermissions();
-      
+
       // Retry
       const retryPermissions = await this.prisma.permission.findMany({
         where: { OR: permissionConditions },
       });
-      
+
       if (retryPermissions.length === 0) {
         this.logger.error('[assignCustomPermissions] Still no permissions after initialization!');
         return;
       }
-      
+
       const result = await this.prisma.staffPermission.createMany({
         data: retryPermissions.map((perm) => ({
           adminId: adminId,
@@ -683,8 +715,10 @@ export class AdminService {
         })),
         skipDuplicates: true,
       });
-      
-      this.logger.log(`[assignCustomPermissions] Created ${result.count} permission assignments (after init)`);
+
+      this.logger.log(
+        `[assignCustomPermissions] Created ${result.count} permission assignments (after init)`
+      );
       return;
     }
 
@@ -697,7 +731,9 @@ export class AdminService {
       skipDuplicates: true,
     });
 
-    this.logger.log(`[assignCustomPermissions] Created ${result.count} permission assignments for admin ${adminId}`);
+    this.logger.log(
+      `[assignCustomPermissions] Created ${result.count} permission assignments for admin ${adminId}`
+    );
   }
 
   /**
@@ -707,7 +743,9 @@ export class AdminService {
     const resources = Object.values(PermissionResource);
     const types = Object.values(PermissionType);
 
-    this.logger.log(`[initializePermissions] Creating ${resources.length * types.length} permissions...`);
+    this.logger.log(
+      `[initializePermissions] Creating ${resources.length * types.length} permissions...`
+    );
 
     for (const resource of resources) {
       for (const type of types) {
@@ -731,4 +769,3 @@ export class AdminService {
     this.logger.log(`[initializePermissions] Done`);
   }
 }
-

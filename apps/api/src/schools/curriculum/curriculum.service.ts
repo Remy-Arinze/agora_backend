@@ -1,23 +1,23 @@
-import { 
-  Injectable, 
-  BadRequestException, 
-  NotFoundException, 
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
   ForbiddenException,
   ConflictException,
 } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { SchoolRepository } from '../domain/repositories/school.repository';
 import { StaffRepository } from '../domain/repositories/staff.repository';
-import { 
-  CreateCurriculumDto, 
+import {
+  CreateCurriculumDto,
   CreateCurriculumItemDto,
   GenerateCurriculumDto,
   BulkGenerateCurriculumDto,
   UpdateCurriculumDto,
 } from './dto/create-curriculum.dto';
-import { 
-  CurriculumDto, 
-  CurriculumItemDto, 
+import {
+  CurriculumDto,
+  CurriculumItemDto,
   CurriculumSummaryDto,
   TimetableSubjectDto,
 } from './dto/curriculum.dto';
@@ -31,7 +31,7 @@ export class CurriculumService {
     private readonly prisma: PrismaService,
     private readonly schoolRepository: SchoolRepository,
     private readonly staffRepository: StaffRepository,
-    private readonly nerdcService: NerdcCurriculumService,
+    private readonly nerdcService: NerdcCurriculumService
   ) {}
 
   // ============================================
@@ -56,7 +56,7 @@ export class CurriculumService {
     // Build the list of IDs to check
     // Include both ClassArm IDs and the classLevelId itself (which might be a ClassArm ID in legacy data)
     const idsToCheck = classArms.map((ca: any) => ca.id);
-    
+
     // Also add the classLevelId itself - in case timetable was created with class ID
     // that happens to be stored incorrectly
     if (!idsToCheck.includes(classLevelId)) {
@@ -76,10 +76,7 @@ export class CurriculumService {
           { type: 'LESSON' },
           { subjectId: { not: null } },
           {
-            OR: [
-              { classArmId: { in: idsToCheck } },
-              { classId: { in: idsToCheck } },
-            ],
+            OR: [{ classArmId: { in: idsToCheck } }, { classId: { in: idsToCheck } }],
           },
         ],
       },
@@ -104,13 +101,16 @@ export class CurriculumService {
     });
 
     // Group by subject, collecting unique teachers
-    const subjectMap = new Map<string, {
-      subjectId: string;
-      subjectName: string;
-      subjectCode: string | null;
-      teachers: Map<string, string>;
-      periodCount: number;
-    }>();
+    const subjectMap = new Map<
+      string,
+      {
+        subjectId: string;
+        subjectName: string;
+        subjectCode: string | null;
+        teachers: Map<string, string>;
+        periodCount: number;
+      }
+    >();
 
     for (const period of periods) {
       if (!period.subject) continue;
@@ -119,13 +119,15 @@ export class CurriculumService {
       if (existing) {
         existing.periodCount++;
         if (period.teacher) {
-          const teacherName = `${period.teacher.firstName || ''} ${period.teacher.lastName || ''}`.trim();
+          const teacherName =
+            `${period.teacher.firstName || ''} ${period.teacher.lastName || ''}`.trim();
           existing.teachers.set(period.teacherId, teacherName);
         }
       } else {
         const teachers = new Map<string, string>();
         if (period.teacher) {
-          const teacherName = `${period.teacher.firstName || ''} ${period.teacher.lastName || ''}`.trim();
+          const teacherName =
+            `${period.teacher.firstName || ''} ${period.teacher.lastName || ''}`.trim();
           teachers.set(period.teacherId, teacherName);
         }
         subjectMap.set(period.subjectId, {
@@ -201,7 +203,8 @@ export class CurriculumService {
     return timetableSubjects.map((subject) => {
       const curriculum = curriculumMap.get(subject.subjectId);
       const totalWeeks = curriculum?.items?.length || 0;
-      const completedWeeks = curriculum?.items?.filter((i: any) => i.status === 'COMPLETED').length || 0;
+      const completedWeeks =
+        curriculum?.items?.filter((i: any) => i.status === 'COMPLETED').length || 0;
 
       return {
         subjectId: subject.subjectId,
@@ -211,7 +214,7 @@ export class CurriculumService {
         curriculumId: curriculum?.id || null,
         status: curriculum?.status || null,
         teacherId: curriculum?.teacherId || null,
-        teacherName: curriculum?.teacher 
+        teacherName: curriculum?.teacher
           ? `${curriculum.teacher.firstName || ''} ${curriculum.teacher.lastName || ''}`.trim()
           : null,
         weeksTotal: totalWeeks,
@@ -242,22 +245,37 @@ export class CurriculumService {
     }
 
     // Resolve class/classLevel
-    const { classLevelId, targetClassId } = await this.resolveClassTarget(schoolId, createDto.classId);
+    const { classLevelId, targetClassId } = await this.resolveClassTarget(
+      schoolId,
+      createDto.classId
+    );
 
     // Get teacher from context
     const teacher = await this.getTeacherFromContext(user, schoolId);
 
     // Validate subject is in timetable (for PRIMARY/SECONDARY)
     if (classLevelId && createDto.subjectId) {
-      const timetableSubjects = await this.getSubjectsFromTimetable(schoolId, classLevelId, createDto.termId);
+      const timetableSubjects = await this.getSubjectsFromTimetable(
+        schoolId,
+        classLevelId,
+        createDto.termId
+      );
       const subjectInTimetable = timetableSubjects.find((s) => s.subjectId === createDto.subjectId);
       if (!subjectInTimetable) {
-        throw new BadRequestException('Subject is not in the timetable for this class. Please set up the timetable first.');
+        throw new BadRequestException(
+          'Subject is not in the timetable for this class. Please set up the timetable first.'
+        );
       }
     }
 
     // Check for existing curriculum
-    await this.checkExistingCurriculum(schoolId, classLevelId, targetClassId, createDto.subjectId, createDto.termId);
+    await this.checkExistingCurriculum(
+      schoolId,
+      classLevelId,
+      targetClassId,
+      createDto.subjectId,
+      createDto.termId
+    );
 
     // Get term info for academic year
     const term = await (this.prisma as any).term.findUnique({
@@ -275,7 +293,10 @@ export class CurriculumService {
         subject: createDto.subject || null,
         termId: createDto.termId,
         teacherId: teacher.id,
-        academicYear: createDto.academicYear || term?.academicSession?.name || new Date().getFullYear().toString(),
+        academicYear:
+          createDto.academicYear ||
+          term?.academicSession?.name ||
+          new Date().getFullYear().toString(),
         nerdcCurriculumId: createDto.nerdcCurriculumId || null,
         isNerdcBased: !!createDto.nerdcCurriculumId,
         status: 'DRAFT',
@@ -352,7 +373,7 @@ export class CurriculumService {
     }
 
     // Get teacher
-    const teacher = dto.teacherId 
+    const teacher = dto.teacherId
       ? await (this.prisma as any).teacher.findUnique({ where: { id: dto.teacherId } })
       : await this.getTeacherFromContext(user, schoolId);
 
@@ -361,10 +382,16 @@ export class CurriculumService {
     }
 
     // Validate subject is in timetable
-    const timetableSubjects = await this.getSubjectsFromTimetable(schoolId, dto.classLevelId, dto.termId);
+    const timetableSubjects = await this.getSubjectsFromTimetable(
+      schoolId,
+      dto.classLevelId,
+      dto.termId
+    );
     const subjectInTimetable = timetableSubjects.find((s) => s.subjectId === dto.subjectId);
     if (!subjectInTimetable) {
-      throw new BadRequestException('Subject is not in the timetable for this class. Please set up the timetable first.');
+      throw new BadRequestException(
+        'Subject is not in the timetable for this class. Please set up the timetable first.'
+      );
     }
 
     // Check for existing curriculum
@@ -373,7 +400,7 @@ export class CurriculumService {
     // Get NERDC template - try to match by subject name/code
     const classLevelCode = getClassLevelCode(classLevel.name, classLevel.type);
     let nerdcTemplate = null;
-    
+
     if (classLevelCode) {
       // Try to find NERDC template by matching subject name or code
       nerdcTemplate = await this.nerdcService.getCurriculumTemplate(
@@ -382,7 +409,7 @@ export class CurriculumService {
         classLevel.type,
         term.number
       );
-      
+
       // If not found by name, try by subject code if available
       if (!nerdcTemplate && subject.code) {
         nerdcTemplate = await this.nerdcService.getCurriculumTemplate(
@@ -415,14 +442,19 @@ export class CurriculumService {
       // No NERDC template found - create a helpful skeleton with subject-specific placeholders
       items = Array.from({ length: 13 }, (_, i) => ({
         weekNumber: i + 1,
-        topic: i === 0 ? `Introduction to ${subject.name}` 
-             : i === 6 ? 'Mid-Term Review and Assessment'
-             : i === 12 ? 'Revision and End of Term Examination'
-             : `${subject.name} - Week ${i + 1} Topic`,
+        topic:
+          i === 0
+            ? `Introduction to ${subject.name}`
+            : i === 6
+              ? 'Mid-Term Review and Assessment'
+              : i === 12
+                ? 'Revision and End of Term Examination'
+                : `${subject.name} - Week ${i + 1} Topic`,
         subTopics: [],
-        objectives: i === 0 
-          ? [`Introduce key concepts of ${subject.name}`, 'Set expectations for the term']
-          : [],
+        objectives:
+          i === 0
+            ? [`Introduce key concepts of ${subject.name}`, 'Set expectations for the term']
+            : [],
         activities: [],
         resources: [],
         assessment: i === 6 ? 'Mid-term assessment' : i === 12 ? 'End of term examination' : null,
@@ -477,12 +509,16 @@ export class CurriculumService {
 
     for (const subjectId of dto.subjectIds) {
       try {
-        const curriculum = await this.generateFromNerdc(schoolId, {
-          classLevelId: dto.classLevelId,
-          subjectId,
-          termId: dto.termId,
-          teacherId: dto.teacherId,
-        }, user);
+        const curriculum = await this.generateFromNerdc(
+          schoolId,
+          {
+            classLevelId: dto.classLevelId,
+            subjectId,
+            termId: dto.termId,
+            teacherId: dto.teacherId,
+          },
+          user
+        );
         created.push(curriculum.id);
       } catch (error) {
         failed.push({
@@ -527,10 +563,7 @@ export class CurriculumService {
     }
 
     if (subject) {
-      where.OR = [
-        { subject },
-        { subjectRef: { name: subject } },
-      ];
+      where.OR = [{ subject }, { subjectRef: { name: subject } }];
     }
 
     if (academicYear) {
@@ -650,8 +683,8 @@ export class CurriculumService {
       if (!isOwner) {
         // Check if teacher is assigned to this subject in timetable
         const timetableSubjects = await this.getSubjectsFromTimetable(
-          schoolId, 
-          curriculum.classLevelId, 
+          schoolId,
+          curriculum.classLevelId,
           curriculum.termId
         );
         const assignedToSubject = timetableSubjects.some(
@@ -669,8 +702,8 @@ export class CurriculumService {
     if (curriculum.isNerdcBased && updateData.items) {
       const originalItems = curriculum.items;
       for (const newItem of updateData.items) {
-        const originalItem = originalItems.find((i: any) => 
-          i.weekNumber === (newItem.weekNumber || newItem.week)
+        const originalItem = originalItems.find(
+          (i: any) => i.weekNumber === (newItem.weekNumber || newItem.week)
         );
         if (originalItem && originalItem.topic !== newItem.topic) {
           customizations++;
@@ -746,7 +779,7 @@ export class CurriculumService {
 
     // Check if user is admin first (admins can delete any curriculum)
     const isAdmin = user.role === 'SCHOOL_ADMIN' || user.role === 'SUPER_ADMIN';
-    
+
     if (!isAdmin) {
       // Only check teacher ownership if not admin
       const teacher = await this.getTeacherFromContext(user, schoolId);
@@ -775,7 +808,7 @@ export class CurriculumService {
     user: UserWithContext
   ): Promise<CurriculumDto> {
     const curriculum = await this.getCurriculumById(schoolId, curriculumId, user);
-    
+
     if (curriculum.status !== 'DRAFT' && curriculum.status !== 'REJECTED') {
       throw new BadRequestException('Only draft or rejected curricula can be submitted');
     }
@@ -822,7 +855,7 @@ export class CurriculumService {
     }
 
     const curriculum = await this.getCurriculumById(schoolId, curriculumId, user);
-    
+
     if (curriculum.status !== 'SUBMITTED') {
       throw new BadRequestException('Only submitted curricula can be approved');
     }
@@ -865,7 +898,7 @@ export class CurriculumService {
     }
 
     const curriculum = await this.getCurriculumById(schoolId, curriculumId, user);
-    
+
     if (curriculum.status !== 'SUBMITTED') {
       throw new BadRequestException('Only submitted curricula can be rejected');
     }
@@ -902,7 +935,7 @@ export class CurriculumService {
     user: UserWithContext
   ): Promise<CurriculumDto> {
     const curriculum = await this.getCurriculumById(schoolId, curriculumId, user);
-    
+
     if (curriculum.status !== 'APPROVED') {
       throw new BadRequestException('Only approved curricula can be activated');
     }
@@ -947,8 +980,8 @@ export class CurriculumService {
     // Verify teacher can mark this week
     const isOwner = curriculum.teacherId === teacher.id;
     const timetableSubjects = await this.getSubjectsFromTimetable(
-      schoolId, 
-      curriculum.classLevelId || '', 
+      schoolId,
+      curriculum.classLevelId || '',
       curriculum.termId || ''
     );
     const assignedToSubject = timetableSubjects.some(
@@ -1135,7 +1168,9 @@ export class CurriculumService {
     const existing = await (this.prisma as any).curriculum.findFirst({ where });
 
     if (existing) {
-      throw new ConflictException('A curriculum already exists for this class/subject/term combination');
+      throw new ConflictException(
+        'A curriculum already exists for this class/subject/term combination'
+      );
     }
   }
 
@@ -1156,7 +1191,7 @@ export class CurriculumService {
       subjectId: curriculum.subjectId,
       subject: curriculum.subject || curriculum.subjectRef?.name || null,
       teacherId: curriculum.teacherId,
-      teacherName: curriculum.teacher 
+      teacherName: curriculum.teacher
         ? `${curriculum.teacher.firstName || ''} ${curriculum.teacher.lastName || ''}`.trim()
         : undefined,
       academicYear: curriculum.academicYear,

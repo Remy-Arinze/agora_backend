@@ -1,7 +1,20 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException, OnModuleInit, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+  OnModuleInit,
+  Logger,
+} from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma.service';
 import { EmailService } from '../../../email/email.service';
-import { PermissionDto, PermissionResource, PermissionType, StaffPermissionsDto, isPrincipalRole } from '../../dto/permission.dto';
+import {
+  PermissionDto,
+  PermissionResource,
+  PermissionType,
+  StaffPermissionsDto,
+  isPrincipalRole,
+} from '../../dto/permission.dto';
 import { UserWithContext } from '../../../auth/types/user-with-context.type';
 
 @Injectable()
@@ -72,7 +85,7 @@ export class PermissionService implements OnModuleInit {
   /**
    * Assign permissions to an admin
    * Note: Principal permissions cannot be modified - they have permanent full access
-   * 
+   *
    * @param schoolId - The school ID
    * @param adminId - The target admin's ID
    * @param permissionIds - Array of permission IDs to assign
@@ -125,16 +138,18 @@ export class PermissionService implements OnModuleInit {
 
       // Principals can modify anyone's permissions
       const callerIsPrincipal = isPrincipalRole(callerAdmin.role);
-      
+
       if (!callerIsPrincipal) {
         // Non-principals need STAFF:ADMIN permission to modify other admins' permissions
         const hasStaffAdmin = callerAdmin.permissions.some(
-          (sp) => sp.permission.resource === PermissionResource.STAFF && sp.permission.type === PermissionType.ADMIN
+          (sp) =>
+            sp.permission.resource === PermissionResource.STAFF &&
+            sp.permission.type === PermissionType.ADMIN
         );
 
         if (!hasStaffAdmin) {
           throw new ForbiddenException(
-            'You need STAFF:ADMIN permission to modify other administrators\' permissions'
+            "You need STAFF:ADMIN permission to modify other administrators' permissions"
           );
         }
 
@@ -151,7 +166,9 @@ export class PermissionService implements OnModuleInit {
         for (const perm of permissionsToAssign) {
           // ADMIN type can only be assigned by principals or those with ADMIN for that resource
           if (perm.type === PermissionType.ADMIN) {
-            const hasResourceAdmin = callerPermissionTypes.has(`${perm.resource}:${PermissionType.ADMIN}`);
+            const hasResourceAdmin = callerPermissionTypes.has(
+              `${perm.resource}:${PermissionType.ADMIN}`
+            );
             if (!hasResourceAdmin) {
               throw new ForbiddenException(
                 `You cannot assign ${perm.resource}:ADMIN permission as you don't have it yourself`
@@ -366,7 +383,9 @@ export class PermissionService implements OnModuleInit {
     });
 
     if (readPermissions.length === 0) {
-      throw new BadRequestException('No READ permissions found. Please initialize permissions first.');
+      throw new BadRequestException(
+        'No READ permissions found. Please initialize permissions first.'
+      );
     }
 
     // Get all admins for this school
@@ -408,4 +427,3 @@ export class PermissionService implements OnModuleInit {
     return { migrated, skipped };
   }
 }
-

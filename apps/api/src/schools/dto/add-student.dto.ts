@@ -33,12 +33,17 @@ export class AddStudentDto {
   @IsString()
   address?: string;
 
-  @ApiPropertyOptional({ description: 'Class level (e.g., JSS1, SS1, Class 1) - Required if classArmId not provided' })
+  @ApiPropertyOptional({
+    description: 'Class level (e.g., JSS1, SS1, Class 1) - Required if classArmId not provided',
+  })
   @IsOptional()
   @IsString()
   classLevel?: string;
 
-  @ApiPropertyOptional({ description: 'ClassArm ID (for PRIMARY/SECONDARY schools using ClassArms) - Preferred over classLevel' })
+  @ApiPropertyOptional({
+    description:
+      'ClassArm ID (for PRIMARY/SECONDARY schools using ClassArms) - Preferred over classLevel',
+  })
   @IsOptional()
   @IsString()
   classArmId?: string;
@@ -102,4 +107,3 @@ export class AddStudentDto {
   @IsString()
   profileImage?: string;
 }
-

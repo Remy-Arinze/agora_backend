@@ -8,7 +8,12 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { EmailService } from '../email/email.service';
-import { GenerateTacDto, InitiateTransferDto, CompleteTransferDto, RejectTransferDto } from './dto/transfer.dto';
+import {
+  GenerateTacDto,
+  InitiateTransferDto,
+  CompleteTransferDto,
+  RejectTransferDto,
+} from './dto/transfer.dto';
 import { TransferStatus, TermStatus, SessionStatus } from '@prisma/client';
 import { randomBytes } from 'crypto';
 
@@ -69,17 +74,15 @@ export class TransfersService {
         fromSchoolId: schoolId,
         status: { in: ['PENDING', 'APPROVED'] },
         tac: { not: null },
-        OR: [
-          { tacExpiresAt: { gt: new Date() } },
-          { tacUsedAt: null },
-        ],
+        OR: [{ tacExpiresAt: { gt: new Date() } }, { tacUsedAt: null }],
       },
     });
 
     if (existingTransfer && existingTransfer.tac && !existingTransfer.tacUsedAt) {
       // Return existing TAC if still valid
-      const expiresAt = existingTransfer.tacExpiresAt || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-      
+      const expiresAt =
+        existingTransfer.tacExpiresAt || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
       // Send email if student has email
       const studentEmail = student.user?.email;
       if (studentEmail && school) {
@@ -94,12 +97,17 @@ export class TransfersService {
           );
         } catch (error) {
           // Log error but don't fail the request
-          this.logger.error('Failed to send transfer initiation email:', error instanceof Error ? error.stack : error);
+          this.logger.error(
+            'Failed to send transfer initiation email:',
+            error instanceof Error ? error.stack : error
+          );
         }
       } else if (!studentEmail) {
-        console.warn(`Student ${student.id} does not have an email address. Cannot send transfer notification.`);
+        console.warn(
+          `Student ${student.id} does not have an email address. Cannot send transfer notification.`
+        );
       }
-      
+
       return {
         transferId: existingTransfer.id,
         tac: existingTransfer.tac,
@@ -151,7 +159,9 @@ export class TransfersService {
         console.error('Failed to send transfer initiation email:', error);
       }
     } else if (!studentEmail) {
-      console.warn(`Student ${student.id} does not have an email address. Cannot send transfer notification.`);
+      console.warn(
+        `Student ${student.id} does not have an email address. Cannot send transfer notification.`
+      );
     }
 
     return {
@@ -311,11 +321,7 @@ export class TransfersService {
           },
           include: {
             grades: {
-              orderBy: [
-                { academicYear: 'desc' },
-                { term: 'desc' },
-                { createdAt: 'desc' },
-              ],
+              orderBy: [{ academicYear: 'desc' }, { term: 'desc' }, { createdAt: 'desc' }],
             },
           },
         },
@@ -331,7 +337,7 @@ export class TransfersService {
     }
 
     // Get active enrollment for backward compatibility
-    const activeEnrollment = student.enrollments.find(e => e.isActive) || student.enrollments[0];
+    const activeEnrollment = student.enrollments.find((e) => e.isActive) || student.enrollments[0];
 
     // Map all enrollments with their grades grouped by class level
     const enrollments = student.enrollments.map((enrollment) => ({
@@ -444,7 +450,7 @@ export class TransfersService {
     const studentData = await this.getStudentDataByTac(transfer.tac!, transfer.studentId);
 
     // Find or create student in destination school
-    let student = await this.prisma.student.findUnique({
+    const student = await this.prisma.student.findUnique({
       where: { id: transfer.studentId },
     });
 
@@ -467,7 +473,9 @@ export class TransfersService {
       });
 
       if (!classArm || classArm.classLevel.schoolId !== schoolId) {
-        throw new BadRequestException('ClassArm not found or does not belong to destination school');
+        throw new BadRequestException(
+          'ClassArm not found or does not belong to destination school'
+        );
       }
 
       // Validate capacity if set
@@ -481,7 +489,9 @@ export class TransfersService {
         });
 
         if (currentEnrollments >= classArm.capacity) {
-          throw new BadRequestException(`ClassArm "${classArm.name}" is at full capacity (${classArm.capacity} students)`);
+          throw new BadRequestException(
+            `ClassArm "${classArm.name}" is at full capacity (${classArm.capacity} students)`
+          );
         }
       }
 
@@ -492,10 +502,7 @@ export class TransfersService {
       const targetClass = await this.prisma.class.findFirst({
         where: {
           schoolId,
-          OR: [
-            { name: dto.targetClassLevel },
-            { classLevel: dto.targetClassLevel },
-          ],
+          OR: [{ name: dto.targetClassLevel }, { classLevel: dto.targetClassLevel }],
           isActive: true,
         },
       });
@@ -544,7 +551,9 @@ export class TransfersService {
     });
 
     if (!defaultTeacher) {
-      throw new BadRequestException('No teacher found in destination school. Cannot transfer grades.');
+      throw new BadRequestException(
+        'No teacher found in destination school. Cannot transfer grades.'
+      );
     }
 
     for (const grade of studentData.grades) {
@@ -570,7 +579,11 @@ export class TransfersService {
     }
 
     // Update student health records if provided
-    if (studentData.student.bloodGroup || studentData.student.allergies || studentData.student.medications) {
+    if (
+      studentData.student.bloodGroup ||
+      studentData.student.allergies ||
+      studentData.student.medications
+    ) {
       await this.prisma.student.update({
         where: { id: student.id },
         data: {
@@ -578,7 +591,8 @@ export class TransfersService {
           allergies: studentData.student.allergies || student.allergies,
           medications: studentData.student.medications || student.medications,
           emergencyContact: studentData.student.emergencyContact || student.emergencyContact,
-          emergencyContactPhone: studentData.student.emergencyContactPhone || student.emergencyContactPhone,
+          emergencyContactPhone:
+            studentData.student.emergencyContactPhone || student.emergencyContactPhone,
           medicalNotes: studentData.student.medicalNotes || student.medicalNotes,
         },
       });
@@ -667,7 +681,9 @@ export class TransfersService {
 
     // Verify this is an outgoing transfer from this school
     if (transfer.fromSchoolId !== schoolId) {
-      throw new ForbiddenException('You can only view historical grades for transfers from your school');
+      throw new ForbiddenException(
+        'You can only view historical grades for transfers from your school'
+      );
     }
 
     // Only allow viewing grades for completed transfers
@@ -683,11 +699,7 @@ export class TransfersService {
       },
       include: {
         grades: {
-          orderBy: [
-            { academicYear: 'desc' },
-            { term: 'desc' },
-            { createdAt: 'desc' },
-          ],
+          orderBy: [{ academicYear: 'desc' }, { term: 'desc' }, { createdAt: 'desc' }],
         },
       },
       orderBy: {
@@ -744,7 +756,13 @@ export class TransfersService {
   /**
    * List outgoing transfers
    */
-  async getOutgoingTransfers(schoolId: string, status?: TransferStatus, page = 1, limit = 20, schoolType?: string) {
+  async getOutgoingTransfers(
+    schoolId: string,
+    status?: TransferStatus,
+    page = 1,
+    limit = 20,
+    schoolType?: string
+  ) {
     const skip = (page - 1) * limit;
 
     // If schoolType is provided, get classes of that type to filter enrollments
@@ -791,7 +809,10 @@ export class TransfersService {
                 where: {
                   schoolId,
                   isActive: true,
-                  ...(schoolType && classIds && classLevels && (classIds.length > 0 || classLevels.length > 0)
+                  ...(schoolType &&
+                  classIds &&
+                  classLevels &&
+                  (classIds.length > 0 || classLevels.length > 0)
                     ? {
                         OR: [
                           ...(classIds.length > 0 ? [{ classId: { in: classIds } }] : []),
@@ -838,7 +859,13 @@ export class TransfersService {
   /**
    * List incoming transfers
    */
-  async getIncomingTransfers(schoolId: string, status?: TransferStatus, page = 1, limit = 20, schoolType?: string) {
+  async getIncomingTransfers(
+    schoolId: string,
+    status?: TransferStatus,
+    page = 1,
+    limit = 20,
+    schoolType?: string
+  ) {
     const skip = (page - 1) * limit;
 
     // If schoolType is provided, get classes of that type to filter enrollments
@@ -885,7 +912,10 @@ export class TransfersService {
                 where: {
                   schoolId,
                   isActive: true,
-                  ...(schoolType && classIds && classLevels && (classIds.length > 0 || classLevels.length > 0)
+                  ...(schoolType &&
+                  classIds &&
+                  classLevels &&
+                  (classIds.length > 0 || classLevels.length > 0)
                     ? {
                         OR: [
                           ...(classIds.length > 0 ? [{ classId: { in: classIds } }] : []),
@@ -990,10 +1020,15 @@ export class TransfersService {
         );
       } catch (error) {
         // Log error but don't fail the request
-        this.logger.error('Failed to send transfer revocation email:', error instanceof Error ? error.stack : error);
+        this.logger.error(
+          'Failed to send transfer revocation email:',
+          error instanceof Error ? error.stack : error
+        );
       }
     } else if (!studentEmail) {
-      console.warn(`Student ${transfer.studentId} does not have an email address. Cannot send revocation notification.`);
+      console.warn(
+        `Student ${transfer.studentId} does not have an email address. Cannot send revocation notification.`
+      );
     }
 
     return {

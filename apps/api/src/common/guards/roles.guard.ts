@@ -1,9 +1,4 @@
-import {
-  Injectable,
-  CanActivate,
-  ExecutionContext,
-  ForbiddenException,
-} from '@nestjs/common';
+import { Injectable, CanActivate, ExecutionContext, ForbiddenException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { ROLES_KEY } from '../decorators/roles.decorator';
 import { UserWithContext } from '../../auth/types/user-with-context.type';
@@ -11,7 +6,7 @@ import { UserWithContext } from '../../auth/types/user-with-context.type';
 /**
  * Guard that checks if the user has one of the required roles.
  * Use with @Roles('SUPER_ADMIN', 'SCHOOL_ADMIN') decorator.
- * 
+ *
  * @example
  * ```typescript
  * @UseGuards(JwtAuthGuard, RolesGuard)
@@ -45,12 +40,9 @@ export class RolesGuard implements CanActivate {
     const hasRole = requiredRoles.includes(user.role);
 
     if (!hasRole) {
-      throw new ForbiddenException(
-        `Access denied. Required role: ${requiredRoles.join(' or ')}`
-      );
+      throw new ForbiddenException(`Access denied. Required role: ${requiredRoles.join(' or ')}`);
     }
 
     return true;
   }
 }
-

@@ -8,7 +8,9 @@ export enum ClassType {
 }
 
 export class CreateClassDto {
-  @ApiProperty({ description: 'Class name (e.g., "JSS1", "SS2", "Introduction to Computer Science")' })
+  @ApiProperty({
+    description: 'Class name (e.g., "JSS1", "SS2", "Introduction to Computer Science")',
+  })
   @IsString()
   @IsNotEmpty()
   name: string;
@@ -18,7 +20,10 @@ export class CreateClassDto {
   @IsOptional()
   code?: string;
 
-  @ApiProperty({ description: 'Class level for primary/secondary (e.g., "JSS1", "Class 1")', required: false })
+  @ApiProperty({
+    description: 'Class level for primary/secondary (e.g., "JSS1", "Class 1")',
+    required: false,
+  })
   @IsString()
   @IsOptional()
   classLevel?: string;
@@ -43,4 +48,3 @@ export class CreateClassDto {
   @IsOptional()
   description?: string;
 }
-

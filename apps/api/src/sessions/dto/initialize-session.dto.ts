@@ -76,4 +76,3 @@ export class MigrateStudentsDto {
   @IsNotEmpty()
   carryOver: boolean; // true = carry over, false = promote
 }
-

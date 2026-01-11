@@ -1,7 +1,26 @@
-import { Controller, Get, Post, Patch, UseGuards, UseInterceptors, UploadedFile, Request, Query, Body, Param } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  UseGuards,
+  UseInterceptors,
+  UploadedFile,
+  Request,
+  Query,
+  Body,
+  Param,
+} from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery, ApiConsumes } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+  ApiQuery,
+  ApiConsumes,
+} from '@nestjs/swagger';
 import { SchoolAdminSchoolsService } from './school-admin-schools.service';
 import { SchoolDto } from '../dto/school.dto';
 import { SchoolDashboardDto } from '../dto/dashboard.dto';
@@ -38,7 +57,12 @@ export class SchoolAdminSchoolsController {
   @Get('dashboard')
   @RequirePermission(PermissionResource.OVERVIEW, PermissionType.READ)
   @ApiOperation({ summary: 'Get school dashboard data' })
-  @ApiQuery({ name: 'schoolType', required: false, type: String, description: 'Filter by school type (PRIMARY, SECONDARY, TERTIARY)' })
+  @ApiQuery({
+    name: 'schoolType',
+    required: false,
+    type: String,
+    description: 'Filter by school type (PRIMARY, SECONDARY, TERTIARY)',
+  })
   @ApiResponse({
     status: 200,
     description: 'Dashboard data retrieved successfully',
@@ -46,7 +70,7 @@ export class SchoolAdminSchoolsController {
   })
   async getDashboard(
     @Request() req: any,
-    @Query('schoolType') schoolType?: string,
+    @Query('schoolType') schoolType?: string
   ): Promise<ResponseDto<SchoolDashboardDto>> {
     const data = await this.schoolAdminSchoolsService.getDashboard(req.user, schoolType);
     return ResponseDto.ok(data, 'Dashboard data retrieved successfully');
@@ -55,11 +79,31 @@ export class SchoolAdminSchoolsController {
   @Get('staff')
   @RequirePermission(PermissionResource.STAFF, PermissionType.READ)
   @ApiOperation({ summary: 'Get paginated staff list with search and filtering' })
-  @ApiQuery({ name: 'page', required: false, type: Number, description: 'Page number (default: 1)' })
-  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Items per page (default: 10, max: 100)' })
-  @ApiQuery({ name: 'search', required: false, type: String, description: 'Search query (name, email, subject)' })
+  @ApiQuery({
+    name: 'page',
+    required: false,
+    type: Number,
+    description: 'Page number (default: 1)',
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description: 'Items per page (default: 10, max: 100)',
+  })
+  @ApiQuery({
+    name: 'search',
+    required: false,
+    type: String,
+    description: 'Search query (name, email, subject)',
+  })
   @ApiQuery({ name: 'role', required: false, type: String, description: 'Filter by role' })
-  @ApiQuery({ name: 'schoolType', required: false, type: String, description: 'Filter by school type (PRIMARY, SECONDARY, TERTIARY)' })
+  @ApiQuery({
+    name: 'schoolType',
+    required: false,
+    type: String,
+    description: 'Filter by school type (PRIMARY, SECONDARY, TERTIARY)',
+  })
   @ApiResponse({
     status: 200,
     description: 'Staff list retrieved successfully',
@@ -71,7 +115,7 @@ export class SchoolAdminSchoolsController {
     @Query('limit') limit?: string,
     @Query('search') search?: string,
     @Query('role') role?: string,
-    @Query('schoolType') schoolType?: string,
+    @Query('schoolType') schoolType?: string
   ): Promise<ResponseDto<StaffListResponseDto>> {
     const query = {
       page: page ? parseInt(page, 10) : undefined,
@@ -112,7 +156,12 @@ export class SchoolAdminSchoolsController {
   @Patch('school')
   @RequirePermission(PermissionResource.OVERVIEW, PermissionType.ADMIN)
   @ApiOperation({ summary: 'Update school information' })
-  @ApiQuery({ name: 'token', required: false, type: String, description: 'Verification token for sensitive changes' })
+  @ApiQuery({
+    name: 'token',
+    required: false,
+    type: String,
+    description: 'Verification token for sensitive changes',
+  })
   @ApiResponse({
     status: 200,
     description: 'School updated successfully',
@@ -123,7 +172,11 @@ export class SchoolAdminSchoolsController {
     @Body() updateSchoolDto: UpdateSchoolDto,
     @Query('token') token?: string
   ): Promise<ResponseDto<SchoolDto>> {
-    const data = await this.schoolAdminSchoolsService.updateSchool(req.user, updateSchoolDto, token);
+    const data = await this.schoolAdminSchoolsService.updateSchool(
+      req.user,
+      updateSchoolDto,
+      token
+    );
     return ResponseDto.ok(data, 'School updated successfully');
   }
 
@@ -157,4 +210,3 @@ export class SchoolAdminSchoolsController {
     return ResponseDto.ok(data, 'Token verified successfully');
   }
 }
-

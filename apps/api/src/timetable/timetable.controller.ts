@@ -12,7 +12,10 @@ import {
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { TimetableService } from './timetable.service';
 import { ResourcesService } from './resources.service';
-import { CreateTimetablePeriodDto, CreateMasterScheduleDto } from './dto/create-timetable-period.dto';
+import {
+  CreateTimetablePeriodDto,
+  CreateMasterScheduleDto,
+} from './dto/create-timetable-period.dto';
 import { TimetablePeriodDto } from './dto/timetable.dto';
 import {
   ClassLevelDto,
@@ -158,7 +161,11 @@ export class TimetableController {
     @Query('schoolType') schoolType?: 'PRIMARY' | 'SECONDARY' | 'TERTIARY',
     @Query('termId') termId?: string
   ): Promise<ResponseDto<Record<string, TimetablePeriodDto[]>>> {
-    const data = await this.timetableService.getTimetablesForSchoolType(schoolId, schoolType, termId);
+    const data = await this.timetableService.getTimetablesForSchoolType(
+      schoolId,
+      schoolType,
+      termId
+    );
     return ResponseDto.ok(data, 'Timetables retrieved successfully');
   }
 
@@ -215,7 +222,9 @@ export class TimetableController {
   // Resource endpoints (ClassArms, Subjects, Rooms)
   @Post('generate-default-classes')
   @RequirePermission(PermissionResource.CLASSES, PermissionType.WRITE)
-  @ApiOperation({ summary: 'Generate default classes for a school type (Primary 1-6, JSS1-SS3, Year 1-4)' })
+  @ApiOperation({
+    summary: 'Generate default classes for a school type (Primary 1-6, JSS1-SS3, Year 1-4)',
+  })
   @ApiResponse({
     status: 201,
     description: 'Classes generated successfully',
@@ -231,7 +240,9 @@ export class TimetableController {
 
   @Get('class-levels')
   @RequirePermission(PermissionResource.CLASSES, PermissionType.READ)
-  @ApiOperation({ summary: 'Get all class levels for a school, optionally filtered by school type' })
+  @ApiOperation({
+    summary: 'Get all class levels for a school, optionally filtered by school type',
+  })
   @ApiResponse({
     status: 200,
     description: 'Class levels retrieved successfully',
@@ -286,14 +297,23 @@ export class TimetableController {
     description: 'Subjects retrieved successfully',
     type: [SubjectDto],
   })
-  @ApiQuery({ name: 'termId', required: false, description: 'Term ID to include teacher workload data (SECONDARY only)' })
+  @ApiQuery({
+    name: 'termId',
+    required: false,
+    description: 'Term ID to include teacher workload data (SECONDARY only)',
+  })
   async getSubjects(
     @Param('schoolId') schoolId: string,
     @Query('schoolType') schoolType?: 'PRIMARY' | 'SECONDARY' | 'TERTIARY',
     @Query('classLevelId') classLevelId?: string,
     @Query('termId') termId?: string
   ): Promise<ResponseDto<SubjectDto[]>> {
-    const data = await this.resourcesService.getSubjects(schoolId, schoolType, classLevelId, termId);
+    const data = await this.resourcesService.getSubjects(
+      schoolId,
+      schoolType,
+      classLevelId,
+      termId
+    );
     return ResponseDto.ok(data, 'Subjects retrieved successfully');
   }
 
@@ -358,7 +378,11 @@ export class TimetableController {
     @Param('subjectId') subjectId: string,
     @Body() dto: AssignTeacherToSubjectDto
   ): Promise<ResponseDto<SubjectDto>> {
-    const data = await this.resourcesService.assignTeacherToSubject(schoolId, subjectId, dto.teacherId);
+    const data = await this.resourcesService.assignTeacherToSubject(
+      schoolId,
+      subjectId,
+      dto.teacherId
+    );
     return ResponseDto.ok(data, 'Teacher assigned successfully');
   }
 
@@ -375,7 +399,11 @@ export class TimetableController {
     @Param('subjectId') subjectId: string,
     @Param('teacherId') teacherId: string
   ): Promise<ResponseDto<SubjectDto>> {
-    const data = await this.resourcesService.removeTeacherFromSubject(schoolId, subjectId, teacherId);
+    const data = await this.resourcesService.removeTeacherFromSubject(
+      schoolId,
+      subjectId,
+      teacherId
+    );
     return ResponseDto.ok(data, 'Teacher removed successfully');
   }
 
@@ -392,7 +420,10 @@ export class TimetableController {
     @Body() dto: AutoGenerateSubjectsDto
   ): Promise<ResponseDto<AutoGenerateSubjectsResponseDto>> {
     const data = await this.resourcesService.autoGenerateSubjects(schoolId, dto);
-    return ResponseDto.ok(data, `Generated ${data.created} subjects, ${data.skipped} already existed`);
+    return ResponseDto.ok(
+      data,
+      `Generated ${data.created} subjects, ${data.skipped} already existed`
+    );
   }
 
   // ============================================
@@ -412,7 +443,11 @@ export class TimetableController {
     @Param('subjectId') subjectId: string,
     @Query('sessionId') sessionId?: string
   ): Promise<ResponseDto<SubjectClassAssignmentsDto>> {
-    const data = await this.resourcesService.getSubjectClassAssignments(schoolId, subjectId, sessionId);
+    const data = await this.resourcesService.getSubjectClassAssignments(
+      schoolId,
+      subjectId,
+      sessionId
+    );
     return ResponseDto.ok(data, 'Class assignments retrieved successfully');
   }
 
@@ -445,7 +480,12 @@ export class TimetableController {
     @Param('classArmId') classArmId: string,
     @Query('sessionId') sessionId?: string
   ): Promise<ResponseDto<void>> {
-    await this.resourcesService.removeClassSubjectAssignment(schoolId, subjectId, classArmId, sessionId);
+    await this.resourcesService.removeClassSubjectAssignment(
+      schoolId,
+      subjectId,
+      classArmId,
+      sessionId
+    );
     return ResponseDto.ok(undefined, 'Assignment removed successfully');
   }
 
@@ -467,7 +507,11 @@ export class TimetableController {
     @Query('termId') termId: string,
     @Query('schoolType') schoolType?: 'PRIMARY' | 'SECONDARY' | 'TERTIARY'
   ): Promise<ResponseDto<any>> {
-    const data = await this.resourcesService.getTeacherWorkloadSummary(schoolId, termId, schoolType);
+    const data = await this.resourcesService.getTeacherWorkloadSummary(
+      schoolId,
+      termId,
+      schoolType
+    );
     return ResponseDto.ok(data, 'Teacher workloads retrieved successfully');
   }
 
@@ -475,7 +519,11 @@ export class TimetableController {
   @RequirePermission(PermissionResource.STAFF, PermissionType.READ)
   @ApiOperation({ summary: 'Get the least loaded teacher for a subject (for auto-assignment)' })
   @ApiQuery({ name: 'termId', required: true, description: 'Term ID to check workloads' })
-  @ApiQuery({ name: 'excludeTeacherIds', required: false, description: 'Comma-separated teacher IDs to exclude' })
+  @ApiQuery({
+    name: 'excludeTeacherIds',
+    required: false,
+    description: 'Comma-separated teacher IDs to exclude',
+  })
   @ApiResponse({
     status: 200,
     description: 'Least loaded teacher retrieved',
@@ -486,9 +534,17 @@ export class TimetableController {
     @Query('termId') termId: string,
     @Query('excludeTeacherIds') excludeTeacherIds?: string
   ): Promise<ResponseDto<any>> {
-    const excludeIds = excludeTeacherIds ? excludeTeacherIds.split(',').map(id => id.trim()) : [];
-    const data = await this.resourcesService.getLeastLoadedTeacherForSubject(schoolId, subjectId, termId, excludeIds);
-    return ResponseDto.ok(data, data ? 'Least loaded teacher found' : 'No competent teachers available');
+    const excludeIds = excludeTeacherIds ? excludeTeacherIds.split(',').map((id) => id.trim()) : [];
+    const data = await this.resourcesService.getLeastLoadedTeacherForSubject(
+      schoolId,
+      subjectId,
+      termId,
+      excludeIds
+    );
+    return ResponseDto.ok(
+      data,
+      data ? 'Least loaded teacher found' : 'No competent teachers available'
+    );
   }
 
   // ============================================
@@ -497,8 +553,14 @@ export class TimetableController {
 
   @Get('teachers/:teacherId/classes')
   @RequirePermission(PermissionResource.STAFF, PermissionType.READ)
-  @ApiOperation({ summary: 'Get classes assigned to a teacher from timetable (for SECONDARY schools)' })
-  @ApiQuery({ name: 'termId', required: false, description: 'Term ID (defaults to current active term)' })
+  @ApiOperation({
+    summary: 'Get classes assigned to a teacher from timetable (for SECONDARY schools)',
+  })
+  @ApiQuery({
+    name: 'termId',
+    required: false,
+    description: 'Term ID (defaults to current active term)',
+  })
   @ApiResponse({
     status: 200,
     description: 'Teacher class assignments retrieved successfully',
@@ -508,7 +570,11 @@ export class TimetableController {
     @Param('teacherId') teacherId: string,
     @Query('termId') termId?: string
   ): Promise<ResponseDto<any>> {
-    const data = await this.resourcesService.getTeacherTimetableClasses(schoolId, teacherId, termId);
+    const data = await this.resourcesService.getTeacherTimetableClasses(
+      schoolId,
+      teacherId,
+      termId
+    );
     return ResponseDto.ok(data, 'Teacher class assignments retrieved successfully');
   }
 
@@ -520,9 +586,7 @@ export class TimetableController {
     description: 'Rooms retrieved successfully',
     type: [RoomDto],
   })
-  async getRooms(
-    @Param('schoolId') schoolId: string
-  ): Promise<ResponseDto<RoomDto[]>> {
+  async getRooms(@Param('schoolId') schoolId: string): Promise<ResponseDto<RoomDto[]>> {
     const data = await this.resourcesService.getRooms(schoolId);
     return ResponseDto.ok(data, 'Rooms retrieved successfully');
   }
@@ -558,4 +622,3 @@ export class TimetableController {
     return ResponseDto.ok(data, 'Courses retrieved successfully');
   }
 }
-

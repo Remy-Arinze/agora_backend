@@ -67,7 +67,7 @@ export class PaymentsService {
     private readonly prisma: PrismaService
   ) {
     this.secretKey = this.configService.get<string>('PAYSTACK_SECRET_KEY') || null;
-    
+
     if (!this.secretKey) {
       this.logger.warn('PAYSTACK_SECRET_KEY not configured - payment features will be disabled');
     } else {
@@ -125,7 +125,11 @@ export class PaymentsService {
             isYearly,
             custom_fields: [
               { display_name: 'School ID', variable_name: 'school_id', value: schoolId },
-              { display_name: 'Plan', variable_name: 'plan', value: `${tier} (${isYearly ? 'Yearly' : 'Monthly'})` },
+              {
+                display_name: 'Plan',
+                variable_name: 'plan',
+                value: `${tier} (${isYearly ? 'Yearly' : 'Monthly'})`,
+              },
             ],
             ...metadata,
           },
@@ -195,7 +199,7 @@ export class PaymentsService {
       }
 
       const txData = data.data;
-      
+
       return {
         success: txData.status === 'success',
         reference: txData.reference,
@@ -215,10 +219,7 @@ export class PaymentsService {
   verifyWebhookSignature(body: string, signature: string): boolean {
     if (!this.secretKey) return false;
 
-    const hash = crypto
-      .createHmac('sha512', this.secretKey)
-      .update(body)
-      .digest('hex');
+    const hash = crypto.createHmac('sha512', this.secretKey).update(body).digest('hex');
 
     return hash === signature;
   }
@@ -318,4 +319,3 @@ export class PaymentsService {
     }
   }
 }
-

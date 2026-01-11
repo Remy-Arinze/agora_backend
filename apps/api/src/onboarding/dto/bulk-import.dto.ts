@@ -16,23 +16,32 @@ export class BulkImportRowDto {
   })
   dateOfBirth: string;
 
-  @ApiProperty({ example: 'JSS1', description: 'Class level (must match existing class name). Accepts both "class" and "classLevel" field names.', required: false })
+  @ApiProperty({
+    example: 'JSS1',
+    description:
+      'Class level (must match existing class name). Accepts both "class" and "classLevel" field names.',
+    required: false,
+  })
   class?: string;
 
-  @ApiProperty({ example: 'JSS1', description: 'Class level (must match existing class name). Alternative to "class" field.', required: false })
+  @ApiProperty({
+    example: 'JSS1',
+    description: 'Class level (must match existing class name). Alternative to "class" field.',
+    required: false,
+  })
   classLevel?: string;
 
-  @ApiProperty({ 
-    example: 'student@example.com', 
+  @ApiProperty({
+    example: 'student@example.com',
     description: 'Student email (optional, but recommended)',
-    required: false 
+    required: false,
   })
   email?: string;
 
-  @ApiProperty({ 
-    example: '+2348012345678', 
+  @ApiProperty({
+    example: '+2348012345678',
     description: 'Student phone number (optional)',
-    required: false 
+    required: false,
   })
   phone?: string;
 
@@ -130,4 +139,3 @@ export class ImportSummaryDto {
   })
   errors: Array<{ row: number; error: string }>;
 }
-

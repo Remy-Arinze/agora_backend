@@ -1,8 +1,8 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
-import { 
-  NerdcSubjectDto, 
-  NerdcCurriculumDto, 
+import {
+  NerdcSubjectDto,
+  NerdcCurriculumDto,
   NerdcCurriculumWeekDto,
   GetNerdcSubjectsQueryDto,
   getClassLevelCode,
@@ -30,10 +30,7 @@ export class NerdcCurriculumService {
           category: query.category,
         }),
       },
-      orderBy: [
-        { category: 'asc' },
-        { name: 'asc' },
-      ],
+      orderBy: [{ category: 'asc' }, { name: 'asc' }],
     });
 
     return subjects.map(this.mapToSubjectDto);
@@ -72,10 +69,7 @@ export class NerdcCurriculumService {
     // Find the subject first
     const subject = await (this.prisma as any).nerdcSubject.findFirst({
       where: {
-        OR: [
-          { code: subjectCode },
-          { name: { contains: subjectCode, mode: 'insensitive' } },
-        ],
+        OR: [{ code: subjectCode }, { name: { contains: subjectCode, mode: 'insensitive' } }],
         isActive: true,
       },
     });
@@ -181,10 +175,7 @@ export class NerdcCurriculumService {
           orderBy: { weekNumber: 'asc' },
         },
       },
-      orderBy: [
-        { classLevel: 'asc' },
-        { term: 'asc' },
-      ],
+      orderBy: [{ classLevel: 'asc' }, { term: 'asc' }],
     });
 
     return curricula.map((c: any) => this.mapToCurriculumDto(c));
@@ -367,4 +358,3 @@ export class NerdcCurriculumService {
     };
   }
 }
-

@@ -113,7 +113,7 @@ export class IdGeneratorService {
       .replace(/\b(SCHOOL|ACADEMY|COLLEGE|UNIVERSITY|INSTITUTE|SECONDARY|PRIMARY|HIGH)\b/gi, '')
       .replace(/[^A-Z0-9]/g, '')
       .substring(0, 4);
-    
+
     if (cleaned.length < 3) {
       return schoolName
         .toUpperCase()
@@ -121,7 +121,7 @@ export class IdGeneratorService {
         .substring(0, 3)
         .padEnd(3, 'X');
     }
-    
+
     return cleaned;
   }
 
@@ -149,7 +149,10 @@ export class IdGeneratorService {
    * Generate a unique public ID for admin/teacher/student
    * Format: AG-{schoolname shortened}-{short alphanumeric}
    */
-  async generatePublicId(schoolName: string, type: 'admin' | 'teacher' | 'student'): Promise<string> {
+  async generatePublicId(
+    schoolName: string,
+    type: 'admin' | 'teacher' | 'student'
+  ): Promise<string> {
     let publicId: string = '';
     let exists = true;
     const schoolShort = this.shortenSchoolName(schoolName);
@@ -157,23 +160,23 @@ export class IdGeneratorService {
     while (exists) {
       const shortId = this.generateShortId();
       publicId = `AG-${schoolShort}-${shortId}`;
-      
+
       const adminExists = await this.prisma.schoolAdmin.findFirst({
         where: { publicId },
       });
       const teacherExists = await this.prisma.teacher.findFirst({
         where: { publicId },
       });
-      const studentExists = type === 'student' 
-        ? await this.prisma.student.findFirst({
-            where: { publicId },
-          })
-        : null;
-      
+      const studentExists =
+        type === 'student'
+          ? await this.prisma.student.findFirst({
+              where: { publicId },
+            })
+          : null;
+
       exists = !!(adminExists || teacherExists || studentExists);
     }
 
     return publicId;
   }
 }
-

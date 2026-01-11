@@ -17,7 +17,9 @@ export class CreateCourseRegistrationDto {
   @IsNotEmpty()
   academicYear: string;
 
-  @ApiPropertyOptional({ description: 'Term ID (optional, for tracking which term registration is for)' })
+  @ApiPropertyOptional({
+    description: 'Term ID (optional, for tracking which term registration is for)',
+  })
   @IsString()
   @IsOptional()
   termId?: string;
@@ -92,4 +94,3 @@ export class CourseRegistrationDto {
   @ApiProperty()
   updatedAt: Date;
 }
-

@@ -17,18 +17,20 @@ async function bootstrap() {
   // Security: Helmet middleware for HTTP security headers
   // Protects against XSS, clickjacking, MIME sniffing, and other attacks
   const isProduction = process.env.NODE_ENV === 'production';
-  app.use(helmet({
-    contentSecurityPolicy: {
-      directives: {
-        defaultSrc: ["'self'"],
-        styleSrc: ["'self'", "'unsafe-inline'"],
-        scriptSrc: ["'self'"],
-        imgSrc: ["'self'", 'data:', 'https:'],
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          styleSrc: ["'self'", "'unsafe-inline'"],
+          scriptSrc: ["'self'"],
+          imgSrc: ["'self'", 'data:', 'https:'],
+        },
       },
-    },
-    // Only disable crossOriginEmbedderPolicy in development for Swagger UI
-    crossOriginEmbedderPolicy: isProduction,
-  }));
+      // Only disable crossOriginEmbedderPolicy in development for Swagger UI
+      crossOriginEmbedderPolicy: isProduction,
+    })
+  );
 
   // Cookie parser for httpOnly refresh token cookies
   app.use(cookieParser());
@@ -61,9 +63,7 @@ async function bootstrap() {
   if (!isProduction) {
     const config = new DocumentBuilder()
       .setTitle('Agora API')
-      .setDescription(
-        'Multi-Tenant Digital Education Identity Platform - Chain-of-Trust Registry'
-      )
+      .setDescription('Multi-Tenant Digital Education Identity Platform - Chain-of-Trust Registry')
       .setVersion('1.0.0')
       .addBearerAuth(
         {
@@ -95,7 +95,9 @@ async function bootstrap() {
       res.json(document);
     });
 
-    logger.log(`📚 Swagger docs available at http://localhost:${process.env.PORT || 4000}/api/swagger`);
+    logger.log(
+      `📚 Swagger docs available at http://localhost:${process.env.PORT || 4000}/api/swagger`
+    );
     logger.log(`📦 Swagger JSON at http://localhost:${process.env.PORT || 4000}/api/swagger-json`);
   } else {
     logger.log('🔒 Swagger documentation disabled in production');
@@ -107,4 +109,3 @@ async function bootstrap() {
 }
 
 bootstrap();
-

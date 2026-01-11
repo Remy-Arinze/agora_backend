@@ -71,10 +71,7 @@ export class SchoolScopedRepository {
         },
         teacher: true,
       },
-      orderBy: [
-        { academicYear: 'desc' },
-        { term: 'desc' },
-      ],
+      orderBy: [{ academicYear: 'desc' }, { term: 'desc' }],
     });
   }
 
@@ -105,10 +102,7 @@ export class SchoolScopedRepository {
   /**
    * Find enrollment by ID (scoped to school)
    */
-  async findEnrollmentById(
-    enrollmentId: string,
-    schoolId: string
-  ): Promise<Enrollment | null> {
+  async findEnrollmentById(enrollmentId: string, schoolId: string): Promise<Enrollment | null> {
     return this.prisma.enrollment.findFirst({
       where: {
         id: enrollmentId,
@@ -127,10 +121,7 @@ export class SchoolScopedRepository {
   /**
    * Find student by ID (scoped to school - must have active enrollment)
    */
-  async findStudentById(
-    studentId: string,
-    schoolId: string
-  ): Promise<Student | null> {
+  async findStudentById(studentId: string, schoolId: string): Promise<Student | null> {
     return this.prisma.student.findFirst({
       where: {
         id: studentId,
@@ -150,4 +141,3 @@ export class SchoolScopedRepository {
     });
   }
 }
-

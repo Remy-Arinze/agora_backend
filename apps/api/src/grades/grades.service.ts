@@ -1,4 +1,9 @@
-import { Injectable, BadRequestException, NotFoundException, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { SchoolRepository } from '../schools/domain/repositories/school.repository';
 import { StaffRepository } from '../schools/domain/repositories/staff.repository';
@@ -90,13 +95,15 @@ export class GradesService {
 
       // Check if teacher is authorized to grade this subject for this class
       const classId = enrollment.classArmId || enrollment.classId;
-      
+
       // Check 1: Is teacher a primary/class teacher? (can grade all subjects for PRIMARY)
       const isPrimaryTeacher = await this.prisma.classTeacher.findFirst({
         where: {
           teacherId: teacher.id,
           isPrimary: true,
-          ...(enrollment.classArmId ? { classArmId: enrollment.classArmId } : { classId: enrollment.classId }),
+          ...(enrollment.classArmId
+            ? { classArmId: enrollment.classArmId }
+            : { classId: enrollment.classId }),
         },
       });
 
@@ -106,7 +113,9 @@ export class GradesService {
           where: {
             teacherId: teacher.id,
             subjectId: dto.subjectId,
-            ...(enrollment.classArmId ? { classArmId: enrollment.classArmId } : { classId: enrollment.classId }),
+            ...(enrollment.classArmId
+              ? { classArmId: enrollment.classArmId }
+              : { classId: enrollment.classId }),
           },
         });
 
@@ -116,12 +125,16 @@ export class GradesService {
             where: {
               teacherId: teacher.id,
               subjectId: dto.subjectId,
-              ...(enrollment.classArmId ? { classArmId: enrollment.classArmId } : { classId: enrollment.classId }),
+              ...(enrollment.classArmId
+                ? { classArmId: enrollment.classArmId }
+                : { classId: enrollment.classId }),
             },
           });
 
           if (!timetableAssignment) {
-            throw new ForbiddenException('You are not authorized to grade this subject for this class');
+            throw new ForbiddenException(
+              'You are not authorized to grade this subject for this class'
+            );
           }
         }
       }
@@ -181,13 +194,13 @@ export class GradesService {
     // Get term info if termId provided
     let termName = dto.term;
     let academicYear = dto.academicYear || enrollment.academicYear;
-    
+
     if (dto.termId) {
       const term = await this.prisma.term.findUnique({
         where: { id: dto.termId },
         include: { academicSession: true },
       });
-      
+
       if (term) {
         termName = term.name;
         academicYear = term.academicSession?.academicYear || academicYear;
@@ -272,7 +285,12 @@ export class GradesService {
   /**
    * Update a grade
    */
-  async updateGrade(schoolId: string, gradeId: string, dto: UpdateGradeDto, user: UserWithContext): Promise<any> {
+  async updateGrade(
+    schoolId: string,
+    gradeId: string,
+    dto: UpdateGradeDto,
+    user: UserWithContext
+  ): Promise<any> {
     const teacherProfileId = user.currentProfileId;
     if (!teacherProfileId) {
       throw new ForbiddenException('Teacher profile not found');
@@ -525,10 +543,7 @@ export class GradesService {
       enrollmentWhere.OR = [
         { classId: classId },
         {
-          AND: [
-            { classLevel: classData.classLevel },
-            { classId: null },
-          ],
+          AND: [{ classLevel: classData.classLevel }, { classId: null }],
         },
       ];
     }
@@ -565,7 +580,7 @@ export class GradesService {
       // Note: currentProfileId contains teacherId (unique string), not the database id
       const teacherIdString = user.currentProfileId;
       const teacher = await this.staffRepository.findTeacherByTeacherId(teacherIdString);
-      
+
       if (teacher) {
         // Get teacher's assigned subjects for this class/ClassArm
         // Use teacher.id (database ID) for ClassTeacher.teacherId
@@ -590,7 +605,7 @@ export class GradesService {
             where.subject = { in: assignedSubjects };
           }
         }
-        
+
         // Also filter by teacherId to only show grades entered by this teacher
         // Use teacher.id (database ID) for Grade.teacherId
         where.teacherId = teacher.id;
@@ -625,11 +640,7 @@ export class GradesService {
           },
         },
       },
-      orderBy: [
-        { academicYear: 'desc' },
-        { term: 'desc' },
-        { createdAt: 'desc' },
-      ],
+      orderBy: [{ academicYear: 'desc' }, { term: 'desc' }, { createdAt: 'desc' }],
     });
 
     return grades.map((grade) => ({
@@ -713,11 +724,11 @@ export class GradesService {
       // Note: currentProfileId contains teacherId (unique string), not the database id
       const teacherIdString = user.currentProfileId;
       const teacher = await this.staffRepository.findTeacherByTeacherId(teacherIdString);
-      
+
       if (teacher) {
         // Use teacher.id (database ID) for Grade.teacherId
         where.teacherId = teacher.id;
-        
+
         if (!subject) {
           // Get teacher's subjects from their class assignments (both Class and ClassArm)
           // Use teacher.id (database ID) for ClassTeacher.teacherId
@@ -788,11 +799,7 @@ export class GradesService {
           },
         },
       },
-      orderBy: [
-        { academicYear: 'desc' },
-        { term: 'desc' },
-        { createdAt: 'desc' },
-      ],
+      orderBy: [{ academicYear: 'desc' }, { term: 'desc' }, { createdAt: 'desc' }],
     });
 
     return grades.map((grade) => ({
@@ -813,9 +820,10 @@ export class GradesService {
       signedAt: grade.signedAt,
       createdAt: grade.createdAt,
       updatedAt: grade.updatedAt,
-      percentage: grade.maxScore.toNumber() > 0 
-        ? (grade.score.toNumber() / grade.maxScore.toNumber()) * 100 
-        : 0,
+      percentage:
+        grade.maxScore.toNumber() > 0
+          ? (grade.score.toNumber() / grade.maxScore.toNumber()) * 100
+          : 0,
       enrollment: {
         id: grade.enrollment.id,
         classLevel: grade.enrollment.classLevel,
@@ -942,7 +950,9 @@ export class GradesService {
           });
 
           if (!timetableAssignment) {
-            throw new ForbiddenException('You are not authorized to grade this subject for this class');
+            throw new ForbiddenException(
+              'You are not authorized to grade this subject for this class'
+            );
           }
         }
       }
@@ -1020,13 +1030,13 @@ export class GradesService {
     // Get term info if termId provided
     let termName = '';
     let academicYear = classData.academicYear;
-    
+
     if (dto.termId) {
       const term = await this.prisma.term.findUnique({
         where: { id: dto.termId },
         include: { academicSession: true },
       });
-      
+
       if (term) {
         termName = term.name;
         academicYear = term.academicSession?.academicYear || academicYear;
@@ -1059,7 +1069,9 @@ export class GradesService {
     // Validate all scores
     for (const gradeEntry of dto.grades) {
       if (gradeEntry.score < 0 || gradeEntry.score > dto.maxScore) {
-        throw new BadRequestException(`Score must be between 0 and ${dto.maxScore} for enrollment ${gradeEntry.enrollmentId}`);
+        throw new BadRequestException(
+          `Score must be between 0 and ${dto.maxScore} for enrollment ${gradeEntry.enrollmentId}`
+        );
       }
     }
 
@@ -1142,4 +1154,3 @@ export class GradesService {
     }));
   }
 }
-

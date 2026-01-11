@@ -41,9 +41,7 @@ export class StaffValidatorService {
     });
 
     if (existingTeacher) {
-      throw new ConflictException(
-        `A teacher with email ${email} already exists in this school`
-      );
+      throw new ConflictException(`A teacher with email ${email} already exists in this school`);
     }
   }
 
@@ -167,4 +165,3 @@ export class StaffValidatorService {
     return phoneRegex.test(phone.replace(/\s/g, ''));
   }
 }
-

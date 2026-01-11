@@ -12,4 +12,3 @@ import { SchoolsModule } from '../schools/schools.module';
   exports: [TimetableService, ResourcesService],
 })
 export class TimetableModule {}
-

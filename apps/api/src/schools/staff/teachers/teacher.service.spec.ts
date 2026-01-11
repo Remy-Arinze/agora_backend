@@ -149,7 +149,10 @@ describe('TeacherService', () => {
         ...mockTeacher,
         subject: 'Updated Subject',
       } as any);
-      staffMapper.toTeacherDto.mockReturnValue({ id: 'teacher-1', subject: 'Updated Subject' } as any);
+      staffMapper.toTeacherDto.mockReturnValue({
+        id: 'teacher-1',
+        subject: 'Updated Subject',
+      } as any);
 
       const result = await service.updateTeacher('school-1', 'teacher-1', {
         subject: 'Updated Subject',
@@ -178,4 +181,3 @@ describe('TeacherService', () => {
     });
   });
 });
-

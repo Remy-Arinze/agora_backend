@@ -69,4 +69,3 @@ export class ActiveSessionDto {
   @ApiProperty({ type: TermDto, required: false })
   term?: TermDto;
 }
-

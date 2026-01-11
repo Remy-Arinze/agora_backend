@@ -12,4 +12,3 @@ import { GoogleCalendarModule } from '../integrations/google-calendar/google-cal
   exports: [EventService],
 })
 export class EventsModule {}
-

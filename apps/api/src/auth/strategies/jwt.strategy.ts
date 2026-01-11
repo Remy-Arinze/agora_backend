@@ -13,7 +13,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   ) {
     const secret = configService.get<string>('JWT_SECRET');
     if (!secret) {
-      throw new Error('JWT_SECRET environment variable is required. Please set it in your .env file.');
+      throw new Error(
+        'JWT_SECRET environment variable is required. Please set it in your .env file.'
+      );
     }
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
@@ -27,14 +29,13 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     if (!user) {
       throw new UnauthorizedException();
     }
-    
+
     // ✅ Attach school context from JWT to user object
     return {
       ...user,
-      currentSchoolId: payload.schoolId,    // ✅ From JWT
-      currentPublicId: payload.publicId,     // ✅ From JWT
-      currentProfileId: payload.profileId,   // ✅ From JWT
+      currentSchoolId: payload.schoolId, // ✅ From JWT
+      currentPublicId: payload.publicId, // ✅ From JWT
+      currentProfileId: payload.profileId, // ✅ From JWT
     };
   }
 }
-

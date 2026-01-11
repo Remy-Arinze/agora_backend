@@ -24,18 +24,18 @@ export class HttpExceptionFilter implements ExceptionFilter {
     if (exception instanceof HttpException) {
       status = exception.getStatus();
       const exceptionResponse = exception.getResponse();
-      
+
       if (typeof exceptionResponse === 'string') {
         message = exceptionResponse;
       } else if (typeof exceptionResponse === 'object' && exceptionResponse !== null) {
         const responseObj = exceptionResponse as any;
         message = responseObj.message || message;
-        
+
         // Handle validation errors
         if (Array.isArray(responseObj.message)) {
           message = responseObj.message.join(', ');
         }
-        
+
         // Include error details if available
         if (responseObj.error) {
           details = responseObj.error;
@@ -77,4 +77,3 @@ export class HttpExceptionFilter implements ExceptionFilter {
     });
   }
 }
-

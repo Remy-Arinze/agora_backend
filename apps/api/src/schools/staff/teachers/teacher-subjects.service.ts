@@ -1,14 +1,14 @@
-import { 
-  Injectable, 
-  BadRequestException, 
+import {
+  Injectable,
+  BadRequestException,
   NotFoundException,
-  ConflictException 
+  ConflictException,
 } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma.service';
 import { SchoolRepository } from '../../domain/repositories/school.repository';
 import { StaffRepository } from '../../domain/repositories/staff.repository';
-import { 
-  TeacherSubjectDto, 
+import {
+  TeacherSubjectDto,
   TeacherWithSubjectsDto,
   AssignableSubjectDto,
   UpdateTeacherSubjectsDto,
@@ -23,7 +23,7 @@ export class TeacherSubjectsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly schoolRepository: SchoolRepository,
-    private readonly staffRepository: StaffRepository,
+    private readonly staffRepository: StaffRepository
   ) {}
 
   /**
@@ -54,7 +54,7 @@ export class TeacherSubjectsService {
         const assignedClassCount = await this.staffRepository.getTeacherSubjectAssignmentCount(
           teacherId,
           st.subject.name,
-          st.subject.id  // Pass subjectId for TimetablePeriod lookup
+          st.subject.id // Pass subjectId for TimetablePeriod lookup
         );
 
         return {
@@ -75,7 +75,10 @@ export class TeacherSubjectsService {
   /**
    * Get teacher with all subjects and total assignments
    */
-  async getTeacherWithSubjects(schoolId: string, teacherId: string): Promise<TeacherWithSubjectsDto> {
+  async getTeacherWithSubjects(
+    schoolId: string,
+    teacherId: string
+  ): Promise<TeacherWithSubjectsDto> {
     // Validate school exists
     const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
     if (!school) {
@@ -97,7 +100,7 @@ export class TeacherSubjectsService {
         const assignedClassCount = await this.staffRepository.getTeacherSubjectAssignmentCount(
           teacherId,
           st.subject.name,
-          st.subject.id  // Pass subjectId for TimetablePeriod lookup
+          st.subject.id // Pass subjectId for TimetablePeriod lookup
         );
 
         return {
@@ -198,9 +201,7 @@ export class TeacherSubjectsService {
     // Check if teacher already has this subject
     const hasSubject = await this.staffRepository.hasSubjectCompetency(teacherId, subjectId);
     if (hasSubject) {
-      throw new ConflictException(
-        `Teacher is already qualified to teach ${subject.name}`
-      );
+      throw new ConflictException(`Teacher is already qualified to teach ${subject.name}`);
     }
 
     // Add subject to teacher
@@ -210,7 +211,7 @@ export class TeacherSubjectsService {
     const assignedClassCount = await this.staffRepository.getTeacherSubjectAssignmentCount(
       teacherId,
       subject.name,
-      subjectId  // Pass subjectId for TimetablePeriod lookup
+      subjectId // Pass subjectId for TimetablePeriod lookup
     );
 
     return {
@@ -256,22 +257,20 @@ export class TeacherSubjectsService {
     // Check if teacher has this subject
     const hasSubject = await this.staffRepository.hasSubjectCompetency(teacherId, subjectId);
     if (!hasSubject) {
-      throw new BadRequestException(
-        `Teacher is not currently assigned to teach ${subject.name}`
-      );
+      throw new BadRequestException(`Teacher is not currently assigned to teach ${subject.name}`);
     }
 
     // Check if teacher is currently teaching this subject in any class (includes TimetablePeriod)
     const assignmentCount = await this.staffRepository.getTeacherSubjectAssignmentCount(
       teacherId,
       subject.name,
-      subjectId  // Pass subjectId for TimetablePeriod lookup
+      subjectId // Pass subjectId for TimetablePeriod lookup
     );
     if (assignmentCount > 0) {
       throw new ConflictException(
         `Cannot remove ${subject.name} from teacher's competencies. ` +
-        `Teacher is currently assigned to teach this subject in ${assignmentCount} class(es). ` +
-        `Please remove the class assignments first.`
+          `Teacher is currently assigned to teach this subject in ${assignmentCount} class(es). ` +
+          `Please remove the class assignments first.`
       );
     }
 
@@ -310,10 +309,7 @@ export class TeacherSubjectsService {
     const existingAssignments = await this.prisma.classTeacher.findMany({
       where: {
         teacherId,
-        OR: [
-          { classId },
-          { classArmId: classId },
-        ],
+        OR: [{ classId }, { classArmId: classId }],
       },
       select: {
         subject: true,
@@ -349,7 +345,8 @@ export class TeacherSubjectsService {
     if (!teacherSubjectNames.includes(subjectName.toLowerCase())) {
       return {
         valid: false,
-        message: `Teacher is not qualified to teach ${subjectName}. ` +
+        message:
+          `Teacher is not qualified to teach ${subjectName}. ` +
           `Please add this subject to the teacher's competencies first.`,
       };
     }
@@ -357,4 +354,3 @@ export class TeacherSubjectsService {
     return { valid: true };
   }
 }
-

@@ -7,4 +7,3 @@ import { TenantService } from './tenant.service';
   exports: [TenantMiddleware, TenantService],
 })
 export class TenantModule {}
-

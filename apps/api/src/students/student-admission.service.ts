@@ -42,7 +42,7 @@ export class StudentAdmissionService {
         // Student already exists in Agora system
         throw new ConflictException(
           `A student with email ${studentData.email} already exists in the Agora system. ` +
-          `Please initiate a transfer instead of creating a new admission.`
+            `Please initiate a transfer instead of creating a new admission.`
         );
       }
     }
@@ -169,7 +169,9 @@ export class StudentAdmissionService {
             });
 
             if (currentEnrollments >= classArm.capacity) {
-              throw new BadRequestException(`ClassArm "${classArm.name}" is at full capacity (${classArm.capacity} students)`);
+              throw new BadRequestException(
+                `ClassArm "${classArm.name}" is at full capacity (${classArm.capacity} students)`
+              );
             }
           }
 
@@ -182,10 +184,7 @@ export class StudentAdmissionService {
             where: {
               schoolId: school.id,
               academicYear: academicYear,
-              OR: [
-                { name: studentData.classLevel },
-                { classLevel: studentData.classLevel },
-              ],
+              OR: [{ name: studentData.classLevel }, { classLevel: studentData.classLevel }],
               isActive: true,
             },
           });
@@ -220,7 +219,9 @@ export class StudentAdmissionService {
             throw new ConflictException(`User with email ${studentData.email} already exists`);
           }
           if (Array.isArray(target) && target.includes('phone')) {
-            throw new ConflictException(`User with phone number ${studentData.phone} already exists`);
+            throw new ConflictException(
+              `User with phone number ${studentData.phone} already exists`
+            );
           }
           if (Array.isArray(target) && target.includes('publicId')) {
             throw new ConflictException('Public ID conflict. Please try again.');
@@ -273,4 +274,3 @@ export class StudentAdmissionService {
     return `${year - 1}/${year}`;
   }
 }
-

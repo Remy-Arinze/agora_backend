@@ -1,14 +1,13 @@
-import {
-  Injectable,
-  CanActivate,
-  ExecutionContext,
-  ForbiddenException,
-} from '@nestjs/common';
+import { Injectable, CanActivate, ExecutionContext, ForbiddenException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { PrismaService } from '../../database/prisma.service';
 import { UserWithContext } from '../../auth/types/user-with-context.type';
 import { PERMISSION_KEY } from '../decorators/permission.decorator';
-import { PermissionResource, PermissionType, isPrincipalRole } from '../../schools/dto/permission.dto';
+import {
+  PermissionResource,
+  PermissionType,
+  isPrincipalRole,
+} from '../../schools/dto/permission.dto';
 
 @Injectable()
 export class PermissionGuard implements CanActivate {
@@ -18,10 +17,10 @@ export class PermissionGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const requiredPermission = this.reflector.get<{ resource: PermissionResource; type: PermissionType }>(
-      PERMISSION_KEY,
-      context.getHandler()
-    );
+    const requiredPermission = this.reflector.get<{
+      resource: PermissionResource;
+      type: PermissionType;
+    }>(PERMISSION_KEY, context.getHandler());
 
     // If no permission required, allow access
     if (!requiredPermission) {
@@ -39,7 +38,7 @@ export class PermissionGuard implements CanActivate {
     // For school admins, check permissions
     if (user.role === 'SCHOOL_ADMIN') {
       const schoolId = request.schoolId || user.currentSchoolId;
-      
+
       if (!schoolId) {
         throw new ForbiddenException('School context required');
       }
@@ -111,4 +110,3 @@ export class PermissionGuard implements CanActivate {
     throw new ForbiddenException('Permission denied');
   }
 }
-

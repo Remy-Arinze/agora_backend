@@ -58,10 +58,7 @@ export class OnboardingService {
     return classArm?.id || null;
   }
 
-  async bulkImport(
-    file: Express.Multer.File,
-    tenantId: string
-  ): Promise<ImportSummaryDto> {
+  async bulkImport(file: Express.Multer.File, tenantId: string): Promise<ImportSummaryDto> {
     if (!file) {
       throw new BadRequestException('File is required');
     }
@@ -71,9 +68,9 @@ export class OnboardingService {
     const sheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];
     // Parse with header row - XLSX preserves header case from CSV
-    const rows: any[] = XLSX.utils.sheet_to_json(worksheet, { 
+    const rows: any[] = XLSX.utils.sheet_to_json(worksheet, {
       defval: '', // Use empty string for empty cells
-      raw: false // Convert all values to strings for consistent handling
+      raw: false, // Convert all values to strings for consistent handling
     });
 
     const summary: ImportSummaryDto = {
@@ -93,17 +90,17 @@ export class OnboardingService {
         // Support both 'class' and 'classLevel' field names for backward compatibility
         const classLevelValue = row.classLevel || row.class;
         const classLevel = classLevelValue ? String(classLevelValue).trim() : null;
-        
+
         // Support 'classArm' field for schools using ClassArms (e.g., "A", "Gold", "Blue")
         const classArmValue = row.classArm;
         const classArm = classArmValue ? String(classArmValue).trim() : null;
-        
+
         // Trim and validate required fields (check for empty strings after trimming)
         const firstName = row.firstName ? String(row.firstName).trim() : null;
         const lastName = row.lastName ? String(row.lastName).trim() : null;
         const dateOfBirth = row.dateOfBirth ? String(row.dateOfBirth).trim() : null;
         const parentPhone = row.parentPhone ? String(row.parentPhone).trim() : null;
-        
+
         // Validate required fields
         if (!firstName || !lastName || !dateOfBirth || !classLevel || !parentPhone) {
           const missingFields = [];
@@ -112,7 +109,7 @@ export class OnboardingService {
           if (!dateOfBirth) missingFields.push('dateOfBirth');
           if (!classLevel) missingFields.push('class/classLevel');
           if (!parentPhone) missingFields.push('parentPhone');
-          
+
           summary.errors.push({
             row: rowNumber,
             error: `Missing required fields: ${missingFields.join(', ')}`,
@@ -129,7 +126,9 @@ export class OnboardingService {
             classArmId = foundClassArmId;
           } else {
             // ClassArm not found - add warning but continue with classLevel only
-            console.warn(`ClassArm "${classArm}" not found for ClassLevel "${classLevel}" in row ${rowNumber}. Will use classLevel only.`);
+            console.warn(
+              `ClassArm "${classArm}" not found for ClassLevel "${classLevel}" in row ${rowNumber}. Will use classLevel only.`
+            );
           }
         }
 
@@ -146,12 +145,16 @@ export class OnboardingService {
           parentName: row.parentName ? String(row.parentName).trim() : parentPhone, // Fallback to phone if name not provided
           parentPhone: parentPhone,
           parentEmail: row.parentEmail ? String(row.parentEmail).trim() : undefined,
-          parentRelationship: row.parentRelationship ? String(row.parentRelationship).trim() : 'Guardian',
+          parentRelationship: row.parentRelationship
+            ? String(row.parentRelationship).trim()
+            : 'Guardian',
           bloodGroup: row.bloodGroup ? String(row.bloodGroup).trim() : undefined,
           allergies: row.allergies ? String(row.allergies).trim() : undefined,
           medications: row.medications ? String(row.medications).trim() : undefined,
           emergencyContact: row.emergencyContact ? String(row.emergencyContact).trim() : undefined,
-          emergencyContactPhone: row.emergencyContactPhone ? String(row.emergencyContactPhone).trim() : undefined,
+          emergencyContactPhone: row.emergencyContactPhone
+            ? String(row.emergencyContactPhone).trim()
+            : undefined,
           medicalNotes: row.medicalNotes ? String(row.medicalNotes).trim() : undefined,
         });
 
@@ -171,4 +174,3 @@ export class OnboardingService {
     return summary;
   }
 }
-

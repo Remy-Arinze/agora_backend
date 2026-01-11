@@ -20,18 +20,22 @@ export class StaffMapper {
       profileImage: admin.profileImage,
       publicId: admin.publicId,
       createdAt: admin.createdAt,
-      user: admin.user ? {
-        id: admin.user.id,
-        email: admin.user.email,
-        phone: admin.user.phone,
-        role: admin.user.role,
-        accountStatus: admin.user.accountStatus,
-      } : undefined,
-      school: admin.school ? {
-        id: admin.school.id,
-        name: admin.school.name,
-        schoolId: admin.school.schoolId,
-      } : undefined,
+      user: admin.user
+        ? {
+            id: admin.user.id,
+            email: admin.user.email,
+            phone: admin.user.phone,
+            role: admin.user.role,
+            accountStatus: admin.user.accountStatus,
+          }
+        : undefined,
+      school: admin.school
+        ? {
+            id: admin.school.id,
+            name: admin.school.name,
+            schoolId: admin.school.schoolId,
+          }
+        : undefined,
     };
   }
 
@@ -52,18 +56,22 @@ export class StaffMapper {
       profileImage: teacher.profileImage,
       publicId: teacher.publicId,
       createdAt: teacher.createdAt,
-      user: teacher.user ? {
-        id: teacher.user.id,
-        email: teacher.user.email,
-        phone: teacher.user.phone,
-        role: teacher.user.role,
-        accountStatus: teacher.user.accountStatus,
-      } : undefined,
-      school: teacher.school ? {
-        id: teacher.school.id,
-        name: teacher.school.name,
-        schoolId: teacher.school.schoolId,
-      } : undefined,
+      user: teacher.user
+        ? {
+            id: teacher.user.id,
+            email: teacher.user.email,
+            phone: teacher.user.phone,
+            role: teacher.user.role,
+            accountStatus: teacher.user.accountStatus,
+          }
+        : undefined,
+      school: teacher.school
+        ? {
+            id: teacher.school.id,
+            name: teacher.school.name,
+            schoolId: teacher.school.schoolId,
+          }
+        : undefined,
     };
   }
 
@@ -81,4 +89,3 @@ export class StaffMapper {
     return teachers.map((teacher) => this.toTeacherDto(teacher));
   }
 }
-

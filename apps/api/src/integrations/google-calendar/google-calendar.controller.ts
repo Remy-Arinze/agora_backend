@@ -1,12 +1,4 @@
-import {
-  Controller,
-  Get,
-  Delete,
-  Query,
-  Param,
-  UseGuards,
-  Res,
-} from '@nestjs/common';
+import { Controller, Get, Delete, Query, Param, UseGuards, Res } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { Response } from 'express';
 import { GoogleCalendarService } from './google-calendar.service';
@@ -36,13 +28,15 @@ export class GoogleCalendarController {
   ): Promise<void> {
     try {
       const { userId, schoolId } = await this.googleCalendarService.handleCallback(code, state);
-      
+
       // Redirect to frontend with success message
-      const redirectUrl = process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3000/dashboard/teacher/calendar';
+      const redirectUrl =
+        process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3000/dashboard/teacher/calendar';
       res.redirect(`${redirectUrl}?google_calendar_connected=true`);
     } catch (error) {
       // Redirect to frontend with error message
-      const redirectUrl = process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3000/dashboard/teacher/calendar';
+      const redirectUrl =
+        process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3000/dashboard/teacher/calendar';
       res.redirect(`${redirectUrl}?google_calendar_error=true`);
     }
   }

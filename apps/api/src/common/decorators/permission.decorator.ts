@@ -10,4 +10,3 @@ export const PERMISSION_KEY = 'permission';
  */
 export const RequirePermission = (resource: PermissionResource, type: PermissionType) =>
   SetMetadata(PERMISSION_KEY, { resource, type });
-

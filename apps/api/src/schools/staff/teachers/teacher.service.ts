@@ -1,4 +1,9 @@
-import { Injectable, ConflictException, BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  ConflictException,
+  BadRequestException,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma.service';
 import { AuthService } from '../../../auth/auth.service';
 import { SchoolRepository } from '../../domain/repositories/school.repository';
@@ -107,7 +112,9 @@ export class TeacherService {
             throw new ConflictException(`User with email ${teacherData.email} already exists`);
           }
           if (Array.isArray(target) && target.includes('phone')) {
-            throw new ConflictException(`User with phone number ${teacherData.phone} already exists`);
+            throw new ConflictException(
+              `User with phone number ${teacherData.phone} already exists`
+            );
           }
         }
         throw error;
@@ -144,17 +151,19 @@ export class TeacherService {
             console.warn(`Subject ${subjectId} not found or doesn't belong to school, skipping`);
             continue;
           }
-          
+
           // Create SubjectTeacher record
-          await this.prisma.subjectTeacher.create({
-            data: {
-              teacherId: result.teacher.id,
-              subjectId,
-            },
-          }).catch((e) => {
-            // Skip if duplicate (already exists)
-            if (e.code !== 'P2002') throw e;
-          });
+          await this.prisma.subjectTeacher
+            .create({
+              data: {
+                teacherId: result.teacher.id,
+                subjectId,
+              },
+            })
+            .catch((e) => {
+              // Skip if duplicate (already exists)
+              if (e.code !== 'P2002') throw e;
+            });
         }
       } catch (error) {
         console.error('Failed to assign subjects to teacher:', error);
@@ -235,7 +244,9 @@ export class TeacherService {
     // Validate file type
     const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
     if (!allowedMimeTypes.includes(file.mimetype)) {
-      throw new BadRequestException('Invalid file type. Only JPEG, PNG, GIF, and WebP images are allowed');
+      throw new BadRequestException(
+        'Invalid file type. Only JPEG, PNG, GIF, and WebP images are allowed'
+      );
     }
 
     // Validate file size (5MB max)
@@ -302,4 +313,3 @@ export class TeacherService {
     return this.staffMapper.toTeacherDto(teacher);
   }
 }
-

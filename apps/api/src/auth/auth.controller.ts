@@ -1,4 +1,14 @@
-import { Controller, Post, Body, HttpCode, HttpStatus, Logger, Res, Req, UnauthorizedException } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Body,
+  HttpCode,
+  HttpStatus,
+  Logger,
+  Res,
+  Req,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBody } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
@@ -20,7 +30,7 @@ export class AuthController {
 
   constructor(
     private readonly authService: AuthService,
-    private readonly configService: ConfigService,
+    private readonly configService: ConfigService
   ) {
     this.isProduction = this.configService.get('NODE_ENV') === 'production';
   }
@@ -30,11 +40,11 @@ export class AuthController {
    */
   private setRefreshTokenCookie(res: Response, refreshToken: string): void {
     res.cookie(REFRESH_TOKEN_COOKIE_NAME, refreshToken, {
-      httpOnly: true,       // Prevents JavaScript access (XSS protection)
+      httpOnly: true, // Prevents JavaScript access (XSS protection)
       secure: this.isProduction, // HTTPS only in production
       sameSite: this.isProduction ? 'strict' : 'lax', // CSRF protection
       maxAge: REFRESH_TOKEN_MAX_AGE,
-      path: '/api/auth',    // Only sent to auth endpoints
+      path: '/api/auth', // Only sent to auth endpoints
     });
   }
 
@@ -64,21 +74,24 @@ export class AuthController {
   @ApiResponse({ status: 429, description: 'Too many login attempts. Please try again later.' })
   async login(
     @Body() loginDto: LoginDto,
-    @Res({ passthrough: true }) res: Response,
+    @Res({ passthrough: true }) res: Response
   ): Promise<ResponseDto<Omit<AuthTokensDto, 'refreshToken'> & { refreshToken?: string }>> {
     try {
       const data = await this.authService.login(loginDto);
-      
+
       // Set refresh token as httpOnly cookie
       this.setRefreshTokenCookie(res, data.refreshToken);
-      
+
       // Return response without refresh token in body (it's in the cookie)
       // Keep refreshToken in response for backwards compatibility during migration
-      return ResponseDto.ok({
-        accessToken: data.accessToken,
-        refreshToken: data.refreshToken, // TODO: Remove after frontend migration
-        user: data.user,
-      }, 'Login successful');
+      return ResponseDto.ok(
+        {
+          accessToken: data.accessToken,
+          refreshToken: data.refreshToken, // TODO: Remove after frontend migration
+          user: data.user,
+        },
+        'Login successful'
+      );
     } catch (error) {
       // Log the error for debugging
       this.logger.error('Login error:', error instanceof Error ? error.stack : error);
@@ -98,21 +111,27 @@ export class AuthController {
     type: ResponseDto<AuthTokensDto>,
   })
   @ApiResponse({ status: 400, description: 'Invalid or expired OTP' })
-  @ApiResponse({ status: 429, description: 'Too many OTP verification attempts. Please try again later.' })
+  @ApiResponse({
+    status: 429,
+    description: 'Too many OTP verification attempts. Please try again later.',
+  })
   async verifyOtp(
     @Body() verifyOtpDto: VerifyOtpDto,
-    @Res({ passthrough: true }) res: Response,
+    @Res({ passthrough: true }) res: Response
   ): Promise<ResponseDto<Omit<AuthTokensDto, 'refreshToken'> & { refreshToken?: string }>> {
     const data = await this.authService.verifyOtp(verifyOtpDto);
-    
+
     // Set refresh token as httpOnly cookie
     this.setRefreshTokenCookie(res, data.refreshToken);
-    
-    return ResponseDto.ok({
-      accessToken: data.accessToken,
-      refreshToken: data.refreshToken, // TODO: Remove after frontend migration
-      user: data.user,
-    }, 'Account activated successfully');
+
+    return ResponseDto.ok(
+      {
+        accessToken: data.accessToken,
+        refreshToken: data.refreshToken, // TODO: Remove after frontend migration
+        user: data.user,
+      },
+      'Account activated successfully'
+    );
   }
 
   @Post('request-password-reset')
@@ -124,12 +143,18 @@ export class AuthController {
     status: 200,
     description: 'Password reset email sent if user exists',
   })
-  @ApiResponse({ status: 429, description: 'Too many password reset requests. Please try again later.' })
+  @ApiResponse({
+    status: 429,
+    description: 'Too many password reset requests. Please try again later.',
+  })
   async requestPasswordReset(
     @Body() requestPasswordResetDto: RequestPasswordResetDto
   ): Promise<ResponseDto<void>> {
     await this.authService.requestPasswordReset(requestPasswordResetDto);
-    return ResponseDto.ok(null, 'If an account exists with this email, a password reset link has been sent');
+    return ResponseDto.ok(
+      null,
+      'If an account exists with this email, a password reset link has been sent'
+    );
   }
 
   @Post('reset-password')
@@ -142,10 +167,11 @@ export class AuthController {
     description: 'Password reset successfully',
   })
   @ApiResponse({ status: 400, description: 'Invalid or expired token' })
-  @ApiResponse({ status: 429, description: 'Too many password reset attempts. Please try again later.' })
-  async resetPassword(
-    @Body() resetPasswordDto: ResetPasswordDto
-  ): Promise<ResponseDto<void>> {
+  @ApiResponse({
+    status: 429,
+    description: 'Too many password reset attempts. Please try again later.',
+  })
+  async resetPassword(@Body() resetPasswordDto: ResetPasswordDto): Promise<ResponseDto<void>> {
     await this.authService.resetPassword(resetPasswordDto);
     return ResponseDto.ok(null, 'Password reset successfully');
   }
@@ -153,7 +179,9 @@ export class AuthController {
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { ttl: 60000, limit: 30 } }) // 30 refresh requests per minute (more generous for legitimate use)
-  @ApiOperation({ summary: 'Refresh access token using refresh token from httpOnly cookie or body' })
+  @ApiOperation({
+    summary: 'Refresh access token using refresh token from httpOnly cookie or body',
+  })
   @ApiBody({
     schema: {
       type: 'object',
@@ -175,24 +203,27 @@ export class AuthController {
   async refresh(
     @Req() req: Request,
     @Body() body: { refreshToken?: string },
-    @Res({ passthrough: true }) res: Response,
+    @Res({ passthrough: true }) res: Response
   ): Promise<ResponseDto<{ accessToken: string; refreshToken?: string }>> {
     // Get refresh token from httpOnly cookie first, fallback to body for backwards compatibility
     const refreshToken = req.cookies?.[REFRESH_TOKEN_COOKIE_NAME] || body.refreshToken;
-    
+
     if (!refreshToken) {
       throw new UnauthorizedException('Refresh token is required');
     }
-    
+
     const data = await this.authService.refreshToken(refreshToken);
-    
+
     // Set new refresh token as httpOnly cookie
     this.setRefreshTokenCookie(res, data.refreshToken);
-    
-    return ResponseDto.ok({
-      accessToken: data.accessToken,
-      refreshToken: data.refreshToken, // TODO: Remove after frontend migration
-    }, 'Token refreshed successfully');
+
+    return ResponseDto.ok(
+      {
+        accessToken: data.accessToken,
+        refreshToken: data.refreshToken, // TODO: Remove after frontend migration
+      },
+      'Token refreshed successfully'
+    );
   }
 
   @Post('logout')
@@ -202,12 +233,9 @@ export class AuthController {
     status: 200,
     description: 'Logged out successfully',
   })
-  async logout(
-    @Res({ passthrough: true }) res: Response,
-  ): Promise<ResponseDto<void>> {
+  async logout(@Res({ passthrough: true }) res: Response): Promise<ResponseDto<void>> {
     // Clear the refresh token cookie
     this.clearRefreshTokenCookie(res);
     return ResponseDto.ok(null, 'Logged out successfully');
   }
 }
-

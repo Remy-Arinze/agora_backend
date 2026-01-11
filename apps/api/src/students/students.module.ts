@@ -25,9 +25,13 @@ import { CloudinaryModule } from '../storage/cloudinary/cloudinary.module';
     forwardRef(() => EventsModule),
     CloudinaryModule,
   ],
-  controllers: [StudentMeController, StudentsController, SchoolStudentAdmissionController, CourseRegistrationController],
+  controllers: [
+    StudentMeController,
+    StudentsController,
+    SchoolStudentAdmissionController,
+    CourseRegistrationController,
+  ],
   providers: [StudentsService, StudentAdmissionService, CourseRegistrationService],
   exports: [StudentsService, StudentAdmissionService, CourseRegistrationService],
 })
 export class StudentsModule {}
-

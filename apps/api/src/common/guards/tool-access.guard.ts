@@ -1,9 +1,4 @@
-import {
-  Injectable,
-  CanActivate,
-  ExecutionContext,
-  ForbiddenException,
-} from '@nestjs/common';
+import { Injectable, CanActivate, ExecutionContext, ForbiddenException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { TOOL_KEY } from '../decorators/require-tool.decorator';
 import { SubscriptionsService } from '../../subscriptions/subscriptions.service';
@@ -13,7 +8,7 @@ import { ToolStatus } from '../../subscriptions/dto/subscription.dto';
 /**
  * Guard that checks if the current school has access to a required tool
  * Use with @RequireTool('toolSlug') decorator
- * 
+ *
  * @example
  * ```typescript
  * @UseGuards(JwtAuthGuard, ToolAccessGuard)
@@ -26,13 +21,13 @@ import { ToolStatus } from '../../subscriptions/dto/subscription.dto';
 export class ToolAccessGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
-    private readonly subscriptionsService: SubscriptionsService,
+    private readonly subscriptionsService: SubscriptionsService
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     // Get required tool from decorator
     const requiredTool = this.reflector.get<string>(TOOL_KEY, context.getHandler());
-    
+
     // If no tool required, allow access
     if (!requiredTool) {
       return true;
@@ -57,7 +52,7 @@ export class ToolAccessGuard implements CanActivate {
 
     if (!accessResult.hasAccess) {
       const toolName = accessResult.tool?.name || requiredTool;
-      
+
       switch (accessResult.reason) {
         case 'not_subscribed':
           throw new ForbiddenException(
@@ -72,13 +67,9 @@ export class ToolAccessGuard implements CanActivate {
             `Your trial for ${toolName} has ended. Please upgrade to continue using this tool.`
           );
         case 'disabled':
-          throw new ForbiddenException(
-            `${toolName} is currently disabled for your school.`
-          );
+          throw new ForbiddenException(`${toolName} is currently disabled for your school.`);
         default:
-          throw new ForbiddenException(
-            `Access to ${toolName} is not available.`
-          );
+          throw new ForbiddenException(`Access to ${toolName} is not available.`);
       }
     }
 
@@ -88,20 +79,4 @@ export class ToolAccessGuard implements CanActivate {
     return true;
   }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 

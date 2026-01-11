@@ -1,8 +1,19 @@
-import { Injectable, BadRequestException, NotFoundException, ConflictException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+  ConflictException,
+  Logger,
+} from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { EmailService } from '../email/email.service';
 import { SchoolRepository } from '../schools/domain/repositories/school.repository';
-import { InitializeSessionDto, CreateTermDto, MigrateStudentsDto, SessionType } from './dto/initialize-session.dto';
+import {
+  InitializeSessionDto,
+  CreateTermDto,
+  MigrateStudentsDto,
+  SessionType,
+} from './dto/initialize-session.dto';
 import { AcademicSessionDto, TermDto, ActiveSessionDto } from './dto/session.dto';
 import { SessionStatus, TermStatus } from '@prisma/client';
 
@@ -23,7 +34,10 @@ export class SessionService {
   /**
    * Initialize a new academic session
    */
-  async initializeSession(schoolId: string, dto: InitializeSessionDto): Promise<AcademicSessionDto> {
+  async initializeSession(
+    schoolId: string,
+    dto: InitializeSessionDto
+  ): Promise<AcademicSessionDto> {
     const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
@@ -53,8 +67,9 @@ export class SessionService {
     }
 
     // Validate session duration (must be at least 10 months, approximately a year)
-    const monthsDiff = (endDate.getFullYear() - startDate.getFullYear()) * 12 + 
-                       (endDate.getMonth() - startDate.getMonth());
+    const monthsDiff =
+      (endDate.getFullYear() - startDate.getFullYear()) * 12 +
+      (endDate.getMonth() - startDate.getMonth());
     const daysDiff = Math.floor((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
 
     if (monthsDiff < 10 || daysDiff < 300) {
@@ -73,7 +88,9 @@ export class SessionService {
     });
 
     if (existingSession) {
-      throw new ConflictException(`Session ${dto.name} already exists for ${dto.schoolType || 'this school'}`);
+      throw new ConflictException(
+        `Session ${dto.name} already exists for ${dto.schoolType || 'this school'}`
+      );
     }
 
     // Create session
@@ -192,10 +209,7 @@ export class SessionService {
           schoolId: school.id,
           status: SessionStatus.ACTIVE,
           // Also check for null or undefined schoolType
-          OR: [
-            { schoolType: null },
-            { schoolType: undefined },
-          ],
+          OR: [{ schoolType: null }, { schoolType: undefined }],
         },
         include: {
           terms: {
@@ -225,7 +239,10 @@ export class SessionService {
    * Start a new term (the core "Start Term" wizard logic)
    * Supports school-type-specific sessions (PRIMARY, SECONDARY, TERTIARY)
    */
-  async startNewTerm(schoolId: string, dto: InitializeSessionDto & { termId?: string }): Promise<{
+  async startNewTerm(
+    schoolId: string,
+    dto: InitializeSessionDto & { termId?: string }
+  ): Promise<{
     session: AcademicSessionDto;
     term: TermDto;
     migratedCount: number;
@@ -259,9 +276,12 @@ export class SessionService {
       // Validate session duration (must be at least 10 months)
       const startDate = new Date(dto.startDate);
       const endDate = new Date(dto.endDate);
-      const monthsDiff = (endDate.getFullYear() - startDate.getFullYear()) * 12 + 
-                         (endDate.getMonth() - startDate.getMonth());
-      const daysDiff = Math.floor((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+      const monthsDiff =
+        (endDate.getFullYear() - startDate.getFullYear()) * 12 +
+        (endDate.getMonth() - startDate.getMonth());
+      const daysDiff = Math.floor(
+        (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
+      );
 
       if (monthsDiff < 10 || daysDiff < 300) {
         throw new BadRequestException(
@@ -315,14 +335,14 @@ export class SessionService {
       // Create terms/semesters based on school type
       // TERTIARY: 2 semesters, PRIMARY/SECONDARY: 3 terms
       const sessionDurationMs = endDate.getTime() - startDate.getTime();
-      
+
       if (isTertiary) {
         // TERTIARY: Create 2 semesters
         const semesterDurationMs = sessionDurationMs / 2;
 
         const sem1Start = new Date(startDate);
         const sem1End = new Date(startDate.getTime() + semesterDurationMs);
-        
+
         const sem2Start = new Date(sem1End.getTime() + 1);
         const sem2End = new Date(endDate);
 
@@ -355,10 +375,10 @@ export class SessionService {
 
         const term1Start = new Date(startDate);
         const term1End = new Date(startDate.getTime() + termDurationMs);
-        
+
         const term2Start = new Date(term1End.getTime() + 1);
         const term2End = new Date(term1End.getTime() + termDurationMs);
-        
+
         const term3Start = new Date(term2End.getTime() + 1);
         const term3End = new Date(endDate);
 
@@ -415,8 +435,9 @@ export class SessionService {
       });
 
       // Trigger promotion logic (filtered by school type)
-      const { promotedCount: migratedCount, promotedStudents } = await this.promoteStudentsWithTracking(school.id, term.id, schoolType);
-      
+      const { promotedCount: migratedCount, promotedStudents } =
+        await this.promoteStudentsWithTracking(school.id, term.id, schoolType);
+
       // Send session start notifications to all school members (in background)
       this.sendSessionTermNotifications(
         school.id,
@@ -497,7 +518,12 @@ export class SessionService {
       const sessionSchoolType = session?.schoolType || null;
 
       // Trigger carry over logic (filtered by school type)
-      const migratedCount = await this.carryOverStudents(school.id, term.id, previousTerm?.id, sessionSchoolType);
+      const migratedCount = await this.carryOverStudents(
+        school.id,
+        term.id,
+        previousTerm?.id,
+        sessionSchoolType
+      );
 
       // Send term start notifications to all school members (in background)
       this.sendSessionTermNotifications(
@@ -567,7 +593,10 @@ export class SessionService {
   /**
    * Migrate students (promote or carry over)
    */
-  async migrateStudents(schoolId: string, dto: MigrateStudentsDto): Promise<{ migratedCount: number }> {
+  async migrateStudents(
+    schoolId: string,
+    dto: MigrateStudentsDto
+  ): Promise<{ migratedCount: number }> {
     const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
@@ -610,7 +639,10 @@ export class SessionService {
    * Ensure ClassLevels have nextLevelId set up for promotion
    * This fixes existing ClassLevels that were created without the progression chain
    */
-  private async ensureClassLevelProgression(schoolId: string, schoolType?: string | null): Promise<void> {
+  private async ensureClassLevelProgression(
+    schoolId: string,
+    schoolType?: string | null
+  ): Promise<void> {
     // Get all class levels for this school type, ordered by level
     const classLevels = await this.prisma.classLevel.findMany({
       where: {
@@ -621,8 +653,8 @@ export class SessionService {
     });
 
     // Check if any levels need nextLevelId set
-    const needsUpdate = classLevels.some((level, index) => 
-      index < classLevels.length - 1 && !level.nextLevelId
+    const needsUpdate = classLevels.some(
+      (level, index) => index < classLevels.length - 1 && !level.nextLevelId
     );
 
     if (needsUpdate) {
@@ -646,7 +678,11 @@ export class SessionService {
    * - Enrollments with classArm linked (proper setup)
    * - Enrollments with only classLevel string (legacy/simple setup)
    */
-  private async promoteStudents(schoolId: string, termId: string, schoolType?: string | null): Promise<number> {
+  private async promoteStudents(
+    schoolId: string,
+    termId: string,
+    schoolType?: string | null
+  ): Promise<number> {
     // Ensure ClassLevel progression is set up
     await this.ensureClassLevelProgression(schoolId, schoolType);
 
@@ -660,10 +696,7 @@ export class SessionService {
         id: { not: termId },
         status: { in: [TermStatus.ACTIVE, TermStatus.COMPLETED] },
       },
-      orderBy: [
-        { academicSession: { startDate: 'desc' } },
-        { number: 'desc' },
-      ],
+      orderBy: [{ academicSession: { startDate: 'desc' } }, { number: 'desc' }],
     });
 
     // Get all active enrollments - either from previous term OR enrollments without termId
@@ -673,10 +706,7 @@ export class SessionService {
         schoolId: schoolId,
         isActive: true,
         // Either has the previous term's ID, or has no termId (legacy enrollment)
-        OR: [
-          ...(previousTerm ? [{ termId: previousTerm.id }] : []),
-          { termId: null },
-        ],
+        OR: [...(previousTerm ? [{ termId: previousTerm.id }] : []), { termId: null }],
       },
       include: {
         classArm: {
@@ -689,8 +719,8 @@ export class SessionService {
     });
 
     // If schoolType is specified, filter enrollments by class type (if class exists) or by classLevel name pattern
-    const filteredEnrollments = schoolType 
-      ? previousEnrollments.filter(e => {
+    const filteredEnrollments = schoolType
+      ? previousEnrollments.filter((e) => {
           // If class is linked, check its type
           if (e.class?.type) {
             return e.class.type === schoolType;
@@ -718,7 +748,7 @@ export class SessionService {
     for (const enrollment of filteredEnrollments) {
       // Try to get current level from classArm first, then fall back to looking up by name
       let currentLevel: any = null;
-      
+
       if (enrollment.classArm?.classLevel) {
         currentLevel = enrollment.classArm.classLevel;
       } else if (enrollment.classLevel) {
@@ -726,22 +756,21 @@ export class SessionService {
         currentLevel = await this.prisma.classLevel.findFirst({
           where: {
             schoolId: schoolId,
-            OR: [
-              { name: enrollment.classLevel },
-              { code: enrollment.classLevel },
-            ],
+            OR: [{ name: enrollment.classLevel }, { code: enrollment.classLevel }],
           },
         });
       }
 
       if (!currentLevel) {
         // Can't determine current level, skip but log
-        console.warn(`Cannot determine class level for enrollment ${enrollment.id}, classLevel: ${enrollment.classLevel}`);
+        console.warn(
+          `Cannot determine class level for enrollment ${enrollment.id}, classLevel: ${enrollment.classLevel}`
+        );
         continue;
       }
 
       // Find next level
-      const nextLevel = currentLevel.nextLevelId 
+      const nextLevel = currentLevel.nextLevelId
         ? await this.prisma.classLevel.findUnique({
             where: { id: currentLevel.nextLevelId },
           })
@@ -822,10 +851,7 @@ export class SessionService {
         id: { not: termId },
         status: { in: [TermStatus.ACTIVE, TermStatus.COMPLETED] },
       },
-      orderBy: [
-        { academicSession: { startDate: 'desc' } },
-        { number: 'desc' },
-      ],
+      orderBy: [{ academicSession: { startDate: 'desc' } }, { number: 'desc' }],
     });
 
     // Get all active enrollments with student details
@@ -833,10 +859,7 @@ export class SessionService {
       where: {
         schoolId: schoolId,
         isActive: true,
-        OR: [
-          ...(previousTerm ? [{ termId: previousTerm.id }] : []),
-          { termId: null },
-        ],
+        OR: [...(previousTerm ? [{ termId: previousTerm.id }] : []), { termId: null }],
       },
       include: {
         classArm: {
@@ -854,8 +877,8 @@ export class SessionService {
     });
 
     // Filter by school type
-    const filteredEnrollments = schoolType 
-      ? previousEnrollments.filter(e => {
+    const filteredEnrollments = schoolType
+      ? previousEnrollments.filter((e) => {
           if (e.class?.type) {
             return e.class.type === schoolType;
           }
@@ -883,30 +906,29 @@ export class SessionService {
 
     for (const enrollment of filteredEnrollments) {
       let currentLevel: any = null;
-      
+
       if (enrollment.classArm?.classLevel) {
         currentLevel = enrollment.classArm.classLevel;
       } else if (enrollment.classLevel) {
         currentLevel = await this.prisma.classLevel.findFirst({
           where: {
             schoolId: schoolId,
-            OR: [
-              { name: enrollment.classLevel },
-              { code: enrollment.classLevel },
-            ],
+            OR: [{ name: enrollment.classLevel }, { code: enrollment.classLevel }],
           },
         });
       }
 
       if (!currentLevel) {
-        console.warn(`Cannot determine class level for enrollment ${enrollment.id}, classLevel: ${enrollment.classLevel}`);
+        console.warn(
+          `Cannot determine class level for enrollment ${enrollment.id}, classLevel: ${enrollment.classLevel}`
+        );
         continue;
       }
 
       const previousClassName = currentLevel.name || enrollment.classLevel || 'Unknown';
 
       // Find next level
-      const nextLevel = currentLevel.nextLevelId 
+      const nextLevel = currentLevel.nextLevelId
         ? await this.prisma.classLevel.findUnique({
             where: { id: currentLevel.nextLevelId },
           })
@@ -919,7 +941,7 @@ export class SessionService {
           data: { isActive: false },
         });
         promotedCount++;
-        
+
         // Track for email (graduating)
         if (enrollment.student?.user?.email) {
           promotedStudents.push({
@@ -961,10 +983,7 @@ export class SessionService {
         const nextClass = await this.prisma.class.findFirst({
           where: {
             schoolId: schoolId,
-            OR: [
-              { name: nextLevel.name },
-              { classLevel: nextLevel.name },
-            ],
+            OR: [{ name: nextLevel.name }, { classLevel: nextLevel.name }],
             isActive: true,
           },
         });
@@ -1026,10 +1045,7 @@ export class SessionService {
       where: {
         schoolId: schoolId,
         isActive: true,
-        OR: [
-          ...(previousTermId ? [{ termId: previousTermId }] : []),
-          { termId: null },
-        ],
+        OR: [...(previousTermId ? [{ termId: previousTermId }] : []), { termId: null }],
       },
       include: {
         class: true,
@@ -1037,8 +1053,8 @@ export class SessionService {
     });
 
     // Filter by school type if specified (using class.type or classLevel pattern)
-    const filteredEnrollments = schoolType 
-      ? previousEnrollments.filter(e => {
+    const filteredEnrollments = schoolType
+      ? previousEnrollments.filter((e) => {
           if (e.class?.type) {
             return e.class.type === schoolType;
           }
@@ -1136,7 +1152,10 @@ export class SessionService {
    * End the current active session (optionally filtered by school type)
    * This marks the session and all its terms as COMPLETED
    */
-  async endSession(schoolId: string, schoolType?: string): Promise<{ session: AcademicSessionDto }> {
+  async endSession(
+    schoolId: string,
+    schoolType?: string
+  ): Promise<{ session: AcademicSessionDto }> {
     const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
@@ -1155,7 +1174,9 @@ export class SessionService {
     });
 
     if (!activeSession) {
-      throw new NotFoundException(`No active session found${schoolType ? ` for ${schoolType}` : ''}`);
+      throw new NotFoundException(
+        `No active session found${schoolType ? ` for ${schoolType}` : ''}`
+      );
     }
 
     // Mark all terms in this session as COMPLETED
@@ -1188,7 +1209,11 @@ export class SessionService {
    * Reactivate a completed term (continue a term that was ended early)
    * Only allows reactivation if the term's end date hasn't passed yet
    */
-  async reactivateTerm(schoolId: string, termId: string, schoolType?: string): Promise<{ term: TermDto }> {
+  async reactivateTerm(
+    schoolId: string,
+    termId: string,
+    schoolType?: string
+  ): Promise<{ term: TermDto }> {
     const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
@@ -1320,11 +1345,16 @@ export class SessionService {
   /**
    * Get all school members (admins, teachers, students) with email addresses
    */
-  private async getSchoolMembers(schoolId: string, schoolType?: string | null): Promise<Array<{
-    email: string;
-    name: string;
-    role: string;
-  }>> {
+  private async getSchoolMembers(
+    schoolId: string,
+    schoolType?: string | null
+  ): Promise<
+    Array<{
+      email: string;
+      name: string;
+      role: string;
+    }>
+  > {
     const members: Array<{ email: string; name: string; role: string }> = [];
 
     // Get school admins
@@ -1370,7 +1400,7 @@ export class SessionService {
           },
         },
       },
-      include: { 
+      include: {
         user: true,
         enrollments: {
           where: {
@@ -1392,7 +1422,7 @@ export class SessionService {
           // Check if student is in this school type
           const classType = enrollment.class?.type;
           const levelStr = enrollment.classLevel?.toUpperCase() || '';
-          
+
           let matchesType = false;
           if (classType === schoolType) {
             matchesType = true;
@@ -1403,10 +1433,11 @@ export class SessionService {
             } else if (schoolType === 'SECONDARY') {
               matchesType = levelStr.includes('JSS') || levelStr.includes('SS');
             } else if (schoolType === 'TERTIARY') {
-              matchesType = /\d+L/.test(levelStr) || levelStr.includes('LEVEL') || levelStr.includes('YEAR');
+              matchesType =
+                /\d+L/.test(levelStr) || levelStr.includes('LEVEL') || levelStr.includes('YEAR');
             }
           }
-          
+
           if (!matchesType) continue;
         }
       }
@@ -1438,28 +1469,35 @@ export class SessionService {
   ): Promise<void> {
     try {
       const members = await this.getSchoolMembers(schoolId, schoolType);
-      
+
       if (members.length === 0) {
         this.logger.log('No school members found to notify');
         return;
       }
 
-      this.logger.log(`Sending ${isNewSession ? 'session' : 'term'} notifications to ${members.length} members`);
+      this.logger.log(
+        `Sending ${isNewSession ? 'session' : 'term'} notifications to ${members.length} members`
+      );
 
       // Send emails in background (don't await)
-      this.emailService.sendBulkEmails(
-        members.map(m => ({ to: m.email, name: m.name, role: m.role })),
-        isNewSession ? 'session' : 'term',
-        sessionName,
-        termName,
-        startDate,
-        endDate,
-        schoolName
-      ).then(result => {
-        this.logger.log(`Session/term notifications: ${result.sent} sent, ${result.failed} failed`);
-      }).catch(error => {
-        this.logger.error('Failed to send session/term notifications:', error);
-      });
+      this.emailService
+        .sendBulkEmails(
+          members.map((m) => ({ to: m.email, name: m.name, role: m.role })),
+          isNewSession ? 'session' : 'term',
+          sessionName,
+          termName,
+          startDate,
+          endDate,
+          schoolName
+        )
+        .then((result) => {
+          this.logger.log(
+            `Session/term notifications: ${result.sent} sent, ${result.failed} failed`
+          );
+        })
+        .catch((error) => {
+          this.logger.error('Failed to send session/term notifications:', error);
+        });
     } catch (error) {
       this.logger.error('Error preparing session/term notifications:', error);
     }
@@ -1486,7 +1524,7 @@ export class SessionService {
     const batchSize = 10;
     for (let i = 0; i < promotedStudents.length; i += batchSize) {
       const batch = promotedStudents.slice(i, i + batchSize);
-      
+
       await Promise.all(
         batch.map(async (student) => {
           try {
@@ -1506,9 +1544,8 @@ export class SessionService {
 
       // Small delay between batches
       if (i + batchSize < promotedStudents.length) {
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise((resolve) => setTimeout(resolve, 500));
       }
     }
   }
 }
-

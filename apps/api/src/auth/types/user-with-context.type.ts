@@ -15,10 +15,9 @@ export interface UserWithContext extends User {
  * Includes optional school context for users who need it
  */
 export interface JwtPayload {
-  sub: string;           // userId
-  role: string;         // UserRole
-  schoolId?: string;    // Current school context (for SCHOOL_ADMIN, TEACHER, STUDENT)
-  publicId?: string;    // Public ID used for login (for SCHOOL_ADMIN, TEACHER)
-  profileId?: string;   // adminId or teacherId (for SCHOOL_ADMIN, TEACHER)
+  sub: string; // userId
+  role: string; // UserRole
+  schoolId?: string; // Current school context (for SCHOOL_ADMIN, TEACHER, STUDENT)
+  publicId?: string; // Public ID used for login (for SCHOOL_ADMIN, TEACHER)
+  profileId?: string; // adminId or teacherId (for SCHOOL_ADMIN, TEACHER)
 }
-

@@ -53,4 +53,3 @@ export class UpdateStudentDto {
   @IsString()
   medicalNotes?: string;
 }
-

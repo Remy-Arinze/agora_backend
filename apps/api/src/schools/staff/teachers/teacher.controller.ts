@@ -26,7 +26,7 @@ export class TeacherController {
   }
 
   @Get('me/school')
-  @ApiOperation({ summary: 'Get teacher\'s current school' })
+  @ApiOperation({ summary: "Get teacher's current school" })
   @ApiResponse({
     status: 200,
     description: 'School information retrieved successfully',
@@ -38,13 +38,13 @@ export class TeacherController {
   }
 
   @Get('me/subjects')
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'Get subjects teacher can grade for a specific class',
     description: `Returns subjects the teacher is authorized to grade for a specific class.
     
     - PRIMARY schools: If teacher is the class teacher (isPrimary), they can grade ALL subjects
     - SECONDARY schools: Teacher can only grade subjects they're assigned to via ClassTeacher or Timetable
-    - TERTIARY: Teacher can only grade courses they're assigned to`
+    - TERTIARY: Teacher can only grade courses they're assigned to`,
   })
   @ApiQuery({ name: 'classId', required: true, description: 'Class or ClassArm ID' })
   @ApiResponse({
@@ -54,10 +54,9 @@ export class TeacherController {
   @ApiResponse({ status: 404, description: 'Class or teacher not found' })
   async getSubjectsForClass(
     @CurrentUser() user: UserWithContext,
-    @Query('classId') classId: string,
+    @Query('classId') classId: string
   ): Promise<ResponseDto<any>> {
     const data = await this.teacherCurrentSchoolService.getSubjectsForClass(user, classId);
     return ResponseDto.ok(data, 'Subjects retrieved successfully');
   }
 }
-

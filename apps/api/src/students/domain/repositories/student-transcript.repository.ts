@@ -41,19 +41,13 @@ export class StudentTranscriptRepository {
           },
         },
         grades: {
-          orderBy: [
-            { academicYear: 'desc' },
-            { term: 'desc' },
-          ],
+          orderBy: [{ academicYear: 'desc' }, { term: 'desc' }],
         },
         attendances: {
           orderBy: { date: 'desc' },
         },
       },
-      orderBy: [
-        { academicYear: 'desc' },
-        { enrollmentDate: 'desc' },
-      ],
+      orderBy: [{ academicYear: 'desc' }, { enrollmentDate: 'desc' }],
     });
   }
 
@@ -90,10 +84,7 @@ export class StudentTranscriptRepository {
           },
         },
         grades: {
-          orderBy: [
-            { academicYear: 'desc' },
-            { term: 'desc' },
-          ],
+          orderBy: [{ academicYear: 'desc' }, { term: 'desc' }],
         },
         attendances: {
           orderBy: { date: 'desc' },
@@ -102,4 +93,3 @@ export class StudentTranscriptRepository {
     });
   }
 }
-

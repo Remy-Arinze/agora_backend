@@ -48,7 +48,9 @@ export class StaffImportService {
         rows = XLSX.utils.sheet_to_json(worksheet);
       }
     } catch (error) {
-      throw new BadRequestException('Failed to parse file. Please ensure it is a valid CSV or Excel file.');
+      throw new BadRequestException(
+        'Failed to parse file. Please ensure it is a valid CSV or Excel file.'
+      );
     }
 
     if (rows.length === 0) {
@@ -120,7 +122,11 @@ export class StaffImportService {
           try {
             // Safely convert isTemporary to boolean
             let isTemporary = false;
-            if (row.isTemporary !== undefined && row.isTemporary !== null && row.isTemporary !== '') {
+            if (
+              row.isTemporary !== undefined &&
+              row.isTemporary !== null &&
+              row.isTemporary !== ''
+            ) {
               if (typeof row.isTemporary === 'boolean') {
                 isTemporary = row.isTemporary;
               } else if (typeof row.isTemporary === 'string') {
@@ -144,12 +150,14 @@ export class StaffImportService {
                 },
                 select: { id: true },
               });
-              
+
               if (foundSubject) {
                 subjectIds = [foundSubject.id];
               } else {
                 // Log warning but continue - subject might be added later
-                console.warn(`Subject "${subject}" not found for school ${schoolId}, row ${rowNumber}. Teacher will be created without subject assignment.`);
+                console.warn(
+                  `Subject "${subject}" not found for school ${schoolId}, row ${rowNumber}. Teacher will be created without subject assignment.`
+                );
               }
             }
 
@@ -213,4 +221,3 @@ export class StaffImportService {
     return summary;
   }
 }
-

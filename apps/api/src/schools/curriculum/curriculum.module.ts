@@ -9,12 +9,7 @@ import { StaffRepository } from '../domain/repositories/staff.repository';
 @Module({
   imports: [DatabaseModule],
   controllers: [CurriculumController],
-  providers: [
-    CurriculumService,
-    NerdcCurriculumService,
-    SchoolRepository,
-    StaffRepository,
-  ],
+  providers: [CurriculumService, NerdcCurriculumService, SchoolRepository, StaffRepository],
   exports: [CurriculumService, NerdcCurriculumService],
 })
 export class CurriculumModule {}

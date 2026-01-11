@@ -12,4 +12,3 @@ import { StaffRepository } from '../schools/domain/repositories/staff.repository
   exports: [GradesService],
 })
 export class GradesModule {}
-

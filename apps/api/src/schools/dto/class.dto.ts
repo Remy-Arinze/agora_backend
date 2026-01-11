@@ -70,4 +70,3 @@ export class ClassDto {
   @ApiProperty({ required: false, description: 'Only present for ClassArm-based classes' })
   classLevelId?: string;
 }
-

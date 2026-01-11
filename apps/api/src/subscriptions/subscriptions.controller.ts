@@ -1,17 +1,9 @@
-import { 
-  Controller, 
-  Get, 
-  Post, 
-  Body, 
-  Param, 
-  UseGuards,
-  Request,
-} from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, UseGuards, Request } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { SubscriptionsService } from './subscriptions.service';
-import { 
-  SubscriptionDto, 
-  SubscriptionSummaryDto, 
+import {
+  SubscriptionDto,
+  SubscriptionSummaryDto,
   ToolAccessResultDto,
   AiCreditsResultDto,
   UseAiCreditsDto,
@@ -28,9 +20,11 @@ export class SubscriptionsController {
    * Get current school's subscription
    */
   @Get('my-subscription')
-  async getMySubscription(@Request() req: { user: UserWithContext }): Promise<{ success: boolean; data: SubscriptionDto }> {
+  async getMySubscription(
+    @Request() req: { user: UserWithContext }
+  ): Promise<{ success: boolean; data: SubscriptionDto }> {
     const schoolId = req.user.currentSchoolId;
-    
+
     if (!schoolId) {
       return {
         success: false,
@@ -39,7 +33,7 @@ export class SubscriptionsController {
     }
 
     const subscription = await this.subscriptionsService.getOrCreateSubscription(schoolId);
-    
+
     return {
       success: true,
       data: subscription,
@@ -50,9 +44,11 @@ export class SubscriptionsController {
    * Get subscription summary (lightweight version)
    */
   @Get('summary')
-  async getSubscriptionSummary(@Request() req: { user: UserWithContext }): Promise<{ success: boolean; data: SubscriptionSummaryDto | null }> {
+  async getSubscriptionSummary(
+    @Request() req: { user: UserWithContext }
+  ): Promise<{ success: boolean; data: SubscriptionSummaryDto | null }> {
     const schoolId = req.user.currentSchoolId;
-    
+
     if (!schoolId) {
       return {
         success: false,
@@ -61,7 +57,7 @@ export class SubscriptionsController {
     }
 
     const summary = await this.subscriptionsService.getSubscriptionSummary(schoolId);
-    
+
     return {
       success: true,
       data: summary,
@@ -74,10 +70,10 @@ export class SubscriptionsController {
   @Get('tools/:toolSlug/access')
   async checkToolAccess(
     @Request() req: { user: UserWithContext },
-    @Param('toolSlug') toolSlug: string,
+    @Param('toolSlug') toolSlug: string
   ): Promise<{ success: boolean; data: ToolAccessResultDto }> {
     const schoolId = req.user.currentSchoolId;
-    
+
     if (!schoolId) {
       return {
         success: false,
@@ -91,7 +87,7 @@ export class SubscriptionsController {
     }
 
     const result = await this.subscriptionsService.checkToolAccess(schoolId, toolSlug);
-    
+
     return {
       success: true,
       data: result,
@@ -104,7 +100,7 @@ export class SubscriptionsController {
   @Get('tools')
   async getAllTools(): Promise<{ success: boolean; data: ToolDto[] }> {
     const tools = await this.subscriptionsService.getAllTools();
-    
+
     return {
       success: true,
       data: tools,
@@ -115,9 +111,11 @@ export class SubscriptionsController {
    * Get tools available for current user's role
    */
   @Get('tools/my-tools')
-  async getMyTools(@Request() req: { user: UserWithContext }): Promise<{ success: boolean; data: ToolDto[] }> {
+  async getMyTools(
+    @Request() req: { user: UserWithContext }
+  ): Promise<{ success: boolean; data: ToolDto[] }> {
     const tools = await this.subscriptionsService.getToolsForRole(req.user.role);
-    
+
     return {
       success: true,
       data: tools,
@@ -130,10 +128,10 @@ export class SubscriptionsController {
   @Post('ai-credits/use')
   async useAiCredits(
     @Request() req: { user: UserWithContext },
-    @Body() dto: UseAiCreditsDto,
+    @Body() dto: UseAiCreditsDto
   ): Promise<{ success: boolean; data: AiCreditsResultDto }> {
     const schoolId = req.user.currentSchoolId;
-    
+
     if (!schoolId) {
       return {
         success: false,
@@ -147,27 +145,11 @@ export class SubscriptionsController {
     }
 
     const result = await this.subscriptionsService.useAiCredits(schoolId, dto.credits, dto.action);
-    
+
     return {
       success: result.success,
       data: result,
     };
   }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 

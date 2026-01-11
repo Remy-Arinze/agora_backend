@@ -221,9 +221,9 @@ export class DepartmentDto {
 
 // DTO for generating default levels for a department
 export class GenerateLevelsDto {
-  @ApiPropertyOptional({ 
+  @ApiPropertyOptional({
     description: 'Number of levels to generate (default: 4 for 100L-400L)',
-    example: 4 
+    example: 4,
   })
   @IsOptional()
   levelCount?: number;
@@ -249,4 +249,3 @@ export class DepartmentLevelDto {
   @ApiProperty()
   createdAt: Date;
 }
-

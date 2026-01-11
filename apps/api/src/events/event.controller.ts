@@ -71,7 +71,9 @@ export class EventController {
 
   @Get('upcoming')
   @RequirePermission(PermissionResource.EVENTS, PermissionType.READ)
-  @ApiOperation({ summary: 'Get upcoming events (next 7 days), optionally filtered by school type' })
+  @ApiOperation({
+    summary: 'Get upcoming events (next 7 days), optionally filtered by school type',
+  })
   @ApiResponse({
     status: 200,
     description: 'Upcoming events retrieved successfully',
@@ -122,4 +124,3 @@ export class EventController {
     return ResponseDto.ok(undefined, 'Event deleted successfully');
   }
 }
-

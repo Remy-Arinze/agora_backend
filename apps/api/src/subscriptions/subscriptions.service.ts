@@ -1,9 +1,9 @@
 import { Injectable, BadRequestException, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
-import { 
-  SubscriptionDto, 
-  SubscriptionSummaryDto, 
-  ToolAccessResultDto, 
+import {
+  SubscriptionDto,
+  SubscriptionSummaryDto,
+  ToolAccessResultDto,
   AiCreditsResultDto,
   SubscriptionTier,
   ToolStatus,
@@ -22,11 +22,24 @@ export class SubscriptionsService {
   // Tier limits configuration
   // Students & Teachers are UNLIMITED on all tiers
   // 3 tiers: FREE, STARTER, ENTERPRISE
-  private readonly tierLimits: Record<SubscriptionTier, { maxStudents: number; maxTeachers: number; maxAdmins: number; aiCredits: number }> = {
+  private readonly tierLimits: Record<
+    SubscriptionTier,
+    { maxStudents: number; maxTeachers: number; maxAdmins: number; aiCredits: number }
+  > = {
     [SubscriptionTier.FREE]: { maxStudents: -1, maxTeachers: -1, maxAdmins: 10, aiCredits: 0 },
     [SubscriptionTier.STARTER]: { maxStudents: -1, maxTeachers: -1, maxAdmins: 50, aiCredits: 100 },
-    [SubscriptionTier.PROFESSIONAL]: { maxStudents: -1, maxTeachers: -1, maxAdmins: 50, aiCredits: 500 }, // Deprecated - use STARTER or ENTERPRISE
-    [SubscriptionTier.ENTERPRISE]: { maxStudents: -1, maxTeachers: -1, maxAdmins: -1, aiCredits: -1 }, // -1 = unlimited
+    [SubscriptionTier.PROFESSIONAL]: {
+      maxStudents: -1,
+      maxTeachers: -1,
+      maxAdmins: 50,
+      aiCredits: 500,
+    }, // Deprecated - use STARTER or ENTERPRISE
+    [SubscriptionTier.ENTERPRISE]: {
+      maxStudents: -1,
+      maxTeachers: -1,
+      maxAdmins: -1,
+      aiCredits: -1,
+    }, // -1 = unlimited
   };
 
   // Tools available per tier (3 tiers: FREE, STARTER, ENTERPRISE)
@@ -69,7 +82,7 @@ export class SubscriptionsService {
 
       // Initialize tool access based on tier
       await this.syncToolAccessForTier(schoolId, subscription.id, SubscriptionTier.FREE);
-      
+
       // Refetch with updated tool access
       subscription = await this.prisma.subscription.findUnique({
         where: { schoolId },
@@ -89,7 +102,7 @@ export class SubscriptionsService {
    */
   async getSubscriptionSummary(schoolId: string): Promise<SubscriptionSummaryDto> {
     const subscription = await this.getOrCreateSubscription(schoolId);
-    
+
     return {
       tier: subscription.tier,
       isActive: subscription.isActive,
@@ -101,7 +114,7 @@ export class SubscriptionsService {
         maxTeachers: subscription.maxTeachers,
         maxAdmins: subscription.maxAdmins,
       },
-      tools: subscription.toolAccess.map(ta => ({
+      tools: subscription.toolAccess.map((ta) => ({
         slug: ta.tool.slug,
         name: ta.tool.name,
         status: ta.status,
@@ -147,7 +160,7 @@ export class SubscriptionsService {
 
     // Check status
     const now = new Date();
-    
+
     if (toolAccess.status === ToolStatus.ACTIVE) {
       // Check if expired
       if (toolAccess.expiresAt && toolAccess.expiresAt < now) {
@@ -185,11 +198,11 @@ export class SubscriptionsService {
           reason: 'trial_expired',
         };
       }
-      
+
       const trialDaysRemaining = toolAccess.trialEndsAt
         ? Math.ceil((toolAccess.trialEndsAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
         : 0;
-      
+
       return {
         hasAccess: true,
         status: ToolStatus.TRIAL,
@@ -210,7 +223,11 @@ export class SubscriptionsService {
   /**
    * Use AI credits for a school
    */
-  async useAiCredits(schoolId: string, credits: number, action?: string): Promise<AiCreditsResultDto> {
+  async useAiCredits(
+    schoolId: string,
+    credits: number,
+    action?: string
+  ): Promise<AiCreditsResultDto> {
     const subscription = await this.prisma.subscription.findUnique({
       where: { schoolId },
     });
@@ -220,7 +237,7 @@ export class SubscriptionsService {
     }
 
     const available = subscription.aiCredits - subscription.aiCreditsUsed;
-    
+
     if (credits > available) {
       return {
         success: false,
@@ -238,7 +255,9 @@ export class SubscriptionsService {
       },
     });
 
-    this.logger.log(`School ${schoolId} used ${credits} AI credits for ${action || 'unknown action'}`);
+    this.logger.log(
+      `School ${schoolId} used ${credits} AI credits for ${action || 'unknown action'}`
+    );
 
     return {
       success: true,
@@ -251,7 +270,9 @@ export class SubscriptionsService {
    * Check if school can add more admins (based on subscription tier)
    * Returns { canAdd: boolean, currentCount: number, maxAllowed: number, message?: string }
    */
-  async checkAdminLimit(schoolId: string): Promise<{ canAdd: boolean; currentCount: number; maxAllowed: number; message?: string }> {
+  async checkAdminLimit(
+    schoolId: string
+  ): Promise<{ canAdd: boolean; currentCount: number; maxAllowed: number; message?: string }> {
     // Get subscription
     const subscription = await this.prisma.subscription.findUnique({
       where: { schoolId },
@@ -259,7 +280,7 @@ export class SubscriptionsService {
 
     // No subscription = FREE tier limits
     const maxAdmins = subscription?.maxAdmins ?? this.tierLimits[SubscriptionTier.FREE].maxAdmins;
-    
+
     // -1 means unlimited
     if (maxAdmins === -1) {
       const currentCount = await this.prisma.schoolAdmin.count({ where: { schoolId } });
@@ -313,12 +334,12 @@ export class SubscriptionsService {
    * Sync tool access based on subscription tier
    */
   private async syncToolAccessForTier(
-    schoolId: string, 
-    subscriptionId: string, 
+    schoolId: string,
+    subscriptionId: string,
     tier: SubscriptionTier
   ): Promise<void> {
     const allowedToolSlugs = this.tierTools[tier];
-    
+
     // Get all tools
     const allTools = await this.prisma.tool.findMany({
       where: { isActive: true },
@@ -326,7 +347,7 @@ export class SubscriptionsService {
 
     for (const tool of allTools) {
       const isAllowed = allowedToolSlugs.includes(tool.slug);
-      
+
       // Check existing access
       const existing = await this.prisma.schoolToolAccess.findUnique({
         where: {
@@ -425,4 +446,3 @@ export class SubscriptionsService {
     };
   }
 }
-

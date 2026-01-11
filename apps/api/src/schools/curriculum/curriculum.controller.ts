@@ -9,10 +9,17 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam, ApiQuery } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+  ApiParam,
+  ApiQuery,
+} from '@nestjs/swagger';
 import { CurriculumService } from './curriculum.service';
 import { NerdcCurriculumService } from './nerdc-curriculum.service';
-import { 
+import {
   CreateCurriculumDto,
   GenerateCurriculumDto,
   BulkGenerateCurriculumDto,
@@ -22,7 +29,11 @@ import {
   SkipWeekDto,
 } from './dto/create-curriculum.dto';
 import { CurriculumDto, CurriculumSummaryDto, TimetableSubjectDto } from './dto/curriculum.dto';
-import { NerdcSubjectDto, NerdcCurriculumDto, GetNerdcSubjectsQueryDto } from './dto/nerdc-curriculum.dto';
+import {
+  NerdcSubjectDto,
+  NerdcCurriculumDto,
+  GetNerdcSubjectsQueryDto,
+} from './dto/nerdc-curriculum.dto';
 import { ResponseDto } from '../../common/dto/response.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { SchoolDataAccessGuard } from '../../common/guards/school-data-access.guard';
@@ -39,7 +50,7 @@ import { UserWithContext } from '../../auth/types/user-with-context.type';
 export class CurriculumController {
   constructor(
     private readonly curriculumService: CurriculumService,
-    private readonly nerdcService: NerdcCurriculumService,
+    private readonly nerdcService: NerdcCurriculumService
   ) {}
 
   // ============================================
@@ -50,8 +61,16 @@ export class CurriculumController {
   @RequirePermission(PermissionResource.CURRICULUM, PermissionType.READ)
   @ApiOperation({ summary: 'Get NERDC subjects list' })
   @ApiParam({ name: 'schoolId', description: 'School ID' })
-  @ApiQuery({ name: 'schoolType', required: false, description: 'Filter by school type (PRIMARY, SECONDARY)' })
-  @ApiQuery({ name: 'category', required: false, description: 'Filter by category (CORE, ELECTIVE)' })
+  @ApiQuery({
+    name: 'schoolType',
+    required: false,
+    description: 'Filter by school type (PRIMARY, SECONDARY)',
+  })
+  @ApiQuery({
+    name: 'category',
+    required: false,
+    description: 'Filter by category (CORE, ELECTIVE)',
+  })
   @ApiResponse({ status: 200, description: 'NERDC subjects retrieved successfully' })
   async getNerdcSubjects(
     @Query() query: GetNerdcSubjectsQueryDto
@@ -81,7 +100,10 @@ export class CurriculumController {
       schoolType,
       parseInt(term, 10)
     );
-    return ResponseDto.ok(data, data ? 'NERDC template retrieved successfully' : 'No NERDC template found');
+    return ResponseDto.ok(
+      data,
+      data ? 'NERDC template retrieved successfully' : 'No NERDC template found'
+    );
   }
 
   // ============================================
@@ -100,7 +122,11 @@ export class CurriculumController {
     @Param('classLevelId') classLevelId: string,
     @Query('termId') termId: string
   ): Promise<ResponseDto<TimetableSubjectDto[]>> {
-    const data = await this.curriculumService.getSubjectsFromTimetable(schoolId, classLevelId, termId);
+    const data = await this.curriculumService.getSubjectsFromTimetable(
+      schoolId,
+      classLevelId,
+      termId
+    );
     return ResponseDto.ok(data, 'Timetable subjects retrieved successfully');
   }
 
@@ -224,7 +250,12 @@ export class CurriculumController {
     @Body() updateDto: UpdateCurriculumDto,
     @CurrentUser() user: UserWithContext
   ): Promise<ResponseDto<CurriculumDto>> {
-    const data = await this.curriculumService.updateCurriculum(schoolId, curriculumId, updateDto, user);
+    const data = await this.curriculumService.updateCurriculum(
+      schoolId,
+      curriculumId,
+      updateDto,
+      user
+    );
     return ResponseDto.ok(data, 'Curriculum updated successfully');
   }
 
@@ -290,7 +321,12 @@ export class CurriculumController {
     @Body() dto: RejectCurriculumDto,
     @CurrentUser() user: UserWithContext
   ): Promise<ResponseDto<CurriculumDto>> {
-    const data = await this.curriculumService.rejectCurriculum(schoolId, curriculumId, dto.reason, user);
+    const data = await this.curriculumService.rejectCurriculum(
+      schoolId,
+      curriculumId,
+      dto.reason,
+      user
+    );
     return ResponseDto.ok(data, 'Curriculum rejected');
   }
 

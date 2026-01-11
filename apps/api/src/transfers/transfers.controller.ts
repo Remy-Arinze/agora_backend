@@ -69,7 +69,12 @@ export class TransfersController {
   @ApiQuery({ name: 'status', enum: TransferStatus, required: false })
   @ApiQuery({ name: 'page', type: Number, required: false })
   @ApiQuery({ name: 'limit', type: Number, required: false })
-  @ApiQuery({ name: 'schoolType', type: String, required: false, description: 'Filter by school type (PRIMARY, SECONDARY, TERTIARY)' })
+  @ApiQuery({
+    name: 'schoolType',
+    type: String,
+    required: false,
+    description: 'Filter by school type (PRIMARY, SECONDARY, TERTIARY)',
+  })
   @ApiResponse({ status: 200, description: 'Outgoing transfers retrieved successfully' })
   async getOutgoingTransfers(
     @Param('schoolId') schoolId: string,
@@ -80,7 +85,13 @@ export class TransfersController {
   ): Promise<ResponseDto<any>> {
     const pageNum = page ? parseInt(page, 10) : 1;
     const limitNum = limit ? parseInt(limit, 10) : 20;
-    const data = await this.transfersService.getOutgoingTransfers(schoolId, status, pageNum, limitNum, schoolType);
+    const data = await this.transfersService.getOutgoingTransfers(
+      schoolId,
+      status,
+      pageNum,
+      limitNum,
+      schoolType
+    );
     return ResponseDto.ok(data, 'Outgoing transfers retrieved successfully');
   }
 
@@ -125,7 +136,10 @@ export class TransfersController {
   @ApiResponse({ status: 200, description: 'Historical grades retrieved successfully' })
   @ApiResponse({ status: 404, description: 'Transfer not found' })
   @ApiResponse({ status: 403, description: 'Access denied' })
-  @ApiResponse({ status: 400, description: 'Historical grades only available for completed transfers' })
+  @ApiResponse({
+    status: 400,
+    description: 'Historical grades only available for completed transfers',
+  })
   async getTransferHistoricalGrades(
     @Param('schoolId') schoolId: string,
     @Param('transferId') transferId: string
@@ -161,7 +175,12 @@ export class TransfersController {
   @ApiQuery({ name: 'status', enum: TransferStatus, required: false })
   @ApiQuery({ name: 'page', type: Number, required: false })
   @ApiQuery({ name: 'limit', type: Number, required: false })
-  @ApiQuery({ name: 'schoolType', type: String, required: false, description: 'Filter by school type (PRIMARY, SECONDARY, TERTIARY)' })
+  @ApiQuery({
+    name: 'schoolType',
+    type: String,
+    required: false,
+    description: 'Filter by school type (PRIMARY, SECONDARY, TERTIARY)',
+  })
   @ApiResponse({ status: 200, description: 'Incoming transfers retrieved successfully' })
   async getIncomingTransfers(
     @Param('schoolId') schoolId: string,
@@ -172,7 +191,13 @@ export class TransfersController {
   ): Promise<ResponseDto<any>> {
     const pageNum = page ? parseInt(page, 10) : 1;
     const limitNum = limit ? parseInt(limit, 10) : 20;
-    const data = await this.transfersService.getIncomingTransfers(schoolId, status, pageNum, limitNum, schoolType);
+    const data = await this.transfersService.getIncomingTransfers(
+      schoolId,
+      status,
+      pageNum,
+      limitNum,
+      schoolType
+    );
     return ResponseDto.ok(data, 'Incoming transfers retrieved successfully');
   }
 

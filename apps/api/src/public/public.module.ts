@@ -9,4 +9,3 @@ import { DatabaseModule } from '../database/database.module';
   providers: [PublicService],
 })
 export class PublicModule {}
-

@@ -51,4 +51,3 @@ export class CreateClassResourceDto {
   @IsString()
   description?: string;
 }
-

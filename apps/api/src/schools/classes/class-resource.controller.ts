@@ -103,8 +103,12 @@ export class ClassResourceController {
     @Param('resourceId') resourceId: string,
     @Res() res: Response
   ): Promise<void> {
-    const { buffer, resource } = await this.resourceService.getFileBuffer(schoolId, classId, resourceId);
-    
+    const { buffer, resource } = await this.resourceService.getFileBuffer(
+      schoolId,
+      classId,
+      resourceId
+    );
+
     res.setHeader('Content-Type', resource.mimeType);
     res.setHeader('Content-Disposition', `attachment; filename="${resource.name}"`);
     res.setHeader('Content-Length', resource.fileSize);
@@ -128,4 +132,3 @@ export class ClassResourceController {
     return ResponseDto.ok(undefined, 'Resource deleted successfully');
   }
 }
-

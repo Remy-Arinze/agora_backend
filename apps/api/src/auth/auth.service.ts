@@ -1,4 +1,10 @@
-import { Injectable, UnauthorizedException, BadRequestException, NotFoundException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  UnauthorizedException,
+  BadRequestException,
+  NotFoundException,
+  Logger,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../database/prisma.service';
 import { EmailService } from '../email/email.service';
@@ -25,7 +31,7 @@ export class AuthService {
 
       // Determine if it's an email or public ID
       const isEmail = emailOrPublicId.includes('@');
-      
+
       let user;
       let schoolAdmin = null;
       let teacherProfile = null;
@@ -85,7 +91,7 @@ export class AuthService {
         if (!user) {
           user = schoolAdmin?.user || teacherProfile?.user;
         }
-        
+
         if (user) {
           // Reload user with all relations
           user = await this.prisma.user.findUnique({
@@ -146,13 +152,21 @@ export class AuthService {
             currentPublicId = user.studentProfile.publicId || null;
           }
           // If no active enrollment, schoolId remains null (student not enrolled anywhere)
-        } else if (user.role === 'SCHOOL_ADMIN' && user.schoolAdmins && user.schoolAdmins.length > 0) {
+        } else if (
+          user.role === 'SCHOOL_ADMIN' &&
+          user.schoolAdmins &&
+          user.schoolAdmins.length > 0
+        ) {
           // ✅ SCHOOL_ADMIN via email: Use first school admin profile
           const adminProfile = user.schoolAdmins[0];
           currentSchoolId = adminProfile.schoolId;
           currentPublicId = adminProfile.publicId;
           currentProfileId = adminProfile.id; // This is the SchoolAdmin record ID used for permissions
-        } else if (user.role === 'TEACHER' && user.teacherProfiles && user.teacherProfiles.length > 0) {
+        } else if (
+          user.role === 'TEACHER' &&
+          user.teacherProfiles &&
+          user.teacherProfiles.length > 0
+        ) {
           // ✅ TEACHER via email: Use first teacher profile
           const teacherProf = user.teacherProfiles[0];
           currentSchoolId = teacherProf.schoolId;
@@ -355,9 +369,9 @@ export class AuthService {
     const payload: JwtPayload = {
       sub: userId,
       role,
-      ...(schoolId && { schoolId }),      // ✅ Include if exists
-      ...(publicId && { publicId }),      // ✅ Include if exists
-      ...(profileId && { profileId }),    // ✅ Include if exists
+      ...(schoolId && { schoolId }), // ✅ Include if exists
+      ...(publicId && { publicId }), // ✅ Include if exists
+      ...(profileId && { profileId }), // ✅ Include if exists
     };
 
     return {
@@ -373,7 +387,7 @@ export class AuthService {
     try {
       // Verify refresh token
       const payload = this.jwtService.verify(refreshToken);
-      
+
       // Validate user still exists and is active
       const user = await this.validateUser(payload.sub);
       if (!user) {
@@ -456,21 +470,21 @@ export class AuthService {
     let name = email;
     let role = 'User';
     const schools: Array<{ name: string; publicId: string; role: string }> = [];
-    
+
     // Collect ALL school admin profiles
     if (user.schoolAdmins && user.schoolAdmins.length > 0) {
       name = `${user.schoolAdmins[0].firstName} ${user.schoolAdmins[0].lastName}`;
       role = 'Administrator';
-      
+
       // Get all schools for this admin
-      const schoolIds = [...new Set(user.schoolAdmins.map(admin => admin.schoolId))];
+      const schoolIds = [...new Set(user.schoolAdmins.map((admin) => admin.schoolId))];
       const schoolsData = await this.prisma.school.findMany({
         where: { id: { in: schoolIds } },
         select: { id: true, name: true },
       });
-      
+
       for (const admin of user.schoolAdmins) {
-        const school = schoolsData.find(s => s.id === admin.schoolId);
+        const school = schoolsData.find((s) => s.id === admin.schoolId);
         if (school) {
           schools.push({
             name: school.name,
@@ -479,21 +493,21 @@ export class AuthService {
           });
         }
       }
-    } 
+    }
     // Collect ALL teacher profiles
     else if (user.teacherProfiles && user.teacherProfiles.length > 0) {
       name = `${user.teacherProfiles[0].firstName} ${user.teacherProfiles[0].lastName}`;
       role = 'Teacher';
-      
+
       // Get all schools for this teacher
-      const schoolIds = [...new Set(user.teacherProfiles.map(teacher => teacher.schoolId))];
+      const schoolIds = [...new Set(user.teacherProfiles.map((teacher) => teacher.schoolId))];
       const schoolsData = await this.prisma.school.findMany({
         where: { id: { in: schoolIds } },
         select: { id: true, name: true },
       });
-      
+
       for (const teacher of user.teacherProfiles) {
-        const school = schoolsData.find(s => s.id === teacher.schoolId);
+        const school = schoolsData.find((s) => s.id === teacher.schoolId);
         if (school) {
           schools.push({
             name: school.name,
@@ -507,15 +521,18 @@ export class AuthService {
     // Send email with all schools information
     try {
       await this.emailService.sendPasswordResetEmail(
-        email, 
-        name, 
-        token, 
-        role, 
+        email,
+        name,
+        token,
+        role,
         schools.length > 0 ? schools : undefined
       );
     } catch (error) {
       // Log error but don't fail the request
-      this.logger.error('Failed to send password reset email:', error instanceof Error ? error.stack : error);
+      this.logger.error(
+        'Failed to send password reset email:',
+        error instanceof Error ? error.stack : error
+      );
     }
   }
 
@@ -615,7 +632,10 @@ export class AuthService {
         );
       } catch (error) {
         // Log error but don't fail the request
-        this.logger.error('Failed to send password reset confirmation email:', error instanceof Error ? error.stack : error);
+        this.logger.error(
+          'Failed to send password reset confirmation email:',
+          error instanceof Error ? error.stack : error
+        );
       }
     }
   }
@@ -647,10 +667,20 @@ export class AuthService {
 
     // Send email with public ID and school name if provided
     try {
-      await this.emailService.sendPasswordResetEmail(email, name, token, role, publicId || undefined, schoolName);
+      await this.emailService.sendPasswordResetEmail(
+        email,
+        name,
+        token,
+        role,
+        publicId || undefined,
+        schoolName
+      );
     } catch (error) {
       // Log error but don't fail the request
-      this.logger.error('Failed to send password reset email:', error instanceof Error ? error.stack : error);
+      this.logger.error(
+        'Failed to send password reset email:',
+        error instanceof Error ? error.stack : error
+      );
     }
   }
 
@@ -658,16 +688,13 @@ export class AuthService {
    * Resend password reset email for a user (admin function)
    * Invalidates any existing unused tokens and creates a new one
    */
-  async resendPasswordResetEmail(
-    userId: string,
-    schoolId?: string
-  ): Promise<void> {
+  async resendPasswordResetEmail(userId: string, schoolId?: string): Promise<void> {
     // Get user with profiles
     // If schoolId is provided, filter by it; otherwise get all schools
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       include: {
-        schoolAdmins: schoolId 
+        schoolAdmins: schoolId
           ? {
               where: { schoolId },
               include: {
@@ -731,7 +758,7 @@ export class AuthService {
     if (user.schoolAdmins && user.schoolAdmins.length > 0) {
       name = `${user.schoolAdmins[0].firstName} ${user.schoolAdmins[0].lastName}`;
       role = 'Administrator';
-      
+
       for (const admin of user.schoolAdmins) {
         if (admin.school) {
           schools.push({
@@ -741,12 +768,12 @@ export class AuthService {
           });
         }
       }
-    } 
+    }
     // Collect ALL teacher profiles (or filtered by schoolId if provided)
     else if (user.teacherProfiles && user.teacherProfiles.length > 0) {
       name = `${user.teacherProfiles[0].firstName} ${user.teacherProfiles[0].lastName}`;
       role = 'Teacher';
-      
+
       for (const teacher of user.teacherProfiles) {
         if (teacher.school) {
           schools.push({
@@ -756,12 +783,12 @@ export class AuthService {
           });
         }
       }
-    } 
+    }
     // Students - single school only
     else if (user.studentProfile) {
       name = `${user.studentProfile.firstName} ${user.studentProfile.lastName}`;
       role = 'Student';
-      
+
       // Get school name from student's enrollment
       const enrollment = await this.prisma.enrollment.findFirst({
         where: {
@@ -777,7 +804,7 @@ export class AuthService {
           enrollmentDate: 'desc',
         },
       });
-      
+
       if (enrollment?.school && user.studentProfile.publicId) {
         schools.push({
           name: enrollment.school.name,
@@ -804,17 +831,19 @@ export class AuthService {
     // Send email with all schools information
     try {
       await this.emailService.sendPasswordResetEmail(
-        user.email, 
-        name, 
-        token, 
-        role, 
+        user.email,
+        name,
+        token,
+        role,
         schools.length > 0 ? schools : undefined
       );
     } catch (error) {
       // Log error but don't fail the request
-      this.logger.error('Failed to resend password reset email:', error instanceof Error ? error.stack : error);
+      this.logger.error(
+        'Failed to resend password reset email:',
+        error instanceof Error ? error.stack : error
+      );
       throw error; // Re-throw so admin knows it failed
     }
   }
 }
-

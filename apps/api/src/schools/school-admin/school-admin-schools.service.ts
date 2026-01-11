@@ -1,10 +1,26 @@
-import { Injectable, BadRequestException, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { SchoolRepository } from '../domain/repositories/school.repository';
 import { SchoolMapper } from '../domain/mappers/school.mapper';
 import { SchoolDto } from '../dto/school.dto';
-import { SchoolDashboardDto, DashboardStatsDto, GrowthTrendDataDto, WeeklyActivityDataDto, RecentStudentDto } from '../dto/dashboard.dto';
-import { StaffListResponseDto, StaffListItemDto, StaffListMetaDto, GetStaffListQueryDto } from '../dto/staff-list.dto';
+import {
+  SchoolDashboardDto,
+  DashboardStatsDto,
+  GrowthTrendDataDto,
+  WeeklyActivityDataDto,
+  RecentStudentDto,
+} from '../dto/dashboard.dto';
+import {
+  StaffListResponseDto,
+  StaffListItemDto,
+  StaffListMetaDto,
+  GetStaffListQueryDto,
+} from '../dto/staff-list.dto';
 import { UpdateSchoolDto } from '../dto/update-school.dto';
 import { UserWithContext } from '../../auth/types/user-with-context.type';
 import { CloudinaryService } from '../../storage/cloudinary/cloudinary.service';
@@ -28,7 +44,9 @@ export class SchoolAdminSchoolsService {
   /**
    * Get school admin's own school
    */
-  async getMySchool(user: UserWithContext): Promise<SchoolDto & { currentAdmin?: { id: string; role: string } }> {
+  async getMySchool(
+    user: UserWithContext
+  ): Promise<SchoolDto & { currentAdmin?: { id: string; role: string } }> {
     const schoolId = user.currentSchoolId;
     const profileId = user.currentProfileId;
 
@@ -61,11 +79,11 @@ export class SchoolAdminSchoolsService {
     }
 
     const schoolDto = this.schoolMapper.toDto(completeSchool);
-    
+
     // Include current admin info for permission checks
     let currentAdmin: { id: string; role: string } | undefined;
     if (profileId) {
-      const admin = completeSchool.admins.find(a => a.id === profileId);
+      const admin = completeSchool.admins.find((a) => a.id === profileId);
       if (admin) {
         currentAdmin = { id: admin.id, role: admin.role };
       }
@@ -133,7 +151,10 @@ export class SchoolAdminSchoolsService {
         where: {
           schoolId,
           isActive: true,
-          ...(schoolType && classIds && classLevels && (classIds.length > 0 || classLevels.length > 0)
+          ...(schoolType &&
+          classIds &&
+          classLevels &&
+          (classIds.length > 0 || classLevels.length > 0)
             ? {
                 OR: [
                   ...(classIds.length > 0 ? [{ classId: { in: classIds } }] : []),
@@ -149,7 +170,10 @@ export class SchoolAdminSchoolsService {
           schoolId,
           isActive: true,
           createdAt: { lte: lastMonth },
-          ...(schoolType && classIds && classLevels && (classIds.length > 0 || classLevels.length > 0)
+          ...(schoolType &&
+          classIds &&
+          classLevels &&
+          (classIds.length > 0 || classLevels.length > 0)
             ? {
                 OR: [
                   ...(classIds.length > 0 ? [{ classId: { in: classIds } }] : []),
@@ -194,7 +218,10 @@ export class SchoolAdminSchoolsService {
         where: {
           schoolId,
           createdAt: { gte: sixMonthsAgo },
-          ...(schoolType && classIds && classLevels && (classIds.length > 0 || classLevels.length > 0)
+          ...(schoolType &&
+          classIds &&
+          classLevels &&
+          (classIds.length > 0 || classLevels.length > 0)
             ? {
                 OR: [
                   ...(classIds.length > 0 ? [{ classId: { in: classIds } }] : []),
@@ -210,7 +237,10 @@ export class SchoolAdminSchoolsService {
         where: {
           schoolId,
           isActive: true,
-          ...(schoolType && classIds && classLevels && (classIds.length > 0 || classLevels.length > 0)
+          ...(schoolType &&
+          classIds &&
+          classLevels &&
+          (classIds.length > 0 || classLevels.length > 0)
             ? {
                 OR: [
                   ...(classIds.length > 0 ? [{ classId: { in: classIds } }] : []),
@@ -239,7 +269,10 @@ export class SchoolAdminSchoolsService {
         where: {
           schoolId,
           createdAt: { gte: lastWeek },
-          ...(schoolType && classIds && classLevels && (classIds.length > 0 || classLevels.length > 0)
+          ...(schoolType &&
+          classIds &&
+          classLevels &&
+          (classIds.length > 0 || classLevels.length > 0)
             ? {
                 OR: [
                   ...(classIds.length > 0 ? [{ classId: { in: classIds } }] : []),
@@ -257,29 +290,51 @@ export class SchoolAdminSchoolsService {
     // Calculate stats with percentage changes
     const stats: DashboardStatsDto = {
       totalStudents: currentEnrollments,
-      studentsChange: previousEnrollments > 0
-        ? Math.round(((currentEnrollments - previousEnrollments) / previousEnrollments) * 100)
-        : currentEnrollments > 0 ? 100 : 0,
+      studentsChange:
+        previousEnrollments > 0
+          ? Math.round(((currentEnrollments - previousEnrollments) / previousEnrollments) * 100)
+          : currentEnrollments > 0
+            ? 100
+            : 0,
       totalTeachers: currentTeachers,
-      teachersChange: previousTeachers > 0
-        ? Math.round(((currentTeachers - previousTeachers) / previousTeachers) * 100)
-        : currentTeachers > 0 ? 100 : 0,
+      teachersChange:
+        previousTeachers > 0
+          ? Math.round(((currentTeachers - previousTeachers) / previousTeachers) * 100)
+          : currentTeachers > 0
+            ? 100
+            : 0,
       activeCourses: currentCourses,
-      coursesChange: previousCourses > 0
-        ? Math.round(((currentCourses - previousCourses) / previousCourses) * 100)
-        : currentCourses > 0 ? 100 : 0,
+      coursesChange:
+        previousCourses > 0
+          ? Math.round(((currentCourses - previousCourses) / previousCourses) * 100)
+          : currentCourses > 0
+            ? 100
+            : 0,
       pendingAdmissions: pendingAdmissions,
       pendingAdmissionsChange: pendingAdmissions - previousPendingAdmissions,
     };
 
     // Calculate growth trends (last 6 months)
     const growthTrends: GrowthTrendDataDto[] = [];
-    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    
+    const monthNames = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+
     for (let i = 5; i >= 0; i--) {
       const monthDate = new Date(currentYear, currentMonth - i, 1);
       const nextMonthDate = new Date(currentYear, currentMonth - i + 1, 1);
-      
+
       const monthEnrollments = allEnrollments.filter(
         (e) => e.createdAt >= monthDate && e.createdAt < nextMonthDate
       ).length;
@@ -312,7 +367,7 @@ export class SchoolAdminSchoolsService {
     // Calculate weekly activity (last 7 days)
     const weeklyActivity: WeeklyActivityDataDto[] = [];
     const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    
+
     for (let i = 6; i >= 0; i--) {
       const dayDate = new Date(now);
       dayDate.setDate(dayDate.getDate() - i);
@@ -355,7 +410,11 @@ export class SchoolAdminSchoolsService {
   /**
    * Helper method to get course count (handles missing Course model)
    */
-  private async getCourseCount(schoolId: string, startDate?: Date, endDate?: Date): Promise<number> {
+  private async getCourseCount(
+    schoolId: string,
+    startDate?: Date,
+    endDate?: Date
+  ): Promise<number> {
     try {
       const where: any = { schoolId };
       if (startDate) {
@@ -366,7 +425,7 @@ export class SchoolAdminSchoolsService {
           where.createdAt.lte = new Date();
         }
       }
-      return await (this.prisma as any).course?.count({ where }) || 0;
+      return (await (this.prisma as any).course?.count({ where })) || 0;
     } catch {
       return 0; // Course model doesn't exist or error
     }
@@ -381,7 +440,7 @@ export class SchoolAdminSchoolsService {
       if (beforeDate) {
         where.createdAt = { lte: beforeDate };
       }
-      return await (this.prisma as any).admission?.count({ where }) || 0;
+      return (await (this.prisma as any).admission?.count({ where })) || 0;
     } catch {
       return 0; // Admission model doesn't exist or error
     }
@@ -557,7 +616,9 @@ export class SchoolAdminSchoolsService {
         where: {
           schoolId,
           ...searchCondition,
-          ...(isSpecificRoleFilter ? { role: { equals: roleFilter, mode: 'insensitive' as const } } : {}),
+          ...(isSpecificRoleFilter
+            ? { role: { equals: roleFilter, mode: 'insensitive' as const } }
+            : {}),
         },
         include: { user: true },
         orderBy: { createdAt: 'desc' },
@@ -565,7 +626,7 @@ export class SchoolAdminSchoolsService {
       // Get all teachers (filtered by search, exclude if filtering by specific admin role)
       this.prisma.teacher.findMany({
         where: teacherWhereCondition,
-        include: { 
+        include: {
           user: true,
           classTeachers: {
             include: {
@@ -612,8 +673,9 @@ export class SchoolAdminSchoolsService {
       filteredTeachers = allTeachers.filter((teacher) => {
         // Check class assignments (both Class and ClassArm)
         const hasNoClassAssignments = !teacher.classTeachers || teacher.classTeachers.length === 0;
-        const hasNoSubjectAssignments = !teacher.subjectTeachers || teacher.subjectTeachers.length === 0;
-        
+        const hasNoSubjectAssignments =
+          !teacher.subjectTeachers || teacher.subjectTeachers.length === 0;
+
         // If teacher has no assignments at all, include them (newly imported)
         if (hasNoClassAssignments && hasNoSubjectAssignments) {
           return true;
@@ -638,20 +700,23 @@ export class SchoolAdminSchoolsService {
         subject: null,
         employeeId: null,
         isTemporary: false,
-        status: (admin.user?.accountStatus === 'ACTIVE' ? 'active' : 'inactive') as 'active' | 'inactive',
-        accountStatus: (admin.user?.accountStatus || 'SHADOW') as 'SHADOW' | 'ACTIVE' | 'SUSPENDED' | 'ARCHIVED',
+        status: (admin.user?.accountStatus === 'ACTIVE' ? 'active' : 'inactive') as
+          | 'active'
+          | 'inactive',
+        accountStatus: (admin.user?.accountStatus || 'SHADOW') as
+          | 'SHADOW'
+          | 'ACTIVE'
+          | 'SUSPENDED'
+          | 'ARCHIVED',
         profileImage: admin.profileImage,
         createdAt: admin.createdAt,
       })),
       ...filteredTeachers.map((teacher) => {
         // Get subject names from SubjectTeacher relationships, fallback to legacy subject field
-        const subjectNames = teacher.subjectTeachers
-          ?.map((st: any) => st.subject?.name)
-          .filter(Boolean) || [];
-        const displaySubject = subjectNames.length > 0 
-          ? subjectNames.join(', ') 
-          : teacher.subject;
-        
+        const subjectNames =
+          teacher.subjectTeachers?.map((st: any) => st.subject?.name).filter(Boolean) || [];
+        const displaySubject = subjectNames.length > 0 ? subjectNames.join(', ') : teacher.subject;
+
         return {
           id: teacher.id,
           type: 'teacher' as const,
@@ -663,8 +728,14 @@ export class SchoolAdminSchoolsService {
           subject: displaySubject,
           employeeId: teacher.employeeId,
           isTemporary: teacher.isTemporary,
-          status: (teacher.user?.accountStatus === 'ACTIVE' ? 'active' : 'inactive') as 'active' | 'inactive',
-          accountStatus: (teacher.user?.accountStatus || 'SHADOW') as 'SHADOW' | 'ACTIVE' | 'SUSPENDED' | 'ARCHIVED',
+          status: (teacher.user?.accountStatus === 'ACTIVE' ? 'active' : 'inactive') as
+            | 'active'
+            | 'inactive',
+          accountStatus: (teacher.user?.accountStatus || 'SHADOW') as
+            | 'SHADOW'
+            | 'ACTIVE'
+            | 'SUSPENDED'
+            | 'ARCHIVED',
           profileImage: teacher.profileImage,
           createdAt: teacher.createdAt,
         };
@@ -744,7 +815,9 @@ export class SchoolAdminSchoolsService {
     // Validate file type
     const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
     if (!allowedMimeTypes.includes(file.mimetype)) {
-      throw new BadRequestException('Invalid file type. Only JPEG, PNG, GIF, and WebP images are allowed');
+      throw new BadRequestException(
+        'Invalid file type. Only JPEG, PNG, GIF, and WebP images are allowed'
+      );
     }
 
     // Validate file size (5MB max)
@@ -796,7 +869,11 @@ export class SchoolAdminSchoolsService {
    * Update school information
    * School admins can update basic fields directly, but sensitive changes require token verification
    */
-  async updateSchool(user: UserWithContext, updateSchoolDto: UpdateSchoolDto, verificationToken?: string): Promise<SchoolDto> {
+  async updateSchool(
+    user: UserWithContext,
+    updateSchoolDto: UpdateSchoolDto,
+    verificationToken?: string
+  ): Promise<SchoolDto> {
     const schoolId = user.currentSchoolId;
 
     if (!schoolId) {
@@ -811,24 +888,30 @@ export class SchoolAdminSchoolsService {
 
     // Fields that school admins CANNOT change
     const restrictedFields = ['subdomain', 'isActive', 'schoolId'];
-    const hasRestrictedFields = restrictedFields.some(field => updateSchoolDto[field as keyof UpdateSchoolDto] !== undefined);
-    
+    const hasRestrictedFields = restrictedFields.some(
+      (field) => updateSchoolDto[field as keyof UpdateSchoolDto] !== undefined
+    );
+
     if (hasRestrictedFields) {
-      throw new BadRequestException('You do not have permission to change restricted fields (subdomain, isActive, schoolId)');
+      throw new BadRequestException(
+        'You do not have permission to change restricted fields (subdomain, isActive, schoolId)'
+      );
     }
 
     // Check for sensitive changes that require token verification
     const { levels, ...basicFields } = updateSchoolDto;
-    const hasSchoolTypeChange = levels && (
-      (levels.primary !== undefined && levels.primary !== school.hasPrimary) ||
-      (levels.secondary !== undefined && levels.secondary !== school.hasSecondary) ||
-      (levels.tertiary !== undefined && levels.tertiary !== school.hasTertiary)
-    );
+    const hasSchoolTypeChange =
+      levels &&
+      ((levels.primary !== undefined && levels.primary !== school.hasPrimary) ||
+        (levels.secondary !== undefined && levels.secondary !== school.hasSecondary) ||
+        (levels.tertiary !== undefined && levels.tertiary !== school.hasTertiary));
 
     // If school type is changing, require token verification
     if (hasSchoolTypeChange) {
       if (!verificationToken) {
-        throw new BadRequestException('Token verification required for school type changes. Please request a verification token first.');
+        throw new BadRequestException(
+          'Token verification required for school type changes. Please request a verification token first.'
+        );
       }
 
       // Verify token
@@ -867,7 +950,7 @@ export class SchoolAdminSchoolsService {
 
     // Prepare update data
     const updateData: any = { ...basicFields };
-    
+
     // Only update school type if levels are provided and verified
     if (levels && (hasSchoolTypeChange ? verificationToken : true)) {
       if (levels.primary !== undefined) updateData.hasPrimary = levels.primary;
@@ -898,7 +981,10 @@ export class SchoolAdminSchoolsService {
    * Request verification token for sensitive school profile changes
    * Sends an email with verification token
    */
-  async requestEditToken(user: UserWithContext, changes: UpdateSchoolDto): Promise<{ message: string; token?: string }> {
+  async requestEditToken(
+    user: UserWithContext,
+    changes: UpdateSchoolDto
+  ): Promise<{ message: string; token?: string }> {
     const schoolId = user.currentSchoolId;
 
     if (!schoolId) {
@@ -913,14 +999,16 @@ export class SchoolAdminSchoolsService {
 
     // Check if changes include sensitive fields
     const { levels } = changes;
-    const hasSchoolTypeChange = levels && (
-      (levels.primary !== undefined && levels.primary !== school.hasPrimary) ||
-      (levels.secondary !== undefined && levels.secondary !== school.hasSecondary) ||
-      (levels.tertiary !== undefined && levels.tertiary !== school.hasTertiary)
-    );
+    const hasSchoolTypeChange =
+      levels &&
+      ((levels.primary !== undefined && levels.primary !== school.hasPrimary) ||
+        (levels.secondary !== undefined && levels.secondary !== school.hasSecondary) ||
+        (levels.tertiary !== undefined && levels.tertiary !== school.hasTertiary));
 
     if (!hasSchoolTypeChange) {
-      throw new BadRequestException('No sensitive changes detected. You can update these fields directly without verification.');
+      throw new BadRequestException(
+        'No sensitive changes detected. You can update these fields directly without verification.'
+      );
     }
 
     // Get principal email for verification
@@ -933,7 +1021,9 @@ export class SchoolAdminSchoolsService {
     });
 
     if (!principal || !principal.user?.email) {
-      throw new BadRequestException('Principal email not found. Please ensure your school has a principal with an email address.');
+      throw new BadRequestException(
+        'Principal email not found. Please ensure your school has a principal with an email address.'
+      );
     }
 
     // Generate token
@@ -972,7 +1062,10 @@ export class SchoolAdminSchoolsService {
   /**
    * Verify edit token and get proposed changes
    */
-  async verifyEditToken(token: string, user: UserWithContext): Promise<{ changes: UpdateSchoolDto; school: SchoolDto }> {
+  async verifyEditToken(
+    token: string,
+    user: UserWithContext
+  ): Promise<{ changes: UpdateSchoolDto; school: SchoolDto }> {
     const schoolId = user.currentSchoolId;
 
     if (!schoolId) {
@@ -1019,4 +1112,3 @@ export class SchoolAdminSchoolsService {
     };
   }
 }
-

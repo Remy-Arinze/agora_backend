@@ -144,9 +144,7 @@ describe('AdminService', () => {
         new ConflictException('Email already exists')
       );
 
-      await expect(service.addAdmin('school-1', mockAdminData)).rejects.toThrow(
-        ConflictException
-      );
+      await expect(service.addAdmin('school-1', mockAdminData)).rejects.toThrow(ConflictException);
     });
   });
 
@@ -209,10 +207,7 @@ describe('AdminService', () => {
       staffRepository.findAdminById.mockResolvedValue(principalAdmin as any);
       prisma.schoolAdmin.findFirst.mockResolvedValue(principalAdmin as any);
 
-      await expect(service.deleteAdmin('school-1', 'admin-1')).rejects.toThrow(
-        BadRequestException
-      );
+      await expect(service.deleteAdmin('school-1', 'admin-1')).rejects.toThrow(BadRequestException);
     });
   });
 });
-

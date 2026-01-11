@@ -8,18 +8,18 @@ import { PermissionResource, PermissionType } from './permission.dto';
  * Represents a single permission assignment for the new admin
  */
 export class AdminPermissionDto {
-  @ApiProperty({ 
+  @ApiProperty({
     description: 'The resource to grant permission for',
     enum: PermissionResource,
-    example: PermissionResource.STUDENTS
+    example: PermissionResource.STUDENTS,
   })
   @IsString()
   resource: PermissionResource;
 
-  @ApiProperty({ 
+  @ApiProperty({
     description: 'The permission type (READ, WRITE, or ADMIN)',
     enum: PermissionType,
-    example: PermissionType.READ
+    example: PermissionType.READ,
   })
   @IsString()
   type: PermissionType;
@@ -42,9 +42,10 @@ export class AddAdminDto {
   @IsString()
   phone: string;
 
-  @ApiProperty({ 
-    description: 'Admin role (can be enum value or custom role string like "Bursar", "Vice Principal", etc.)',
-    example: 'BURSAR or "Dean of Students"'
+  @ApiProperty({
+    description:
+      'Admin role (can be enum value or custom role string like "Bursar", "Vice Principal", etc.)',
+    example: 'BURSAR or "Dean of Students"',
   })
   @IsString()
   role: string; // Changed to string to accept custom roles
@@ -59,14 +60,15 @@ export class AddAdminDto {
   @IsString()
   employeeId?: string;
 
-  @ApiPropertyOptional({ 
-    description: 'Custom permissions to assign. If not provided, default READ permissions for all resources will be assigned.',
+  @ApiPropertyOptional({
+    description:
+      'Custom permissions to assign. If not provided, default READ permissions for all resources will be assigned.',
     type: [AdminPermissionDto],
     example: [
       { resource: 'STUDENTS', type: 'READ' },
       { resource: 'STUDENTS', type: 'WRITE' },
-      { resource: 'CLASSES', type: 'READ' }
-    ]
+      { resource: 'CLASSES', type: 'READ' },
+    ],
   })
   @IsOptional()
   @IsArray()
@@ -74,4 +76,3 @@ export class AddAdminDto {
   @Type(() => AdminPermissionDto)
   permissions?: AdminPermissionDto[];
 }
-

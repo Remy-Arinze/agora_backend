@@ -36,7 +36,10 @@ export class GradesController {
     description: 'Grade created successfully',
   })
   @ApiResponse({ status: 400, description: 'Invalid input data' })
-  @ApiResponse({ status: 403, description: 'Teacher not authorized to create grade for this subject' })
+  @ApiResponse({
+    status: 403,
+    description: 'Teacher not authorized to create grade for this subject',
+  })
   async createGrade(
     @Param('schoolId') schoolId: string,
     @Body() dto: CreateGradeDto,
@@ -109,7 +112,11 @@ export class GradesController {
   @ApiOperation({ summary: 'Get grades for a class' })
   @ApiQuery({ name: 'subject', required: false, description: 'Filter by subject' })
   @ApiQuery({ name: 'termId', required: false, description: 'Filter by term ID' })
-  @ApiQuery({ name: 'gradeType', required: false, description: 'Filter by grade type (CA, ASSIGNMENT, EXAM)' })
+  @ApiQuery({
+    name: 'gradeType',
+    required: false,
+    description: 'Filter by grade type (CA, ASSIGNMENT, EXAM)',
+  })
   @ApiResponse({
     status: 200,
     description: 'Grades retrieved successfully',
@@ -122,7 +129,14 @@ export class GradesController {
     @Query('gradeType') gradeType?: string,
     @CurrentUser() user?: UserWithContext
   ): Promise<ResponseDto<any[]>> {
-    const data = await this.gradesService.getClassGrades(schoolId, classId, subject, termId, gradeType, user);
+    const data = await this.gradesService.getClassGrades(
+      schoolId,
+      classId,
+      subject,
+      termId,
+      gradeType,
+      user
+    );
     return ResponseDto.ok(data, 'Grades retrieved successfully');
   }
 
@@ -144,4 +158,3 @@ export class GradesController {
     return ResponseDto.ok(data, 'Grades retrieved successfully');
   }
 }
-

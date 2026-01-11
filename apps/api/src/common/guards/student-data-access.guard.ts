@@ -1,22 +1,17 @@
-import {
-  Injectable,
-  CanActivate,
-  ExecutionContext,
-  ForbiddenException,
-} from '@nestjs/common';
+import { Injectable, CanActivate, ExecutionContext, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { UserWithContext } from '../../auth/types/user-with-context.type';
 
 /**
  * Guard that ensures students can only access their own data
- * 
+ *
  * For STUDENT:
  * - Verifies the studentId in the request matches the logged-in student
  * - Allows access to their own data across all schools (for transcripts)
- * 
+ *
  * For SCHOOL_ADMIN/TEACHER:
  * - Verifies the student is enrolled in their school (active enrollment)
- * 
+ *
  * For SUPER_ADMIN:
  * - Can access any student's data
  */
@@ -37,7 +32,7 @@ export class StudentDataAccessGuard implements CanActivate {
     // School admin/teacher can access students from their school
     if (user.role === 'SCHOOL_ADMIN' || user.role === 'TEACHER') {
       const schoolId = user.currentSchoolId || request.schoolId;
-      
+
       if (!schoolId) {
         throw new ForbiddenException('School context is required');
       }
@@ -49,7 +44,7 @@ export class StudentDataAccessGuard implements CanActivate {
           isActive: true,
         },
       });
-      
+
       if (!enrollment) {
         throw new ForbiddenException('Student is not enrolled in your school');
       }
@@ -61,7 +56,7 @@ export class StudentDataAccessGuard implements CanActivate {
       const student = await this.prisma.student.findUnique({
         where: { userId: user.id },
       });
-      
+
       if (!student || student.id !== studentId) {
         throw new ForbiddenException('You can only access your own data');
       }
@@ -71,4 +66,3 @@ export class StudentDataAccessGuard implements CanActivate {
     return false;
   }
 }
-

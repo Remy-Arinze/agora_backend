@@ -1,4 +1,9 @@
-import { Injectable, BadRequestException, NotFoundException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+  ConflictException,
+} from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { SchoolRepository } from '../schools/domain/repositories/school.repository';
 import {
@@ -61,10 +66,7 @@ export class ResourcesService {
 
     const classLevels = await this.classLevelModel.findMany({
       where,
-      orderBy: [
-        { type: 'asc' },
-        { level: 'asc' },
-      ],
+      orderBy: [{ type: 'asc' }, { level: 'asc' }],
     });
 
     return classLevels.map((cl: any) => ({
@@ -113,10 +115,7 @@ export class ResourcesService {
       include: {
         classLevel: true,
       },
-      orderBy: [
-        { classLevel: { level: 'asc' } },
-        { name: 'asc' },
-      ],
+      orderBy: [{ classLevel: { level: 'asc' } }, { name: 'asc' }],
     });
 
     return classArms.map((ca: any) => ({
@@ -168,10 +167,14 @@ export class ResourcesService {
 
     if (existingLevels.length > 0) {
       // Check if any levels have active ClassArms
-      const levelsWithArms = existingLevels.filter((level: any) => level.classArms && level.classArms.length > 0);
-      
+      const levelsWithArms = existingLevels.filter(
+        (level: any) => level.classArms && level.classArms.length > 0
+      );
+
       if (levelsWithArms.length > 0) {
-        throw new ConflictException(`Classes for ${schoolType} already exist. Delete them first to regenerate.`);
+        throw new ConflictException(
+          `Classes for ${schoolType} already exist. Delete them first to regenerate.`
+        );
       }
 
       // If levels exist but have no arms, delete the orphaned levels first
@@ -300,7 +303,7 @@ export class ResourcesService {
     if (existing) {
       throw new BadRequestException(
         `ClassArm "${dto.name}" already exists for ${classLevel.name} in academic year ${academicYear}. ` +
-        `Please use a different arm name (e.g., "Gold", "Blue", "A", "B") or select a different ClassLevel.`
+          `Please use a different arm name (e.g., "Gold", "Blue", "A", "B") or select a different ClassLevel.`
       );
     }
 
@@ -442,8 +445,8 @@ export class ResourcesService {
     });
 
     // If termId is provided, fetch teacher workloads for that term
-    let teacherWorkloads: Map<string, { periodCount: number; classCount: number }> = new Map();
-    
+    const teacherWorkloads: Map<string, { periodCount: number; classCount: number }> = new Map();
+
     if (termId && schoolType === 'SECONDARY') {
       // Get all teacher IDs from subjects
       const teacherIds = new Set<string>();
@@ -469,10 +472,7 @@ export class ResourcesService {
           where: {
             termId,
             teacherId: { in: Array.from(teacherIds) },
-            OR: [
-              { classId: { not: null } },
-              { classArmId: { not: null } },
-            ],
+            OR: [{ classId: { not: null } }, { classArmId: { not: null } }],
           },
           select: {
             teacherId: true,
@@ -521,16 +521,17 @@ export class ResourcesService {
       classLevelName: s.classLevel?.name,
       description: s.description,
       isActive: s.isActive,
-      teachers: s.subjectTeachers?.map((st: any) => {
-        const workload = teacherWorkloads.get(st.teacher.id);
-        return {
-          id: st.teacher.id,
-          firstName: st.teacher.firstName,
-          lastName: st.teacher.lastName,
-          periodCount: workload?.periodCount,
-          classCount: workload?.classCount,
-        };
-      }) || [],
+      teachers:
+        s.subjectTeachers?.map((st: any) => {
+          const workload = teacherWorkloads.get(st.teacher.id);
+          return {
+            id: st.teacher.id,
+            firstName: st.teacher.firstName,
+            lastName: st.teacher.lastName,
+            periodCount: workload?.periodCount,
+            classCount: workload?.classCount,
+          };
+        }) || [],
     }));
   }
 
@@ -601,11 +602,12 @@ export class ResourcesService {
       classLevelName: subject.classLevel?.name,
       description: subject.description,
       isActive: subject.isActive,
-      teachers: subject.subjectTeachers?.map((st: any) => ({
-        id: st.teacher.id,
-        firstName: st.teacher.firstName,
-        lastName: st.teacher.lastName,
-      })) || [],
+      teachers:
+        subject.subjectTeachers?.map((st: any) => ({
+          id: st.teacher.id,
+          firstName: st.teacher.firstName,
+          lastName: st.teacher.lastName,
+        })) || [],
     };
   }
 
@@ -689,11 +691,12 @@ export class ResourcesService {
       classLevelName: updated.classLevel?.name,
       description: updated.description,
       isActive: updated.isActive,
-      teachers: updated.subjectTeachers?.map((st: any) => ({
-        id: st.teacher.id,
-        firstName: st.teacher.firstName,
-        lastName: st.teacher.lastName,
-      })) || [],
+      teachers:
+        updated.subjectTeachers?.map((st: any) => ({
+          id: st.teacher.id,
+          firstName: st.teacher.firstName,
+          lastName: st.teacher.lastName,
+        })) || [],
     };
   }
 
@@ -763,7 +766,9 @@ export class ResourcesService {
 
     // For PRIMARY schools, only allow one teacher per subject
     if (schoolType === 'PRIMARY' && subject.subjectTeachers && subject.subjectTeachers.length > 0) {
-      throw new BadRequestException('Primary schools can only have one teacher per subject. Please remove the existing teacher first.');
+      throw new BadRequestException(
+        'Primary schools can only have one teacher per subject. Please remove the existing teacher first.'
+      );
     }
 
     // Verify teacher belongs to school
@@ -819,11 +824,12 @@ export class ResourcesService {
       classLevelName: updated!.classLevel?.name,
       description: updated!.description,
       isActive: updated!.isActive,
-      teachers: updated!.subjectTeachers?.map((st: any) => ({
-        id: st.teacher.id,
-        firstName: st.teacher.firstName,
-        lastName: st.teacher.lastName,
-      })) || [],
+      teachers:
+        updated!.subjectTeachers?.map((st: any) => ({
+          id: st.teacher.id,
+          firstName: st.teacher.firstName,
+          lastName: st.teacher.lastName,
+        })) || [],
     };
   }
 
@@ -875,11 +881,12 @@ export class ResourcesService {
       classLevelName: updated!.classLevel?.name,
       description: updated!.description,
       isActive: updated!.isActive,
-      teachers: updated!.subjectTeachers?.map((st: any) => ({
-        id: st.teacher.id,
-        firstName: st.teacher.firstName,
-        lastName: st.teacher.lastName,
-      })) || [],
+      teachers:
+        updated!.subjectTeachers?.map((st: any) => ({
+          id: st.teacher.id,
+          firstName: st.teacher.firstName,
+          lastName: st.teacher.lastName,
+        })) || [],
     };
   }
 
@@ -977,9 +984,8 @@ export class ResourcesService {
       throw new BadRequestException('School not found');
     }
 
-    const predefinedSubjects = dto.schoolType === 'PRIMARY' 
-      ? this.primarySubjects 
-      : this.secondarySubjects;
+    const predefinedSubjects =
+      dto.schoolType === 'PRIMARY' ? this.primarySubjects : this.secondarySubjects;
 
     // Get existing subjects for this school and schoolType
     const existingSubjects = await this.subjectModel.findMany({
@@ -1070,7 +1076,9 @@ export class ResourcesService {
 
     // Only relevant for SECONDARY schools
     if (subject.schoolType !== 'SECONDARY') {
-      throw new BadRequestException('Class assignments are only available for SECONDARY school subjects');
+      throw new BadRequestException(
+        'Class assignments are only available for SECONDARY school subjects'
+      );
     }
 
     // Get active session if not provided
@@ -1099,10 +1107,7 @@ export class ResourcesService {
       include: {
         classLevel: true,
       },
-      orderBy: [
-        { classLevel: { level: 'asc' } },
-        { name: 'asc' },
-      ],
+      orderBy: [{ classLevel: { level: 'asc' } }, { name: 'asc' }],
     });
 
     // Get current assignments for this subject
@@ -1123,7 +1128,10 @@ export class ResourcesService {
     });
 
     // Build assignments map: classArmId -> assignment details
-    const assignmentsMap: Record<string, { assignmentId: string; teacherId: string; teacherName: string }> = {};
+    const assignmentsMap: Record<
+      string,
+      { assignmentId: string; teacherId: string; teacherName: string }
+    > = {};
     for (const assignment of assignments) {
       if (assignment.classArmId) {
         assignmentsMap[assignment.classArmId] = {
@@ -1135,11 +1143,12 @@ export class ResourcesService {
     }
 
     // Get competent teachers (teachers who can teach this subject)
-    const competentTeachers = subject.subjectTeachers?.map((st: any) => ({
-      id: st.teacher.id,
-      firstName: st.teacher.firstName,
-      lastName: st.teacher.lastName,
-    })) || [];
+    const competentTeachers =
+      subject.subjectTeachers?.map((st: any) => ({
+        id: st.teacher.id,
+        firstName: st.teacher.firstName,
+        lastName: st.teacher.lastName,
+      })) || [];
 
     return {
       subjectId: subject.id,
@@ -1183,7 +1192,9 @@ export class ResourcesService {
     }
 
     if (subject.schoolType !== 'SECONDARY') {
-      throw new BadRequestException('Class assignments are only available for SECONDARY school subjects');
+      throw new BadRequestException(
+        'Class assignments are only available for SECONDARY school subjects'
+      );
     }
 
     // Get or determine session
@@ -1200,7 +1211,7 @@ export class ResourcesService {
     }
 
     // Validate all class arms belong to this school
-    const classArmIds = dto.assignments.map(a => a.classArmId);
+    const classArmIds = dto.assignments.map((a) => a.classArmId);
     const validClassArms = await this.prisma.classArm.findMany({
       where: {
         id: { in: classArmIds },
@@ -1211,7 +1222,7 @@ export class ResourcesService {
       },
     });
 
-    const validClassArmIdSet = new Set(validClassArms.map(ca => ca.id));
+    const validClassArmIdSet = new Set(validClassArms.map((ca) => ca.id));
     for (const assignment of dto.assignments) {
       if (!validClassArmIdSet.has(assignment.classArmId)) {
         throw new BadRequestException(`Invalid class arm: ${assignment.classArmId}`);
@@ -1219,7 +1230,9 @@ export class ResourcesService {
     }
 
     // Get competent teacher IDs
-    const competentTeacherIds = new Set(subject.subjectTeachers?.map((st: any) => st.teacherId) || []);
+    const competentTeacherIds = new Set(
+      subject.subjectTeachers?.map((st: any) => st.teacherId) || []
+    );
 
     let updated = 0;
     let removed = 0;
@@ -1320,9 +1333,9 @@ export class ResourcesService {
    * These can be configured per school in the future
    */
   private readonly WORKLOAD_THRESHOLDS = {
-    LOW: 10,      // Less than 10 periods = underutilized
-    NORMAL: 25,   // 10-25 periods = normal
-    HIGH: 30,     // 25-30 periods = high
+    LOW: 10, // Less than 10 periods = underutilized
+    NORMAL: 25, // 10-25 periods = normal
+    HIGH: 30, // 25-30 periods = high
     OVERLOADED: 30, // More than 30 = overloaded
   };
 
@@ -1399,32 +1412,37 @@ export class ResourcesService {
       where: {
         termId,
         teacherId: { not: null },
-        ...(schoolType ? {
-          OR: [
-            { classArm: { classLevel: { type: schoolType } } },
-            { class: { type: schoolType } },
-          ],
-        } : {}),
+        ...(schoolType
+          ? {
+              OR: [
+                { classArm: { classLevel: { type: schoolType } } },
+                { class: { type: schoolType } },
+              ],
+            }
+          : {}),
       },
       include: {
         subject: { select: { id: true, name: true } },
-        classArm: { 
-          include: { 
-            classLevel: { select: { name: true } } 
-          } 
+        classArm: {
+          include: {
+            classLevel: { select: { name: true } },
+          },
         },
         class: { select: { id: true, name: true } },
       },
     });
 
     // Build workload data per teacher
-    const teacherWorkloads = new Map<string, {
-      totalPeriods: number;
-      subjectPeriods: Map<string, { name: string; count: number }>;
-      classPeriods: Map<string, { name: string; count: number }>;
-      subjectIds: Set<string>;
-      classIds: Set<string>;
-    }>();
+    const teacherWorkloads = new Map<
+      string,
+      {
+        totalPeriods: number;
+        subjectPeriods: Map<string, { name: string; count: number }>;
+        classPeriods: Map<string, { name: string; count: number }>;
+        subjectIds: Set<string>;
+        classIds: Set<string>;
+      }
+    >();
 
     periods.forEach((period: any) => {
       if (!period.teacherId) return;
@@ -1446,17 +1464,20 @@ export class ResourcesService {
       if (period.subject) {
         const subjectKey = period.subject.id;
         workload.subjectIds.add(subjectKey);
-        const existing = workload.subjectPeriods.get(subjectKey) || { name: period.subject.name, count: 0 };
+        const existing = workload.subjectPeriods.get(subjectKey) || {
+          name: period.subject.name,
+          count: 0,
+        };
         existing.count++;
         workload.subjectPeriods.set(subjectKey, existing);
       }
 
       // Track class periods
-      const className = period.classArm 
+      const className = period.classArm
         ? `${period.classArm.classLevel.name} ${period.classArm.name}`
         : period.class?.name || 'Unknown';
       const classKey = period.classArmId || period.classId || 'unknown';
-      
+
       workload.classIds.add(classKey);
       const existingClass = workload.classPeriods.get(classKey) || { name: className, count: 0 };
       existingClass.count++;
@@ -1476,7 +1497,7 @@ export class ResourcesService {
       .map((teacher) => {
         const workload = teacherWorkloads.get(teacher.id);
         const totalPeriods = workload?.totalPeriods || 0;
-        
+
         return {
           teacherId: teacher.id,
           firstName: teacher.firstName,
@@ -1489,7 +1510,7 @@ export class ResourcesService {
           status: getStatus(totalPeriods),
         };
       })
-      .filter(t => t.totalPeriods > 0) // Only include teachers with assignments
+      .filter((t) => t.totalPeriods > 0) // Only include teachers with assignments
       .sort((a, b) => b.totalPeriods - a.totalPeriods); // Sort by workload desc
 
     // Calculate average
@@ -1498,15 +1519,16 @@ export class ResourcesService {
 
     // Build warnings
     const warnings = teacherResults
-      .filter(t => t.status === 'HIGH' || t.status === 'OVERLOADED')
-      .map(t => ({
+      .filter((t) => t.status === 'HIGH' || t.status === 'OVERLOADED')
+      .map((t) => ({
         teacherId: t.teacherId,
         teacherName: `${t.firstName} ${t.lastName}`,
         periodCount: t.totalPeriods,
         status: t.status,
-        message: t.status === 'OVERLOADED'
-          ? `${t.firstName} ${t.lastName} has ${t.totalPeriods} periods - consider redistributing workload`
-          : `${t.firstName} ${t.lastName} has ${t.totalPeriods} periods - approaching maximum capacity`,
+        message:
+          t.status === 'OVERLOADED'
+            ? `${t.firstName} ${t.lastName} has ${t.totalPeriods} periods - consider redistributing workload`
+            : `${t.firstName} ${t.lastName} has ${t.totalPeriods} periods - approaching maximum capacity`,
       }));
 
     // Find subjects without competent teachers
@@ -1587,7 +1609,7 @@ export class ResourcesService {
 
     // Get period counts for these teachers
     const teacherIds = subjectTeachers.map((st: any) => st.teacher.id);
-    
+
     const periodCounts = await this.prisma.timetablePeriod.groupBy({
       by: ['teacherId'],
       where: {
@@ -1657,10 +1679,7 @@ export class ResourcesService {
     // Validate teacher - teacherId can be either the database id or the public teacherId field
     const teacher = await this.prisma.teacher.findFirst({
       where: {
-        OR: [
-          { id: teacherId },
-          { teacherId: teacherId },
-        ],
+        OR: [{ id: teacherId }, { teacherId: teacherId }],
         schoolId,
       },
     });
@@ -1669,7 +1688,7 @@ export class ResourcesService {
     }
 
     // Get term filter
-    let termFilter: any = {};
+    const termFilter: any = {};
     if (termId) {
       termFilter.termId = termId;
     } else {
@@ -1687,7 +1706,7 @@ export class ResourcesService {
         },
         orderBy: { startDate: 'desc' },
       });
-      
+
       // If no SECONDARY-specific term, get any active term for the school
       if (!activeTerm) {
         activeTerm = await this.prisma.term.findFirst({
@@ -1703,7 +1722,7 @@ export class ResourcesService {
           orderBy: { startDate: 'desc' },
         });
       }
-      
+
       if (activeTerm) {
         termFilter.termId = activeTerm.id;
       }
@@ -1712,7 +1731,7 @@ export class ResourcesService {
     // Get all periods for this teacher using the database ID
     const periods = await this.prisma.timetablePeriod.findMany({
       where: {
-        teacherId: teacher.id,  // Use database ID, not the public ID
+        teacherId: teacher.id, // Use database ID, not the public ID
         type: 'LESSON',
         ...termFilter,
       },
@@ -1728,13 +1747,16 @@ export class ResourcesService {
     });
 
     // Group by class, then by subject
-    const classMap = new Map<string, {
-      classId: string;
-      className: string;
-      classLevel: string;
-      classType: string;
-      subjects: Map<string, { subjectId: string; subjectName: string; count: number }>;
-    }>();
+    const classMap = new Map<
+      string,
+      {
+        classId: string;
+        className: string;
+        classLevel: string;
+        classType: string;
+        subjects: Map<string, { subjectId: string; subjectName: string; count: number }>;
+      }
+    >();
 
     periods.forEach((period: any) => {
       // Determine class info
@@ -1815,4 +1837,3 @@ export class ResourcesService {
     };
   }
 }
-

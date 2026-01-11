@@ -21,21 +21,19 @@ export class GoogleCalendarService {
     // Redirect URI should be the backend callback endpoint
     // Format: http://localhost:4000/api/integrations/google-calendar/callback
     const baseUrl = this.configService.get<string>('API_URL') || 'http://localhost:4000';
-    const redirectUri = this.configService.get<string>('GOOGLE_REDIRECT_URI') || 
+    const redirectUri =
+      this.configService.get<string>('GOOGLE_REDIRECT_URI') ||
       `${baseUrl}/api/integrations/google-calendar/callback`;
 
     if (!clientId || !clientSecret) {
       this.logger.warn('Google Calendar credentials not configured');
     }
 
-    this.oauth2Client = new google.auth.OAuth2(
-      clientId,
-      clientSecret,
-      redirectUri
-    );
+    this.oauth2Client = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
 
     // Use a fixed encryption key from env or generate one (for production, use a secure key)
-    this.encryptionKey = this.configService.get<string>('GOOGLE_ENCRYPTION_KEY') || 
+    this.encryptionKey =
+      this.configService.get<string>('GOOGLE_ENCRYPTION_KEY') ||
       'default-encryption-key-change-in-production-32-chars!!';
   }
 
@@ -45,7 +43,7 @@ export class GoogleCalendarService {
   getAuthUrl(userId: string, schoolId: string): string {
     // Create state token with userId and schoolId
     const state = this.encryptState({ userId, schoolId });
-    
+
     return this.oauth2Client.generateAuthUrl({
       access_type: 'offline', // Get refresh token
       scope: ['https://www.googleapis.com/auth/calendar.events'],
@@ -59,21 +57,21 @@ export class GoogleCalendarService {
    */
   async handleCallback(code: string, state: string): Promise<{ userId: string; schoolId: string }> {
     const { userId, schoolId } = this.decryptState(state);
-    
+
     try {
       const { tokens } = await this.oauth2Client.getToken(code);
-      
+
       if (!tokens.access_token || !tokens.refresh_token) {
         throw new BadRequestException('Failed to obtain tokens from Google');
       }
 
       // Store tokens securely
       await this.prisma.googleCalendarSync.upsert({
-        where: { 
-          userId_schoolId: { 
-            userId, 
-            schoolId 
-          } 
+        where: {
+          userId_schoolId: {
+            userId,
+            schoolId,
+          },
         },
         create: {
           userId,
@@ -81,24 +79,24 @@ export class GoogleCalendarService {
           googleCalendarId: 'primary',
           accessToken: this.encrypt(tokens.access_token),
           refreshToken: this.encrypt(tokens.refresh_token),
-          tokenExpiry: tokens.expiry_date 
-            ? new Date(tokens.expiry_date) 
+          tokenExpiry: tokens.expiry_date
+            ? new Date(tokens.expiry_date)
             : new Date(Date.now() + 3600 * 1000), // Default 1 hour
           syncEnabled: true,
         },
         update: {
           accessToken: this.encrypt(tokens.access_token),
           refreshToken: this.encrypt(tokens.refresh_token),
-          tokenExpiry: tokens.expiry_date 
-            ? new Date(tokens.expiry_date) 
+          tokenExpiry: tokens.expiry_date
+            ? new Date(tokens.expiry_date)
             : new Date(Date.now() + 3600 * 1000),
           syncEnabled: true,
           lastSyncAt: new Date(),
-        }
+        },
       });
 
       this.logger.log(`Google Calendar connected for user ${userId} in school ${schoolId}`);
-      
+
       return { userId, schoolId };
     } catch (error) {
       this.logger.error('Failed to handle OAuth callback', error);
@@ -113,7 +111,7 @@ export class GoogleCalendarService {
     // Check if token is expired or expires soon (within 5 minutes)
     const now = new Date();
     const expiresSoon = new Date(sync.tokenExpiry.getTime() - 5 * 60 * 1000);
-    
+
     if (now < expiresSoon) {
       // Token is still valid
       return this.decrypt(sync.accessToken);
@@ -121,20 +119,20 @@ export class GoogleCalendarService {
 
     // Token expired, refresh it
     this.oauth2Client.setCredentials({
-      refresh_token: this.decrypt(sync.refreshToken)
+      refresh_token: this.decrypt(sync.refreshToken),
     });
 
     try {
       const { credentials } = await this.oauth2Client.refreshAccessToken();
-      
+
       await this.prisma.googleCalendarSync.update({
         where: { id: sync.id },
         data: {
           accessToken: this.encrypt(credentials.access_token!),
-          tokenExpiry: credentials.expiry_date 
-            ? new Date(credentials.expiry_date) 
+          tokenExpiry: credentials.expiry_date
+            ? new Date(credentials.expiry_date)
             : new Date(Date.now() + 3600 * 1000),
-        }
+        },
       });
 
       return credentials.access_token!;
@@ -153,12 +151,12 @@ export class GoogleCalendarService {
     schoolId: string
   ): Promise<string | null> {
     const sync = await this.prisma.googleCalendarSync.findUnique({
-      where: { 
-        userId_schoolId: { 
-          userId, 
-          schoolId 
-        } 
-      }
+      where: {
+        userId_schoolId: {
+          userId,
+          schoolId,
+        },
+      },
     });
 
     if (!sync || !sync.syncEnabled) {
@@ -168,13 +166,13 @@ export class GoogleCalendarService {
     try {
       const accessToken = await this.getValidAccessToken(sync);
       this.oauth2Client.setCredentials({ access_token: accessToken });
-      
+
       const calendar = google.calendar({ version: 'v3', auth: this.oauth2Client });
 
       const googleEvent: any = {
         summary: event.title,
         description: event.description || '',
-        start: event.isAllDay 
+        start: event.isAllDay
           ? {
               date: new Date(event.startDate).toISOString().split('T')[0],
             }
@@ -230,12 +228,12 @@ export class GoogleCalendarService {
     schoolId: string
   ): Promise<void> {
     const sync = await this.prisma.googleCalendarSync.findUnique({
-      where: { 
-        userId_schoolId: { 
-          userId, 
-          schoolId 
-        } 
-      }
+      where: {
+        userId_schoolId: {
+          userId,
+          schoolId,
+        },
+      },
     });
 
     if (!sync || !sync.syncEnabled) {
@@ -245,7 +243,7 @@ export class GoogleCalendarService {
     try {
       const accessToken = await this.getValidAccessToken(sync);
       this.oauth2Client.setCredentials({ access_token: accessToken });
-      
+
       const calendar = google.calendar({ version: 'v3', auth: this.oauth2Client });
 
       await calendar.events.delete({
@@ -273,7 +271,7 @@ export class GoogleCalendarService {
       where: {
         userId,
         schoolId,
-      }
+      },
     });
 
     this.logger.log(`Google Calendar disconnected for user ${userId} in school ${schoolId}`);
@@ -284,11 +282,11 @@ export class GoogleCalendarService {
    */
   async getSyncStatus(userId: string, schoolId: string): Promise<any | null> {
     const sync = await this.prisma.googleCalendarSync.findUnique({
-      where: { 
-        userId_schoolId: { 
-          userId, 
-          schoolId 
-        } 
+      where: {
+        userId_schoolId: {
+          userId,
+          schoolId,
+        },
       },
       select: {
         id: true,
@@ -296,7 +294,7 @@ export class GoogleCalendarService {
         lastSyncAt: true,
         syncDirection: true,
         createdAt: true,
-      }
+      },
     });
 
     return sync;
@@ -307,11 +305,11 @@ export class GoogleCalendarService {
    */
   private mapEventTypeToColor(type: string): string {
     const colorMap: Record<string, string> = {
-      ACADEMIC: '9',  // Blue
-      EVENT: '10',    // Green
-      EXAM: '11',     // Red
-      MEETING: '3',   // Purple
-      HOLIDAY: '8',   // Gray
+      ACADEMIC: '9', // Blue
+      EVENT: '10', // Green
+      EXAM: '11', // Red
+      MEETING: '3', // Purple
+      HOLIDAY: '8', // Gray
     };
     return colorMap[type] || '1';
   }
@@ -368,4 +366,3 @@ export class GoogleCalendarService {
     }
   }
 }
-

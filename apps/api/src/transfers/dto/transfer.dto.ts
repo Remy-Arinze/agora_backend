@@ -178,4 +178,3 @@ export class GenerateTacResponseDto {
   @ApiProperty()
   message: string;
 }
-

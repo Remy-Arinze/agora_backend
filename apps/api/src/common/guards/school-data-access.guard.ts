@@ -1,23 +1,18 @@
-import {
-  Injectable,
-  CanActivate,
-  ExecutionContext,
-  ForbiddenException,
-} from '@nestjs/common';
+import { Injectable, CanActivate, ExecutionContext, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { UserWithContext } from '../../auth/types/user-with-context.type';
 
 /**
  * Guard that enforces school-level data isolation
- * 
+ *
  * For SCHOOL_ADMIN and TEACHER:
  * - Extracts schoolId from JWT (set at login based on public ID used)
  * - Verifies user has access to that school
  * - Attaches schoolId to request for use in services/repositories
- * 
+ *
  * For SUPER_ADMIN:
  * - Allows access to any school (no restrictions)
- * 
+ *
  * For STUDENT:
  * - Extracts schoolId from JWT (set at login based on active enrollment)
  * - If no schoolId in JWT, tries to find active enrollment
@@ -111,7 +106,7 @@ export class SchoolDataAccessGuard implements CanActivate {
       const student = await this.prisma.student.findUnique({
         where: { userId },
       });
-      
+
       if (!student) {
         return false;
       }
@@ -147,4 +142,3 @@ export class SchoolDataAccessGuard implements CanActivate {
     return null;
   }
 }
-

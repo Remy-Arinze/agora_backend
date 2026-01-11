@@ -123,7 +123,9 @@ export class AiService {
    */
   private ensureConfigured(): void {
     if (!this.openai) {
-      throw new BadRequestException('AI features are not configured. Please contact your administrator.');
+      throw new BadRequestException(
+        'AI features are not configured. Please contact your administrator.'
+      );
     }
   }
 
@@ -155,7 +157,11 @@ Focus on key concepts, definitions, formulas, and facts that students need to re
       const response = await this.openai!.chat.completions.create({
         model: this.model,
         messages: [
-          { role: 'system', content: 'You are an expert educational content creator specializing in Nigerian curriculum. Return only valid JSON.' },
+          {
+            role: 'system',
+            content:
+              'You are an expert educational content creator specializing in Nigerian curriculum. Return only valid JSON.',
+          },
           { role: 'user', content: prompt },
         ],
         temperature: 0.7,
@@ -202,7 +208,11 @@ Write in a student-friendly tone appropriate for ${gradeLevel} level.`;
       const response = await this.openai!.chat.completions.create({
         model: this.model,
         messages: [
-          { role: 'system', content: 'You are an expert educational content creator specializing in Nigerian curriculum.' },
+          {
+            role: 'system',
+            content:
+              'You are an expert educational content creator specializing in Nigerian curriculum.',
+          },
           { role: 'user', content: prompt },
         ],
         temperature: 0.7,
@@ -252,7 +262,10 @@ Return as JSON: {"questions": [{"question": "...", "type": "...", "options": ["A
       const response = await this.openai!.chat.completions.create({
         model: this.model,
         messages: [
-          { role: 'system', content: 'You are an expert educational assessment creator. Return only valid JSON.' },
+          {
+            role: 'system',
+            content: 'You are an expert educational assessment creator. Return only valid JSON.',
+          },
           { role: 'user', content: prompt },
         ],
         temperature: 0.7,
@@ -314,7 +327,11 @@ Return as JSON with this structure:
       const response = await this.openai!.chat.completions.create({
         model: this.model,
         messages: [
-          { role: 'system', content: 'You are an expert teacher and curriculum developer specializing in Nigerian education. Return only valid JSON.' },
+          {
+            role: 'system',
+            content:
+              'You are an expert teacher and curriculum developer specializing in Nigerian education. Return only valid JSON.',
+          },
           { role: 'user', content: prompt },
         ],
         temperature: 0.7,
@@ -375,7 +392,11 @@ Return as JSON:
       const response = await this.openai!.chat.completions.create({
         model: this.model,
         messages: [
-          { role: 'system', content: 'You are an experienced, fair teacher grading student work. Return only valid JSON.' },
+          {
+            role: 'system',
+            content:
+              'You are an experienced, fair teacher grading student work. Return only valid JSON.',
+          },
           { role: 'user', content: gradingPrompt },
         ],
         temperature: 0.5, // Lower temperature for more consistent grading
@@ -436,7 +457,11 @@ Return as JSON: {"questions": [...]}`;
       const response = await this.openai!.chat.completions.create({
         model: this.model,
         messages: [
-          { role: 'system', content: 'You are an expert assessment creator aligned with Nigerian curriculum standards. Return only valid JSON.' },
+          {
+            role: 'system',
+            content:
+              'You are an expert assessment creator aligned with Nigerian curriculum standards. Return only valid JSON.',
+          },
           { role: 'user', content: prompt },
         ],
         temperature: 0.7,
@@ -454,20 +479,4 @@ Return as JSON: {"questions": [...]}`;
     }
   }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 

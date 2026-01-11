@@ -30,4 +30,3 @@ export class PublicController {
     return ResponseDto.ok(data, 'Statistics retrieved successfully');
   }
 }
-

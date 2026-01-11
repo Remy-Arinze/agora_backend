@@ -104,7 +104,7 @@ export class TeacherCurrentSchoolService {
 
   /**
    * Get subjects that a teacher is authorized to grade for a specific class
-   * 
+   *
    * Logic:
    * - PRIMARY: If teacher is the class teacher (isPrimary=true), they can grade ALL subjects
    * - SECONDARY: Teacher can only grade subjects they're assigned to via ClassTeacher or Timetable
@@ -128,7 +128,7 @@ export class TeacherCurrentSchoolService {
     }
 
     // Determine if classId is a ClassArm or Class
-    let classArm = await this.prisma.classArm.findUnique({
+    const classArm = await this.prisma.classArm.findUnique({
       where: { id: classId },
       include: {
         classLevel: true,
@@ -184,7 +184,7 @@ export class TeacherCurrentSchoolService {
       });
 
       return {
-        subjects: allSubjects.map(s => ({
+        subjects: allSubjects.map((s) => ({
           id: s.id,
           name: s.name,
           code: s.code,
@@ -197,7 +197,10 @@ export class TeacherCurrentSchoolService {
     }
 
     // For SECONDARY/TERTIARY or non-primary teachers - collect subjects from multiple sources
-    const subjectMap = new Map<string, { id: string; name: string; code: string | null; source: string }>();
+    const subjectMap = new Map<
+      string,
+      { id: string; name: string; code: string | null; source: string }
+    >();
 
     // Source 1: ClassTeacher assignments with subjectId
     const classTeacherAssignments = await this.prisma.classTeacher.findMany({
@@ -323,4 +326,3 @@ export class TeacherCurrentSchoolService {
     };
   }
 }
-

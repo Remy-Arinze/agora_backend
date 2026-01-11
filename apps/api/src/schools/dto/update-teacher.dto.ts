@@ -34,4 +34,3 @@ export class UpdateTeacherDto {
 
   // Note: Email is not editable
 }
-

@@ -29,7 +29,11 @@ import { ClassResourceController } from './classes/class-resource.controller';
 import { ClassResourceService } from './classes/class-resource.service';
 
 // Faculties & Departments (Tertiary)
-import { FacultyController, DepartmentController, LevelController } from './faculties/faculty.controller';
+import {
+  FacultyController,
+  DepartmentController,
+  LevelController,
+} from './faculties/faculty.controller';
 import { FacultyService } from './faculties/faculty.service';
 
 // Curriculum
@@ -51,7 +55,14 @@ import { StaffValidatorService } from './shared/staff-validator.service';
 import { CloudinaryModule } from '../storage/cloudinary/cloudinary.module';
 
 @Module({
-  imports: [DatabaseModule, forwardRef(() => AuthModule), EmailModule, CurriculumModule, CloudinaryModule, SubscriptionsModule],
+  imports: [
+    DatabaseModule,
+    forwardRef(() => AuthModule),
+    EmailModule,
+    CurriculumModule,
+    CloudinaryModule,
+    SubscriptionsModule,
+  ],
   controllers: [
     // New architecture controllers
     SuperAdminSchoolsController,

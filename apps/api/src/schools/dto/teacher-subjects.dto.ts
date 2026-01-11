@@ -5,10 +5,10 @@ import { IsString, IsNotEmpty, IsArray, IsOptional, ArrayMinSize } from 'class-v
  * DTO for adding/updating teacher subject competencies
  */
 export class UpdateTeacherSubjectsDto {
-  @ApiProperty({ 
+  @ApiProperty({
     description: 'Array of subject IDs the teacher is qualified to teach',
     type: [String],
-    example: ['clxxx1', 'clxxx2']
+    example: ['clxxx1', 'clxxx2'],
   })
   @IsArray()
   @IsString({ each: true })
@@ -20,9 +20,9 @@ export class UpdateTeacherSubjectsDto {
  * DTO for adding a single subject to a teacher
  */
 export class AddTeacherSubjectDto {
-  @ApiProperty({ 
+  @ApiProperty({
     description: 'Subject ID to add to teacher',
-    example: 'clxxx1'
+    example: 'clxxx1',
   })
   @IsString()
   @IsNotEmpty({ message: 'Subject ID is required' })
@@ -91,4 +91,3 @@ export class AssignableSubjectDto {
   @ApiProperty({ description: 'Whether teacher is already teaching this in the target class' })
   alreadyAssigned: boolean;
 }
-

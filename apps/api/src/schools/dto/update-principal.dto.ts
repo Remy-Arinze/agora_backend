@@ -19,4 +19,3 @@ export class UpdatePrincipalDto {
 
   // Note: Email and role (Principal) are not editable
 }
-

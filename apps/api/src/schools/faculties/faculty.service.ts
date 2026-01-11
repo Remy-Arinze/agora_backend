@@ -203,7 +203,7 @@ export class FacultyService {
     if (faculty.departments.length > 0 && !force) {
       throw new BadRequestException(
         `Cannot delete faculty with ${faculty.departments.length} active department(s). ` +
-        `Delete departments first or use force delete.`
+          `Delete departments first or use force delete.`
       );
     }
 
@@ -227,20 +227,34 @@ export class FacultyService {
   /**
    * Auto-generate common university faculties
    */
-  async generateDefaultFaculties(schoolId: string): Promise<{ created: number; skipped: number; message: string }> {
+  async generateDefaultFaculties(
+    schoolId: string
+  ): Promise<{ created: number; skipped: number; message: string }> {
     const school = await this.validateSchoolTertiary(schoolId);
 
     const defaultFaculties = [
       { name: 'Faculty of Science', code: 'FOS', description: 'Natural and Physical Sciences' },
       { name: 'Faculty of Engineering', code: 'FOE', description: 'Engineering and Technology' },
       { name: 'Faculty of Arts', code: 'FOA', description: 'Humanities and Arts' },
-      { name: 'Faculty of Social Sciences', code: 'FOSS', description: 'Social and Behavioral Sciences' },
+      {
+        name: 'Faculty of Social Sciences',
+        code: 'FOSS',
+        description: 'Social and Behavioral Sciences',
+      },
       { name: 'Faculty of Law', code: 'FOL', description: 'Legal Studies' },
       { name: 'Faculty of Medicine', code: 'FOM', description: 'Medical and Health Sciences' },
       { name: 'Faculty of Education', code: 'FOED', description: 'Education and Teaching' },
-      { name: 'Faculty of Management Sciences', code: 'FMS', description: 'Business and Management' },
+      {
+        name: 'Faculty of Management Sciences',
+        code: 'FMS',
+        description: 'Business and Management',
+      },
       { name: 'Faculty of Agriculture', code: 'FOAG', description: 'Agricultural Sciences' },
-      { name: 'Faculty of Environmental Sciences', code: 'FOES', description: 'Environmental Studies' },
+      {
+        name: 'Faculty of Environmental Sciences',
+        code: 'FOES',
+        description: 'Environmental Studies',
+      },
     ];
 
     let created = 0;
@@ -269,9 +283,10 @@ export class FacultyService {
     return {
       created,
       skipped,
-      message: created > 0
-        ? `Successfully created ${created} facultie(s)${skipped > 0 ? `, ${skipped} already existed` : ''}`
-        : 'All default faculties already exist',
+      message:
+        created > 0
+          ? `Successfully created ${created} facultie(s)${skipped > 0 ? `, ${skipped} already existed` : ''}`
+          : 'All default faculties already exist',
     };
   }
 
@@ -293,36 +308,119 @@ export class FacultyService {
     }
 
     // Map faculty codes to their default departments
-    const defaultDepartmentsByFaculty: Record<string, Array<{ name: string; code: string; description?: string }>> = {
+    const defaultDepartmentsByFaculty: Record<
+      string,
+      Array<{ name: string; code: string; description?: string }>
+    > = {
       // Faculty of Science
-      'FOS': [
-        { name: 'Physics', code: 'PHY', description: 'Study of matter, energy, and their interactions' },
-        { name: 'Chemistry', code: 'CHM', description: 'Study of composition, structure, and properties of matter' },
-        { name: 'Mathematics', code: 'MTH', description: 'Study of numbers, quantities, and shapes' },
-        { name: 'Computer Science', code: 'CSC', description: 'Study of computation and information processing' },
-        { name: 'Biology', code: 'BIO', description: 'Study of living organisms and life processes' },
-        { name: 'Biochemistry', code: 'BCH', description: 'Study of chemical processes in living organisms' },
+      FOS: [
+        {
+          name: 'Physics',
+          code: 'PHY',
+          description: 'Study of matter, energy, and their interactions',
+        },
+        {
+          name: 'Chemistry',
+          code: 'CHM',
+          description: 'Study of composition, structure, and properties of matter',
+        },
+        {
+          name: 'Mathematics',
+          code: 'MTH',
+          description: 'Study of numbers, quantities, and shapes',
+        },
+        {
+          name: 'Computer Science',
+          code: 'CSC',
+          description: 'Study of computation and information processing',
+        },
+        {
+          name: 'Biology',
+          code: 'BIO',
+          description: 'Study of living organisms and life processes',
+        },
+        {
+          name: 'Biochemistry',
+          code: 'BCH',
+          description: 'Study of chemical processes in living organisms',
+        },
         { name: 'Microbiology', code: 'MCB', description: 'Study of microorganisms' },
-        { name: 'Statistics', code: 'STA', description: 'Collection, analysis, and interpretation of data' },
-        { name: 'Industrial Chemistry', code: 'ICH', description: 'Application of chemistry in industry' },
+        {
+          name: 'Statistics',
+          code: 'STA',
+          description: 'Collection, analysis, and interpretation of data',
+        },
+        {
+          name: 'Industrial Chemistry',
+          code: 'ICH',
+          description: 'Application of chemistry in industry',
+        },
       ],
       // Faculty of Engineering
-      'FOE': [
-        { name: 'Civil Engineering', code: 'CVE', description: 'Design and construction of infrastructure' },
-        { name: 'Mechanical Engineering', code: 'MEE', description: 'Design and manufacturing of mechanical systems' },
-        { name: 'Electrical Engineering', code: 'EEE', description: 'Study of electricity and electronics' },
-        { name: 'Chemical Engineering', code: 'CHE', description: 'Application of chemistry in industrial processes' },
-        { name: 'Computer Engineering', code: 'CPE', description: 'Design and development of computer systems' },
-        { name: 'Petroleum Engineering', code: 'PTE', description: 'Extraction and production of oil and gas' },
-        { name: 'Agricultural Engineering', code: 'AGE', description: 'Engineering applications in agriculture' },
-        { name: 'Systems Engineering', code: 'SYE', description: 'Design and management of complex systems' },
+      FOE: [
+        {
+          name: 'Civil Engineering',
+          code: 'CVE',
+          description: 'Design and construction of infrastructure',
+        },
+        {
+          name: 'Mechanical Engineering',
+          code: 'MEE',
+          description: 'Design and manufacturing of mechanical systems',
+        },
+        {
+          name: 'Electrical Engineering',
+          code: 'EEE',
+          description: 'Study of electricity and electronics',
+        },
+        {
+          name: 'Chemical Engineering',
+          code: 'CHE',
+          description: 'Application of chemistry in industrial processes',
+        },
+        {
+          name: 'Computer Engineering',
+          code: 'CPE',
+          description: 'Design and development of computer systems',
+        },
+        {
+          name: 'Petroleum Engineering',
+          code: 'PTE',
+          description: 'Extraction and production of oil and gas',
+        },
+        {
+          name: 'Agricultural Engineering',
+          code: 'AGE',
+          description: 'Engineering applications in agriculture',
+        },
+        {
+          name: 'Systems Engineering',
+          code: 'SYE',
+          description: 'Design and management of complex systems',
+        },
       ],
       // Faculty of Arts
-      'FOA': [
-        { name: 'English & Literary Studies', code: 'ELS', description: 'Study of English language and literature' },
-        { name: 'History & International Studies', code: 'HIS', description: 'Study of past events and global relations' },
-        { name: 'Philosophy', code: 'PHL', description: 'Study of fundamental questions about existence and knowledge' },
-        { name: 'Religious Studies', code: 'REL', description: 'Study of religious beliefs and practices' },
+      FOA: [
+        {
+          name: 'English & Literary Studies',
+          code: 'ELS',
+          description: 'Study of English language and literature',
+        },
+        {
+          name: 'History & International Studies',
+          code: 'HIS',
+          description: 'Study of past events and global relations',
+        },
+        {
+          name: 'Philosophy',
+          code: 'PHL',
+          description: 'Study of fundamental questions about existence and knowledge',
+        },
+        {
+          name: 'Religious Studies',
+          code: 'REL',
+          description: 'Study of religious beliefs and practices',
+        },
         { name: 'Theatre Arts', code: 'THA', description: 'Performance and dramatic arts' },
         { name: 'Music', code: 'MUS', description: 'Study of musical theory and performance' },
         { name: 'Fine & Applied Arts', code: 'FAA', description: 'Visual arts and design' },
@@ -330,75 +428,183 @@ export class FacultyService {
         { name: 'French', code: 'FRE', description: 'French language and literature' },
       ],
       // Faculty of Social Sciences
-      'FOSS': [
+      FOSS: [
         { name: 'Political Science', code: 'POL', description: 'Study of politics and government' },
-        { name: 'Economics', code: 'ECO', description: 'Study of production and consumption of goods' },
-        { name: 'Sociology', code: 'SOC', description: 'Study of human society and social behavior' },
+        {
+          name: 'Economics',
+          code: 'ECO',
+          description: 'Study of production and consumption of goods',
+        },
+        {
+          name: 'Sociology',
+          code: 'SOC',
+          description: 'Study of human society and social behavior',
+        },
         { name: 'Psychology', code: 'PSY', description: 'Study of mind and behavior' },
-        { name: 'Mass Communication', code: 'MAC', description: 'Study of media and communication' },
-        { name: 'Geography', code: 'GEO', description: 'Study of places and relationships between people and environments' },
-        { name: 'Social Work', code: 'SWK', description: 'Practice of helping individuals and communities' },
+        {
+          name: 'Mass Communication',
+          code: 'MAC',
+          description: 'Study of media and communication',
+        },
+        {
+          name: 'Geography',
+          code: 'GEO',
+          description: 'Study of places and relationships between people and environments',
+        },
+        {
+          name: 'Social Work',
+          code: 'SWK',
+          description: 'Practice of helping individuals and communities',
+        },
       ],
       // Faculty of Law
-      'FOL': [
-        { name: 'Private & Property Law', code: 'PPL', description: 'Law relating to private matters and property' },
-        { name: 'Public & International Law', code: 'PIL', description: 'Constitutional and international law' },
+      FOL: [
+        {
+          name: 'Private & Property Law',
+          code: 'PPL',
+          description: 'Law relating to private matters and property',
+        },
+        {
+          name: 'Public & International Law',
+          code: 'PIL',
+          description: 'Constitutional and international law',
+        },
         { name: 'Commercial Law', code: 'CML', description: 'Law relating to commerce and trade' },
         { name: 'Jurisprudence', code: 'JUR', description: 'Theory and philosophy of law' },
       ],
       // Faculty of Medicine
-      'FOM': [
-        { name: 'Medicine & Surgery', code: 'MBS', description: 'Medical practice and surgical procedures' },
+      FOM: [
+        {
+          name: 'Medicine & Surgery',
+          code: 'MBS',
+          description: 'Medical practice and surgical procedures',
+        },
         { name: 'Nursing Science', code: 'NUR', description: 'Patient care and nursing practice' },
         { name: 'Pharmacy', code: 'PHM', description: 'Preparation and dispensing of drugs' },
         { name: 'Anatomy', code: 'ANA', description: 'Study of body structure' },
         { name: 'Physiology', code: 'PHY', description: 'Study of body functions' },
-        { name: 'Medical Laboratory Science', code: 'MLS', description: 'Laboratory diagnosis and testing' },
+        {
+          name: 'Medical Laboratory Science',
+          code: 'MLS',
+          description: 'Laboratory diagnosis and testing',
+        },
         { name: 'Dentistry', code: 'DEN', description: 'Oral health and dental care' },
-        { name: 'Public Health', code: 'PUH', description: 'Population health and disease prevention' },
+        {
+          name: 'Public Health',
+          code: 'PUH',
+          description: 'Population health and disease prevention',
+        },
       ],
       // Faculty of Education
-      'FOED': [
-        { name: 'Educational Management', code: 'EDM', description: 'Administration of educational institutions' },
-        { name: 'Curriculum & Instruction', code: 'CUI', description: 'Design and delivery of educational content' },
-        { name: 'Educational Psychology', code: 'EDP', description: 'Psychology applied to education' },
-        { name: 'Guidance & Counselling', code: 'GCO', description: 'Student guidance and counseling' },
+      FOED: [
+        {
+          name: 'Educational Management',
+          code: 'EDM',
+          description: 'Administration of educational institutions',
+        },
+        {
+          name: 'Curriculum & Instruction',
+          code: 'CUI',
+          description: 'Design and delivery of educational content',
+        },
+        {
+          name: 'Educational Psychology',
+          code: 'EDP',
+          description: 'Psychology applied to education',
+        },
+        {
+          name: 'Guidance & Counselling',
+          code: 'GCO',
+          description: 'Student guidance and counseling',
+        },
         { name: 'Science Education', code: 'SCE', description: 'Teaching of science subjects' },
         { name: 'Arts Education', code: 'ARE', description: 'Teaching of arts and humanities' },
-        { name: 'Special Education', code: 'SPE', description: 'Education for students with special needs' },
+        {
+          name: 'Special Education',
+          code: 'SPE',
+          description: 'Education for students with special needs',
+        },
         { name: 'Adult Education', code: 'ADE', description: 'Education for adult learners' },
       ],
       // Faculty of Management Sciences
-      'FMS': [
-        { name: 'Business Administration', code: 'BUS', description: 'General business management' },
+      FMS: [
+        {
+          name: 'Business Administration',
+          code: 'BUS',
+          description: 'General business management',
+        },
         { name: 'Accounting', code: 'ACC', description: 'Financial accounting and reporting' },
         { name: 'Banking & Finance', code: 'BNF', description: 'Financial services and banking' },
         { name: 'Marketing', code: 'MKT', description: 'Product promotion and sales' },
-        { name: 'Public Administration', code: 'PUA', description: 'Government and public sector management' },
+        {
+          name: 'Public Administration',
+          code: 'PUA',
+          description: 'Government and public sector management',
+        },
         { name: 'Entrepreneurship', code: 'ENT', description: 'Business creation and innovation' },
-        { name: 'Human Resource Management', code: 'HRM', description: 'Personnel management and development' },
+        {
+          name: 'Human Resource Management',
+          code: 'HRM',
+          description: 'Personnel management and development',
+        },
         { name: 'Insurance', code: 'INS', description: 'Risk management and insurance' },
       ],
       // Faculty of Agriculture
-      'FOAG': [
-        { name: 'Agricultural Economics', code: 'AEC', description: 'Economics of agricultural production' },
+      FOAG: [
+        {
+          name: 'Agricultural Economics',
+          code: 'AEC',
+          description: 'Economics of agricultural production',
+        },
         { name: 'Soil Science', code: 'SOS', description: 'Study of soil and land use' },
         { name: 'Crop Science', code: 'CRS', description: 'Study of crop production' },
         { name: 'Animal Science', code: 'ANS', description: 'Study of livestock production' },
-        { name: 'Fisheries & Aquaculture', code: 'FIS', description: 'Fish production and management' },
+        {
+          name: 'Fisheries & Aquaculture',
+          code: 'FIS',
+          description: 'Fish production and management',
+        },
         { name: 'Forestry & Wildlife', code: 'FOR', description: 'Forest and wildlife management' },
-        { name: 'Agricultural Extension', code: 'AEX', description: 'Agricultural knowledge dissemination' },
-        { name: 'Food Science & Technology', code: 'FST', description: 'Food processing and preservation' },
+        {
+          name: 'Agricultural Extension',
+          code: 'AEX',
+          description: 'Agricultural knowledge dissemination',
+        },
+        {
+          name: 'Food Science & Technology',
+          code: 'FST',
+          description: 'Food processing and preservation',
+        },
       ],
       // Faculty of Environmental Sciences
-      'FOES': [
+      FOES: [
         { name: 'Architecture', code: 'ARC', description: 'Design of buildings and structures' },
-        { name: 'Urban & Regional Planning', code: 'URP', description: 'City and regional development planning' },
-        { name: 'Estate Management', code: 'ESM', description: 'Property and real estate management' },
-        { name: 'Building Technology', code: 'BLD', description: 'Construction methods and techniques' },
-        { name: 'Surveying & Geoinformatics', code: 'SVG', description: 'Land measurement and mapping' },
+        {
+          name: 'Urban & Regional Planning',
+          code: 'URP',
+          description: 'City and regional development planning',
+        },
+        {
+          name: 'Estate Management',
+          code: 'ESM',
+          description: 'Property and real estate management',
+        },
+        {
+          name: 'Building Technology',
+          code: 'BLD',
+          description: 'Construction methods and techniques',
+        },
+        {
+          name: 'Surveying & Geoinformatics',
+          code: 'SVG',
+          description: 'Land measurement and mapping',
+        },
         { name: 'Quantity Surveying', code: 'QTS', description: 'Construction cost management' },
-        { name: 'Environmental Management', code: 'ENM', description: 'Environmental protection and sustainability' },
+        {
+          name: 'Environmental Management',
+          code: 'ENM',
+          description: 'Environmental protection and sustainability',
+        },
       ],
     };
 
@@ -408,7 +614,12 @@ export class FacultyService {
     // If no exact match, try to infer from name
     if (!departmentsToCreate) {
       const facultyNameLower = faculty.name.toLowerCase();
-      if (facultyNameLower.includes('science') && !facultyNameLower.includes('social') && !facultyNameLower.includes('management') && !facultyNameLower.includes('environmental')) {
+      if (
+        facultyNameLower.includes('science') &&
+        !facultyNameLower.includes('social') &&
+        !facultyNameLower.includes('management') &&
+        !facultyNameLower.includes('environmental')
+      ) {
         departmentsToCreate = defaultDepartmentsByFaculty['FOS'];
       } else if (facultyNameLower.includes('engineering')) {
         departmentsToCreate = defaultDepartmentsByFaculty['FOE'];
@@ -434,7 +645,11 @@ export class FacultyService {
     // If still no match, create a generic department
     if (!departmentsToCreate || departmentsToCreate.length === 0) {
       departmentsToCreate = [
-        { name: 'General Studies', code: 'GNS', description: 'General studies and interdisciplinary programs' },
+        {
+          name: 'General Studies',
+          code: 'GNS',
+          description: 'General studies and interdisciplinary programs',
+        },
       ];
     }
 
@@ -446,7 +661,7 @@ export class FacultyService {
 
     let created = 0;
     let skipped = 0;
-    let currentLevel = (maxLevel._max?.level || 0);
+    let currentLevel = maxLevel._max?.level || 0;
 
     for (const deptData of departmentsToCreate) {
       // Check if department with this code already exists
@@ -477,9 +692,10 @@ export class FacultyService {
     return {
       created,
       skipped,
-      message: created > 0
-        ? `Successfully created ${created} department(s) for ${faculty.name}${skipped > 0 ? `, ${skipped} already existed` : ''}`
-        : 'All default departments for this faculty already exist',
+      message:
+        created > 0
+          ? `Successfully created ${created} department(s) for ${faculty.name}${skipped > 0 ? `, ${skipped} already existed` : ''}`
+          : 'All default departments for this faculty already exist',
     };
   }
 
@@ -1102,7 +1318,7 @@ export class FacultyService {
     if (totalStudents > 0 && !force) {
       throw new BadRequestException(
         `Cannot delete department with ${totalStudents} enrolled student(s). ` +
-        `Transfer students first or use force delete.`
+          `Transfer students first or use force delete.`
       );
     }
 
@@ -1192,7 +1408,9 @@ export class FacultyService {
       throw new BadRequestException('School not found');
     }
     if (!school.hasTertiary) {
-      throw new BadRequestException('This school does not have tertiary level. Faculties are only available for tertiary institutions.');
+      throw new BadRequestException(
+        'This school does not have tertiary level. Faculties are only available for tertiary institutions.'
+      );
     }
     return school;
   }
@@ -1222,9 +1440,7 @@ export class FacultyService {
       imageUrl: faculty.imageUrl,
       schoolId: faculty.schoolId,
       deanId: faculty.deanId,
-      deanName: faculty.dean
-        ? `${faculty.dean.firstName} ${faculty.dean.lastName}`
-        : undefined,
+      deanName: faculty.dean ? `${faculty.dean.firstName} ${faculty.dean.lastName}` : undefined,
       isActive: faculty.isActive,
       departmentsCount: faculty.departments?.length || 0,
       createdAt: faculty.createdAt,
@@ -1236,10 +1452,9 @@ export class FacultyService {
    * Map Prisma ClassLevel (department) to DTO
    */
   private mapToDepartmentDto(dept: any): DepartmentDto {
-    const studentsCount = dept.classArms?.reduce(
-      (sum: number, arm: any) => sum + (arm.enrollments?.length || 0),
-      0
-    ) || 0;
+    const studentsCount =
+      dept.classArms?.reduce((sum: number, arm: any) => sum + (arm.enrollments?.length || 0), 0) ||
+      0;
 
     return {
       id: dept.id,
@@ -1258,4 +1473,3 @@ export class FacultyService {
     };
   }
 }
-

@@ -1,5 +1,18 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsNumber, IsOptional, IsNotEmpty, Min, Max, IsEnum, IsDateString, IsInt, IsBoolean, IsArray, ValidateNested } from 'class-validator';
+import {
+  IsString,
+  IsNumber,
+  IsOptional,
+  IsNotEmpty,
+  Min,
+  Max,
+  IsEnum,
+  IsDateString,
+  IsInt,
+  IsBoolean,
+  IsArray,
+  ValidateNested,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 export enum GradeType {
@@ -19,7 +32,10 @@ export class CreateGradeDto {
   @IsOptional()
   subjectId?: string;
 
-  @ApiProperty({ description: 'Subject name (auto-populated if subjectId provided)', required: false })
+  @ApiProperty({
+    description: 'Subject name (auto-populated if subjectId provided)',
+    required: false,
+  })
   @IsString()
   @IsOptional()
   subject?: string;
@@ -157,7 +173,10 @@ export class BulkGradeEntryDto {
   @IsOptional()
   subjectId?: string;
 
-  @ApiPropertyOptional({ description: 'Subject name (auto-populated if subjectId provided)', required: false })
+  @ApiPropertyOptional({
+    description: 'Subject name (auto-populated if subjectId provided)',
+    required: false,
+  })
   @IsString()
   @IsOptional()
   subject?: string;
@@ -208,4 +227,3 @@ export class BulkGradeEntryDto {
   @Type(() => StudentGradeEntryDto)
   grades: StudentGradeEntryDto[];
 }
-

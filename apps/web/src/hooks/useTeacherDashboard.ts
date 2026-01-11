@@ -45,7 +45,6 @@ export interface TeacherDashboardData {
   timetable: TimetablePeriod[];
   
   // Classes the teacher is assigned to (full data from API)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   classes: any[];
   
   // Loading states

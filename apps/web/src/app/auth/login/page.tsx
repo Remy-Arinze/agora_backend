@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, FormEvent, useEffect } from 'react';
+import { useState, FormEvent, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useDispatch } from 'react-redux';
 import { Eye, EyeOff } from 'lucide-react';
@@ -10,8 +10,9 @@ import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { Alert } from '@/components/ui/Alert';
 import Link from 'next/link';
+import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 
-export default function LoginPage() {
+function LoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const dispatch = useDispatch();
@@ -202,6 +203,18 @@ export default function LoginPage() {
       </Card>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-[var(--light-bg)] dark:bg-dark-bg">
+        <LoadingSpinner />
+      </div>
+    }>
+      <LoginContent />
+    </Suspense>
   );
 }
 

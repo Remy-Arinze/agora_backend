@@ -22,7 +22,12 @@ export class StudentDto {
   @ApiProperty({ example: false, description: 'Whether profile is locked' })
   profileLocked: boolean;
 
-  @ApiProperty({ example: 'https://res.cloudinary.com/...', description: 'Profile image URL', required: false, nullable: true })
+  @ApiProperty({
+    example: 'https://res.cloudinary.com/...',
+    description: 'Profile image URL',
+    required: false,
+    nullable: true,
+  })
   profileImage: string | null;
 
   @ApiProperty({
@@ -82,4 +87,3 @@ export class StudentWithEnrollmentDto extends StudentDto {
     };
   };
 }
-

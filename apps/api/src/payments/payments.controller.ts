@@ -42,10 +42,46 @@ export class PaymentsController {
     return {
       success: true,
       data: {
-        FREE: { monthly: 0, yearly: 0, features: ['50 Students', '5 Teachers', '2 Admins', 'Basic Bursary'] },
-        STARTER: { monthly: 15000, yearly: 150000, features: ['Unlimited Students', 'Unlimited Teachers', '5 Admins', 'PrepMaster', 'Full Bursary', '100 AI Credits'] },
-        PROFESSIONAL: { monthly: 45000, yearly: 450000, features: ['Unlimited Students', 'Unlimited Teachers', '10 Admins', 'PrepMaster', 'Socrates', 'Full Bursary', '500 AI Credits'] },
-        ENTERPRISE: { monthly: null, yearly: null, features: ['Unlimited Everything', 'RollCall + Hardware', 'Priority Support', 'Custom Pricing'] },
+        FREE: {
+          monthly: 0,
+          yearly: 0,
+          features: ['50 Students', '5 Teachers', '2 Admins', 'Basic Bursary'],
+        },
+        STARTER: {
+          monthly: 15000,
+          yearly: 150000,
+          features: [
+            'Unlimited Students',
+            'Unlimited Teachers',
+            '5 Admins',
+            'PrepMaster',
+            'Full Bursary',
+            '100 AI Credits',
+          ],
+        },
+        PROFESSIONAL: {
+          monthly: 45000,
+          yearly: 450000,
+          features: [
+            'Unlimited Students',
+            'Unlimited Teachers',
+            '10 Admins',
+            'PrepMaster',
+            'Socrates',
+            'Full Bursary',
+            '500 AI Credits',
+          ],
+        },
+        ENTERPRISE: {
+          monthly: null,
+          yearly: null,
+          features: [
+            'Unlimited Everything',
+            'RollCall + Hardware',
+            'Priority Support',
+            'Custom Pricing',
+          ],
+        },
       },
     };
   }
@@ -121,7 +157,7 @@ export class PaymentsController {
   ) {
     // Verify signature
     const rawBody = req.rawBody?.toString() || JSON.stringify(body);
-    
+
     if (!this.paymentsService.verifyWebhookSignature(rawBody, signature)) {
       throw new BadRequestException('Invalid webhook signature');
     }
@@ -132,4 +168,3 @@ export class PaymentsController {
     return { received: true };
   }
 }
-

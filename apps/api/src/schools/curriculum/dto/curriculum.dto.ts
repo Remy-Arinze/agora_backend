@@ -43,7 +43,10 @@ export class CurriculumItemDto {
   originalTopic: string | null;
 
   // Progress tracking
-  @ApiProperty({ enum: ['PENDING', 'IN_PROGRESS', 'COMPLETED', 'SKIPPED'], description: 'Week status' })
+  @ApiProperty({
+    enum: ['PENDING', 'IN_PROGRESS', 'COMPLETED', 'SKIPPED'],
+    description: 'Week status',
+  })
   status: string;
 
   @ApiPropertyOptional({ description: 'When this week was taught' })
@@ -111,9 +114,9 @@ export class CurriculumDto {
   customizations: number;
 
   // Status & Approval
-  @ApiProperty({ 
+  @ApiProperty({
     enum: ['DRAFT', 'SUBMITTED', 'APPROVED', 'ACTIVE', 'COMPLETED', 'REJECTED'],
-    description: 'Curriculum status' 
+    description: 'Curriculum status',
   })
   status: string;
 
@@ -172,9 +175,9 @@ export class CurriculumSummaryDto {
   @ApiPropertyOptional({ description: 'Existing curriculum ID if any' })
   curriculumId: string | null;
 
-  @ApiPropertyOptional({ 
+  @ApiPropertyOptional({
     enum: ['DRAFT', 'SUBMITTED', 'APPROVED', 'ACTIVE', 'COMPLETED', 'REJECTED'],
-    description: 'Curriculum status if exists' 
+    description: 'Curriculum status if exists',
   })
   status: string | null;
 

@@ -201,9 +201,10 @@ export class SchoolStudentAdmissionController {
       },
     })
   )
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'Bulk import students from CSV/Excel file',
-    description: 'Upload a CSV or Excel file to import multiple students at once. Uses the same validation and flow as individual student admission. Maximum file size: 10MB.'
+    description:
+      'Upload a CSV or Excel file to import multiple students at once. Uses the same validation and flow as individual student admission. Maximum file size: 10MB.',
   })
   @ApiConsumes('multipart/form-data')
   @ApiResponse({
@@ -244,13 +245,13 @@ export class SchoolStudentAdmissionController {
   ): Promise<ResponseDto<any>> {
     // Verify student exists in this school
     const student = await this.studentsService.findOne(schoolId, studentId);
-    
+
     // Get the student from database to access userId for upload
     const studentWithUser = await this.prisma.student.findUnique({
       where: { id: studentId },
       select: { userId: true },
     });
-    
+
     if (!studentWithUser || !studentWithUser.userId) {
       throw new NotFoundException('Student not found or does not have a user account');
     }
@@ -281,13 +282,13 @@ export class SchoolStudentAdmissionController {
   ): Promise<ResponseDto<void>> {
     // Verify student exists in this school
     await this.studentsService.findOne(schoolId, studentId);
-    
+
     // Get the student from database to access userId
     const studentWithUser = await this.prisma.student.findUnique({
       where: { id: studentId },
       select: { userId: true },
     });
-    
+
     if (!studentWithUser || !studentWithUser.userId) {
       throw new NotFoundException('Student not found or does not have a user account');
     }
@@ -314,4 +315,3 @@ export class SchoolStudentAdmissionController {
     return ResponseDto.ok(data, 'Student profile updated successfully');
   }
 }
-

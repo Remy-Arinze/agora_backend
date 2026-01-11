@@ -5,13 +5,9 @@ import { DatabaseModule } from '../database/database.module';
 import { StudentsModule } from '../students/students.module';
 
 @Module({
-  imports: [
-    DatabaseModule,
-    forwardRef(() => StudentsModule),
-  ],
+  imports: [DatabaseModule, forwardRef(() => StudentsModule)],
   controllers: [OnboardingController],
   providers: [OnboardingService],
   exports: [OnboardingService],
 })
 export class OnboardingModule {}
-

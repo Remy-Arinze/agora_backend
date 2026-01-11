@@ -17,9 +17,9 @@ export class UpdateAdminDto {
   @IsString()
   phone?: string;
 
-  @ApiPropertyOptional({ 
+  @ApiPropertyOptional({
     description: 'Admin role (e.g., "Bursar", "Vice Principal", "Dean of Studies")',
-    example: 'Bursar'
+    example: 'Bursar',
   })
   @IsOptional()
   @IsString()
@@ -32,4 +32,3 @@ export class UpdateAdminDto {
 
   // Note: Email is not editable
 }
-

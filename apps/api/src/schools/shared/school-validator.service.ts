@@ -82,4 +82,3 @@ export class SchoolValidatorService {
     return phoneRegex.test(phone.replace(/\s/g, ''));
   }
 }
-

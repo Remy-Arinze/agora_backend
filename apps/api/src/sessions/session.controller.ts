@@ -1,15 +1,11 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Body,
-  Param,
-  Query,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { SessionService } from './session.service';
-import { InitializeSessionDto, CreateTermDto, MigrateStudentsDto } from './dto/initialize-session.dto';
+import {
+  InitializeSessionDto,
+  CreateTermDto,
+  MigrateStudentsDto,
+} from './dto/initialize-session.dto';
 import { AcademicSessionDto, TermDto, ActiveSessionDto } from './dto/session.dto';
 import { ResponseDto } from '../common/dto/response.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -91,7 +87,11 @@ export class SessionController {
   @Get('active')
   // No permission required - active session is foundational data needed across the dashboard
   @ApiOperation({ summary: 'Get active session and term for the school' })
-  @ApiQuery({ name: 'schoolType', required: false, description: 'Filter by school type (PRIMARY, SECONDARY, TERTIARY)' })
+  @ApiQuery({
+    name: 'schoolType',
+    required: false,
+    description: 'Filter by school type (PRIMARY, SECONDARY, TERTIARY)',
+  })
   @ApiResponse({
     status: 200,
     description: 'Active session retrieved successfully',
@@ -108,7 +108,11 @@ export class SessionController {
   @Get()
   @RequirePermission(PermissionResource.SESSIONS, PermissionType.READ)
   @ApiOperation({ summary: 'Get all sessions for a school' })
-  @ApiQuery({ name: 'schoolType', required: false, description: 'Filter by school type (PRIMARY, SECONDARY, TERTIARY)' })
+  @ApiQuery({
+    name: 'schoolType',
+    required: false,
+    description: 'Filter by school type (PRIMARY, SECONDARY, TERTIARY)',
+  })
   @ApiResponse({
     status: 200,
     description: 'Sessions retrieved successfully',
@@ -125,7 +129,11 @@ export class SessionController {
   @Post('end-term')
   @RequirePermission(PermissionResource.SESSIONS, PermissionType.ADMIN)
   @ApiOperation({ summary: 'End the current active term' })
-  @ApiQuery({ name: 'schoolType', required: false, description: 'Filter by school type (PRIMARY, SECONDARY, TERTIARY)' })
+  @ApiQuery({
+    name: 'schoolType',
+    required: false,
+    description: 'Filter by school type (PRIMARY, SECONDARY, TERTIARY)',
+  })
   @ApiResponse({
     status: 200,
     description: 'Term ended successfully',
@@ -141,7 +149,11 @@ export class SessionController {
   @Post('end-session')
   @RequirePermission(PermissionResource.SESSIONS, PermissionType.ADMIN)
   @ApiOperation({ summary: 'End the current active session' })
-  @ApiQuery({ name: 'schoolType', required: false, description: 'Filter by school type (PRIMARY, SECONDARY, TERTIARY)' })
+  @ApiQuery({
+    name: 'schoolType',
+    required: false,
+    description: 'Filter by school type (PRIMARY, SECONDARY, TERTIARY)',
+  })
   @ApiResponse({
     status: 200,
     description: 'Session ended successfully',
@@ -169,4 +181,3 @@ export class SessionController {
     return ResponseDto.ok(data, 'Term reactivated successfully');
   }
 }
-

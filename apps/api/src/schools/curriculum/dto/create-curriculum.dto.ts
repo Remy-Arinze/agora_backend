@@ -1,5 +1,16 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsNotEmpty, IsOptional, IsArray, IsInt, Min, Max, ValidateNested, IsBoolean, IsEnum } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsOptional,
+  IsArray,
+  IsInt,
+  Min,
+  Max,
+  ValidateNested,
+  IsBoolean,
+  IsEnum,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 // ============================================
@@ -18,39 +29,39 @@ export class CreateCurriculumItemDto {
   @IsNotEmpty()
   topic: string;
 
-  @ApiPropertyOptional({ 
-    example: ['Linear equations', 'Variables'], 
+  @ApiPropertyOptional({
+    example: ['Linear equations', 'Variables'],
     description: 'Sub-topics within the week',
-    type: [String]
+    type: [String],
   })
   @IsArray()
   @IsString({ each: true })
   @IsOptional()
   subTopics?: string[];
 
-  @ApiProperty({ 
-    example: ['Understand basic algebraic concepts', 'Solve simple equations'], 
+  @ApiProperty({
+    example: ['Understand basic algebraic concepts', 'Solve simple equations'],
     description: 'Learning objectives',
-    type: [String]
+    type: [String],
   })
   @IsArray()
   @IsString({ each: true })
   objectives: string[];
 
-  @ApiPropertyOptional({ 
-    example: ['Group problem solving', 'Individual practice'], 
+  @ApiPropertyOptional({
+    example: ['Group problem solving', 'Individual practice'],
     description: 'Suggested activities',
-    type: [String]
+    type: [String],
   })
   @IsArray()
   @IsString({ each: true })
   @IsOptional()
   activities?: string[];
 
-  @ApiProperty({ 
-    example: ['Textbook Chapter 1', 'Worksheet 1'], 
+  @ApiProperty({
+    example: ['Textbook Chapter 1', 'Worksheet 1'],
     description: 'Required resources',
-    type: [String]
+    type: [String],
   })
   @IsArray()
   @IsString({ each: true })
@@ -129,7 +140,10 @@ export class CreateCurriculumDto {
   @IsOptional()
   subjectId?: string;
 
-  @ApiPropertyOptional({ example: 'Mathematics', description: 'Subject name (legacy, use subjectId)' })
+  @ApiPropertyOptional({
+    example: 'Mathematics',
+    description: 'Subject name (legacy, use subjectId)',
+  })
   @IsString()
   @IsOptional()
   subject?: string;
@@ -149,9 +163,9 @@ export class CreateCurriculumDto {
   @IsOptional()
   nerdcCurriculumId?: string;
 
-  @ApiProperty({ 
+  @ApiProperty({
     description: 'Curriculum items',
-    type: [CreateCurriculumItemDto]
+    type: [CreateCurriculumItemDto],
   })
   @IsArray()
   @ValidateNested({ each: true })
@@ -175,7 +189,10 @@ export class GenerateCurriculumDto {
   @IsNotEmpty()
   termId: string;
 
-  @ApiPropertyOptional({ example: 'clx1234567890', description: 'Specific teacher ID (defaults to current user)' })
+  @ApiPropertyOptional({
+    example: 'clx1234567890',
+    description: 'Specific teacher ID (defaults to current user)',
+  })
   @IsString()
   @IsOptional()
   teacherId?: string;
@@ -192,10 +209,10 @@ export class BulkGenerateCurriculumDto {
   @IsNotEmpty()
   termId: string;
 
-  @ApiProperty({ 
-    example: ['subj1', 'subj2'], 
+  @ApiProperty({
+    example: ['subj1', 'subj2'],
     description: 'Subject IDs to generate curricula for',
-    type: [String]
+    type: [String],
   })
   @IsArray()
   @IsString({ each: true })
@@ -218,9 +235,9 @@ export class UpdateCurriculumDto {
   @IsOptional()
   termId?: string;
 
-  @ApiPropertyOptional({ 
+  @ApiPropertyOptional({
     description: 'Updated curriculum items',
-    type: [CreateCurriculumItemDto]
+    type: [CreateCurriculumItemDto],
   })
   @IsArray()
   @ValidateNested({ each: true })

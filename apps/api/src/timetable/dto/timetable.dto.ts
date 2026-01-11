@@ -92,4 +92,3 @@ export class ConflictInfo {
   @ApiProperty()
   conflictingPeriodId?: string;
 }
-

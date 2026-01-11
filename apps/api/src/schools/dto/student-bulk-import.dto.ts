@@ -16,26 +16,30 @@ export class StudentBulkImportRowDto {
   })
   dateOfBirth: string;
 
-  @ApiProperty({ example: 'JSS 3', description: 'Class level (must match existing ClassLevel name, e.g., "JSS 3", "Primary 1")' })
+  @ApiProperty({
+    example: 'JSS 3',
+    description: 'Class level (must match existing ClassLevel name, e.g., "JSS 3", "Primary 1")',
+  })
   classLevel: string;
 
-  @ApiPropertyOptional({ 
-    example: 'A', 
-    description: 'Class arm name for schools using ClassArms (e.g., "A", "Gold", "Blue"). If provided, student will be enrolled in the specific ClassArm. If omitted, falls back to classLevel only.' 
+  @ApiPropertyOptional({
+    example: 'A',
+    description:
+      'Class arm name for schools using ClassArms (e.g., "A", "Gold", "Blue"). If provided, student will be enrolled in the specific ClassArm. If omitted, falls back to classLevel only.',
   })
   classArm?: string;
 
-  @ApiProperty({ 
-    example: 'student@example.com', 
+  @ApiProperty({
+    example: 'student@example.com',
     description: 'Student email (optional, but recommended)',
-    required: false 
+    required: false,
   })
   email?: string;
 
-  @ApiProperty({ 
-    example: '+2348012345678', 
+  @ApiProperty({
+    example: '+2348012345678',
     description: 'Student phone number (optional)',
-    required: false 
+    required: false,
   })
   phone?: string;
 
@@ -134,4 +138,3 @@ export class StudentImportSummaryDto {
   })
   errors: Array<{ row: number; error: string }>;
 }
-

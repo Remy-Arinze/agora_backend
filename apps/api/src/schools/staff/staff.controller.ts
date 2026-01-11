@@ -19,7 +19,14 @@ import {
 import { Request } from 'express';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { UserWithContext } from '../../auth/types/user-with-context.type';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery, ApiConsumes } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+  ApiQuery,
+  ApiConsumes,
+} from '@nestjs/swagger';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { AdminService } from './admins/admin.service';
@@ -32,8 +39,8 @@ import { UpdateTeacherDto } from '../dto/update-teacher.dto';
 import { UpdatePrincipalDto } from '../dto/update-principal.dto';
 import { ConvertTeacherToAdminDto } from '../dto/convert-teacher-to-admin.dto';
 import { AssignPermissionsDto, PermissionResource, PermissionType } from '../dto/permission.dto';
-import { 
-  UpdateTeacherSubjectsDto, 
+import {
+  UpdateTeacherSubjectsDto,
   AddTeacherSubjectDto,
   TeacherSubjectDto,
   TeacherWithSubjectsDto,
@@ -223,9 +230,9 @@ export class StaffController {
 
   @Get('teachers/:teacherId/subjects')
   @RequirePermission(PermissionResource.STAFF, PermissionType.READ)
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'Get subjects a teacher is qualified to teach',
-    description: 'Returns all subjects the teacher can teach along with assignment counts'
+    description: 'Returns all subjects the teacher can teach along with assignment counts',
   })
   @ApiResponse({
     status: 200,
@@ -243,9 +250,9 @@ export class StaffController {
 
   @Get('teachers/:teacherId/subjects/details')
   @RequirePermission(PermissionResource.STAFF, PermissionType.READ)
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'Get teacher with all subject competencies and assignment totals',
-    description: 'Returns teacher info with subjects and total class assignments'
+    description: 'Returns teacher info with subjects and total class assignments',
   })
   @ApiResponse({
     status: 200,
@@ -263,9 +270,9 @@ export class StaffController {
 
   @Put('teachers/:teacherId/subjects')
   @RequirePermission(PermissionResource.STAFF, PermissionType.WRITE)
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'Update all subjects a teacher can teach',
-    description: 'Replaces all existing subject competencies with the provided list'
+    description: 'Replaces all existing subject competencies with the provided list',
   })
   @ApiResponse({
     status: 200,
@@ -285,9 +292,9 @@ export class StaffController {
 
   @Post('teachers/:teacherId/subjects')
   @RequirePermission(PermissionResource.STAFF, PermissionType.WRITE)
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'Add a subject to teacher competencies',
-    description: 'Adds a single subject the teacher can teach'
+    description: 'Adds a single subject the teacher can teach',
   })
   @ApiResponse({
     status: 201,
@@ -301,22 +308,30 @@ export class StaffController {
     @Param('teacherId') teacherId: string,
     @Body() dto: AddTeacherSubjectDto
   ): Promise<ResponseDto<TeacherSubjectDto>> {
-    const data = await this.teacherSubjectsService.addTeacherSubject(schoolId, teacherId, dto.subjectId);
+    const data = await this.teacherSubjectsService.addTeacherSubject(
+      schoolId,
+      teacherId,
+      dto.subjectId
+    );
     return ResponseDto.ok(data, 'Subject added to teacher successfully');
   }
 
   @Delete('teachers/:teacherId/subjects/:subjectId')
   @RequirePermission(PermissionResource.STAFF, PermissionType.WRITE)
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'Remove a subject from teacher competencies',
-    description: 'Removes a subject from teacher. Will fail if teacher is currently teaching this subject in any class.'
+    description:
+      'Removes a subject from teacher. Will fail if teacher is currently teaching this subject in any class.',
   })
   @ApiResponse({
     status: 200,
     description: 'Subject removed from teacher successfully',
   })
   @ApiResponse({ status: 404, description: 'Teacher or subject not found' })
-  @ApiResponse({ status: 409, description: 'Cannot remove subject - teacher is currently teaching it' })
+  @ApiResponse({
+    status: 409,
+    description: 'Cannot remove subject - teacher is currently teaching it',
+  })
   async removeTeacherSubject(
     @Param('schoolId') schoolId: string,
     @Param('teacherId') teacherId: string,
@@ -328,9 +343,10 @@ export class StaffController {
 
   @Get('teachers/:teacherId/assignable-subjects')
   @RequirePermission(PermissionResource.STAFF, PermissionType.READ)
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'Get subjects a teacher can be assigned to for a specific class',
-    description: 'Returns subjects from teacher competencies, indicating which are already assigned to the class'
+    description:
+      'Returns subjects from teacher competencies, indicating which are already assigned to the class',
   })
   @ApiQuery({ name: 'classId', required: true, description: 'Class or ClassArm ID' })
   @ApiResponse({
@@ -344,7 +360,11 @@ export class StaffController {
     @Param('teacherId') teacherId: string,
     @Query('classId') classId: string
   ): Promise<ResponseDto<AssignableSubjectDto[]>> {
-    const data = await this.teacherSubjectsService.getAssignableSubjects(schoolId, teacherId, classId);
+    const data = await this.teacherSubjectsService.getAssignableSubjects(
+      schoolId,
+      teacherId,
+      classId
+    );
     return ResponseDto.ok(data, 'Assignable subjects retrieved successfully');
   }
 
@@ -429,13 +449,13 @@ export class StaffController {
   }
 
   // Permission endpoints
-  
+
   /**
    * Get current admin's own permissions - NO permission check required
    * This allows admins to fetch their own permissions for UI rendering
    */
   @Get('permissions/me')
-  @ApiOperation({ summary: 'Get current admin\'s own permissions' })
+  @ApiOperation({ summary: "Get current admin's own permissions" })
   @ApiResponse({
     status: 200,
     description: 'Current admin permissions retrieved successfully',
@@ -499,8 +519,8 @@ export class StaffController {
     @Ip() ip: string
   ): Promise<ResponseDto<any>> {
     const data = await this.permissionService.assignPermissions(
-      schoolId, 
-      adminId, 
+      schoolId,
+      adminId,
       dto.permissionIds,
       user,
       ip
@@ -511,9 +531,10 @@ export class StaffController {
   // Migrate existing admins to have default READ permissions
   @Post('permissions/migrate')
   @RequirePermission(PermissionResource.STAFF, PermissionType.ADMIN)
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'Migrate existing admins to have default READ permissions',
-    description: 'Assigns default READ permissions to all admins who don\'t have any permissions yet. Skips Principals (they have permanent full access).'
+    description:
+      "Assigns default READ permissions to all admins who don't have any permissions yet. Skips Principals (they have permanent full access).",
   })
   @ApiResponse({
     status: 200,
@@ -523,7 +544,10 @@ export class StaffController {
     @Param('schoolId') schoolId: string
   ): Promise<ResponseDto<{ migrated: number; skipped: number }>> {
     const result = await this.permissionService.migrateExistingAdmins(schoolId);
-    return ResponseDto.ok(result, `Migration complete: ${result.migrated} admins updated, ${result.skipped} skipped`);
+    return ResponseDto.ok(
+      result,
+      `Migration complete: ${result.migrated} admins updated, ${result.skipped} skipped`
+    );
   }
 
   // Get single staff member (teacher or admin)
@@ -565,9 +589,10 @@ export class StaffController {
       },
     })
   )
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'Bulk import staff from CSV/Excel file',
-    description: 'Upload a CSV or Excel file to import multiple staff members (teachers and admins) at once. Each row must specify type as "teacher" or "admin". Maximum file size: 10MB.'
+    description:
+      'Upload a CSV or Excel file to import multiple staff members (teachers and admins) at once. Each row must specify type as "teacher" or "admin". Maximum file size: 10MB.',
   })
   @ApiResponse({
     status: 200,
@@ -620,4 +645,3 @@ export class StaffController {
     return ResponseDto.ok(null, 'Password reset email resent successfully');
   }
 }
-

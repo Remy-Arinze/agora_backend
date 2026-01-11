@@ -86,15 +86,12 @@ export class ClassResourceService {
     // Generate unique filename
     const fileExtension = path.extname(file.originalname);
     const uniqueFileName = `${uuidv4()}${fileExtension}`;
-    
+
     // Upload to Cloudinary
     const publicId = `resource-${uuidv4()}`;
-    
-    const { url: fileUrl, publicId: cloudinaryPublicId } = await this.cloudinaryService.uploadRawFile(
-      file,
-      resourceFolder,
-      publicId
-    );
+
+    const { url: fileUrl, publicId: cloudinaryPublicId } =
+      await this.cloudinaryService.uploadRawFile(file, resourceFolder, publicId);
 
     // Create resource record
     const resource = await this.classResourceModel.create({
@@ -192,7 +189,11 @@ export class ClassResourceService {
   /**
    * Get a single resource
    */
-  async getResource(schoolId: string, classId: string, resourceId: string): Promise<ClassResourceDto> {
+  async getResource(
+    schoolId: string,
+    classId: string,
+    resourceId: string
+  ): Promise<ClassResourceDto> {
     // Validate school exists
     const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
     if (!school) {
@@ -269,8 +270,9 @@ export class ClassResourceService {
 
     // Delete file from Cloudinary or local storage
     if (resource.filePath) {
-      const isCloudinaryUrl = resource.filePath.startsWith('http://') || resource.filePath.startsWith('https://');
-      
+      const isCloudinaryUrl =
+        resource.filePath.startsWith('http://') || resource.filePath.startsWith('https://');
+
       if (isCloudinaryUrl) {
         // Delete from Cloudinary
         const publicId = this.cloudinaryService.extractPublicId(resource.filePath);
@@ -306,7 +308,11 @@ export class ClassResourceService {
   /**
    * Get file buffer for download (fetches from Cloudinary or local storage for backward compatibility)
    */
-  async getFileBuffer(schoolId: string, classId: string, resourceId: string): Promise<{ buffer: Buffer; resource: ClassResourceDto }> {
+  async getFileBuffer(
+    schoolId: string,
+    classId: string,
+    resourceId: string
+  ): Promise<{ buffer: Buffer; resource: ClassResourceDto }> {
     const resource = await this.getResource(schoolId, classId, resourceId);
 
     if (!resource.filePath) {
@@ -314,8 +320,9 @@ export class ClassResourceService {
     }
 
     // Check if filePath is a Cloudinary URL (starts with http/https and contains cloudinary.com)
-    const isCloudinaryUrl = resource.filePath.startsWith('http://') || resource.filePath.startsWith('https://');
-    
+    const isCloudinaryUrl =
+      resource.filePath.startsWith('http://') || resource.filePath.startsWith('https://');
+
     if (isCloudinaryUrl) {
       // Fetch file from Cloudinary URL
       try {
@@ -363,7 +370,9 @@ export class ClassResourceService {
     ];
 
     if (!allowedMimeTypes.includes(file.mimetype)) {
-      throw new BadRequestException(`File type ${file.mimetype} is not allowed. Only documents and spreadsheets are permitted (PDF, DOC, DOCX, XLS, XLSX, PPT, PPTX, TXT, CSV). Images are not allowed.`);
+      throw new BadRequestException(
+        `File type ${file.mimetype} is not allowed. Only documents and spreadsheets are permitted (PDF, DOC, DOCX, XLS, XLSX, PPT, PPTX, TXT, CSV). Images are not allowed.`
+      );
     }
   }
 
@@ -375,11 +384,20 @@ export class ClassResourceService {
       return 'IMAGE';
     } else if (mimeType === 'application/pdf') {
       return 'PDF';
-    } else if (mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || mimeType === 'application/msword') {
+    } else if (
+      mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+      mimeType === 'application/msword'
+    ) {
       return 'DOCX';
-    } else if (mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || mimeType === 'application/vnd.ms-excel') {
+    } else if (
+      mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+      mimeType === 'application/vnd.ms-excel'
+    ) {
       return 'XLSX';
-    } else if (mimeType === 'application/vnd.openxmlformats-officedocument.presentationml.presentation' || mimeType === 'application/vnd.ms-powerpoint') {
+    } else if (
+      mimeType === 'application/vnd.openxmlformats-officedocument.presentationml.presentation' ||
+      mimeType === 'application/vnd.ms-powerpoint'
+    ) {
       return 'PPTX';
     } else {
       return 'OTHER';
@@ -445,4 +463,3 @@ export class ClassResourceService {
     };
   }
 }
-

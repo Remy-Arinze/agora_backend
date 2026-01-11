@@ -13,18 +13,17 @@ export class SchoolTypeContextDto {
   @ApiProperty({ description: 'Has multiple school types' })
   isMixed: boolean;
 
-  @ApiProperty({ 
+  @ApiProperty({
     description: 'Available school types',
     enum: ['PRIMARY', 'SECONDARY', 'TERTIARY'],
-    isArray: true 
+    isArray: true,
   })
   availableTypes: ('PRIMARY' | 'SECONDARY' | 'TERTIARY')[];
 
-  @ApiProperty({ 
+  @ApiProperty({
     description: 'Primary type (if single type) or first type (if mixed)',
     enum: ['PRIMARY', 'SECONDARY', 'TERTIARY', 'MIXED'],
-    nullable: true 
+    nullable: true,
   })
   primaryType: 'PRIMARY' | 'SECONDARY' | 'TERTIARY' | 'MIXED';
 }
-

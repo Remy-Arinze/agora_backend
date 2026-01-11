@@ -17,7 +17,9 @@ import { EmailModule } from '../email/email.module';
       useFactory: async (configService: ConfigService) => {
         const secret = configService.get<string>('JWT_SECRET');
         if (!secret) {
-          throw new Error('JWT_SECRET environment variable is required. Please set it in your .env file.');
+          throw new Error(
+            'JWT_SECRET environment variable is required. Please set it in your .env file.'
+          );
         }
         return {
           secret,
@@ -36,4 +38,3 @@ import { EmailModule } from '../email/email.module';
   exports: [AuthService, JwtStrategy, PassportModule, ShadowUserGuard],
 })
 export class AuthModule {}
-

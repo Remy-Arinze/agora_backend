@@ -27,9 +27,7 @@ export class StudentTranscriptService {
     }
 
     // ✅ Get ALL enrollments (active and inactive) across all schools
-    const enrollments = await this.transcriptRepository.findAllEnrollmentsForStudent(
-      student.id
-    );
+    const enrollments = await this.transcriptRepository.findAllEnrollmentsForStudent(student.id);
 
     return {
       studentId: student.id,
@@ -79,10 +77,7 @@ export class StudentTranscriptService {
     }
 
     // ✅ Verify student was enrolled in this school (active or inactive)
-    const enrollment = await this.transcriptRepository.getTranscriptForSchool(
-      student.id,
-      schoolId
-    );
+    const enrollment = await this.transcriptRepository.getTranscriptForSchool(student.id, schoolId);
 
     if (!enrollment) {
       throw new NotFoundException('You were not enrolled in this school');
@@ -179,4 +174,3 @@ export class StudentTranscriptService {
     return levels.length > 1 ? 'MIXED' : (levels[0] as 'PRIMARY' | 'SECONDARY' | 'TERTIARY');
   }
 }
-

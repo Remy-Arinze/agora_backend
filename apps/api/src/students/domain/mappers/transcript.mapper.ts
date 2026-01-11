@@ -8,11 +8,13 @@ export class TranscriptMapper {
   /**
    * Convert enrollment with grades and attendance to SchoolTranscriptDto
    */
-  toSchoolTranscriptDto(enrollment: Enrollment & {
-    school: any;
-    grades?: Grade[];
-    attendances?: Attendance[];
-  }) {
+  toSchoolTranscriptDto(
+    enrollment: Enrollment & {
+      school: any;
+      grades?: Grade[];
+      attendances?: Attendance[];
+    }
+  ) {
     return {
       school: {
         id: enrollment.school.id,
@@ -27,33 +29,37 @@ export class TranscriptMapper {
         graduationDate: enrollment.graduationDate,
         isActive: enrollment.isActive,
       },
-      grades: enrollment.grades?.map((grade) => ({
-        id: grade.id,
-        subject: grade.subject,
-        score: grade.score,
-        maxScore: grade.maxScore,
-        grade: grade.grade,
-        term: grade.term,
-        academicYear: grade.academicYear,
-        createdAt: grade.createdAt,
-      })) || [],
-      attendance: enrollment.attendances?.map((attendance) => ({
-        id: attendance.id,
-        date: attendance.date,
-        status: attendance.status,
-        remarks: attendance.remarks,
-      })) || [],
+      grades:
+        enrollment.grades?.map((grade) => ({
+          id: grade.id,
+          subject: grade.subject,
+          score: grade.score,
+          maxScore: grade.maxScore,
+          grade: grade.grade,
+          term: grade.term,
+          academicYear: grade.academicYear,
+          createdAt: grade.createdAt,
+        })) || [],
+      attendance:
+        enrollment.attendances?.map((attendance) => ({
+          id: attendance.id,
+          date: attendance.date,
+          status: attendance.status,
+          remarks: attendance.remarks,
+        })) || [],
     };
   }
 
   /**
    * Convert multiple enrollments to CompleteTranscriptDto
    */
-  toCompleteTranscriptDto(enrollments: (Enrollment & {
-    school: any;
-    grades?: Grade[];
-    attendances?: Attendance[];
-  })[]) {
+  toCompleteTranscriptDto(
+    enrollments: (Enrollment & {
+      school: any;
+      grades?: Grade[];
+      attendances?: Attendance[];
+    })[]
+  ) {
     return {
       enrollments: enrollments.map((enrollment) => this.toSchoolTranscriptDto(enrollment)),
       totalSchools: new Set(enrollments.map((e) => e.schoolId)).size,
@@ -62,4 +68,3 @@ export class TranscriptMapper {
     };
   }
 }
-

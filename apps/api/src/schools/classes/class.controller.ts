@@ -65,7 +65,7 @@ export class ClassController {
       const data = await this.classService.getTeacherClasses(schoolId, teacherId);
       return ResponseDto.ok(data, 'Teacher classes retrieved successfully');
     }
-    
+
     const data = await this.classService.getClasses(schoolId, academicYear, type);
     return ResponseDto.ok(data, 'Classes retrieved successfully');
   }
@@ -119,7 +119,10 @@ export class ClassController {
     description: 'Class deleted successfully',
   })
   @ApiResponse({ status: 404, description: 'Class not found' })
-  @ApiResponse({ status: 400, description: 'Cannot delete class with enrolled students (use force=true to override)' })
+  @ApiResponse({
+    status: 400,
+    description: 'Cannot delete class with enrolled students (use force=true to override)',
+  })
   async deleteClass(
     @Param('schoolId') schoolId: string,
     @Param('classId') classId: string,
@@ -139,8 +142,14 @@ export class ClassController {
     type: ClassDto,
   })
   @ApiResponse({ status: 404, description: 'Class or teacher not found' })
-  @ApiResponse({ status: 400, description: 'Invalid assignment (e.g., missing subject for secondary)' })
-  @ApiResponse({ status: 409, description: 'Teacher already assigned or conflict with existing assignment' })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid assignment (e.g., missing subject for secondary)',
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'Teacher already assigned or conflict with existing assignment',
+  })
   async assignTeacherToClass(
     @Param('schoolId') schoolId: string,
     @Param('classId') classId: string,
@@ -184,4 +193,3 @@ export class ClassController {
     return ResponseDto.ok(data, 'Students retrieved successfully');
   }
 }
-

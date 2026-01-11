@@ -888,7 +888,7 @@ export default function StudentDetailPage() {
           {activeTab === 'grades' && (
             <div className="space-y-6">
               {isLoadingGrades ? (
-                <Card>
+            <Card>
                   <CardContent className="pt-6">
                     <div className="flex items-center justify-center py-12">
                       <Loader2 className="h-8 w-8 text-light-text-muted dark:text-dark-text-muted animate-spin" />
@@ -961,7 +961,7 @@ export default function StudentDetailPage() {
                       const isSessionExpanded = expandedSessions.has(sessionData.sessionId);
                       return (
                         <Card key={sessionData.sessionId}>
-                          <CardHeader>
+              <CardHeader>
                             <button
                               onClick={() => toggleSession(sessionData.sessionId)}
                               className="w-full flex items-center justify-between text-left hover:opacity-80 transition-opacity"
@@ -974,7 +974,7 @@ export default function StudentDetailPage() {
                                 )}
                                 <CardTitle className="text-xl font-bold text-light-text-primary dark:text-dark-text-primary">
                                   {sessionData.sessionName}
-                                </CardTitle>
+                </CardTitle>
                               </div>
                               {sessionData.averagePercentage > 0 && (
                                 <div className="flex items-center gap-2">
@@ -985,9 +985,9 @@ export default function StudentDetailPage() {
                                 </div>
                               )}
                             </button>
-                          </CardHeader>
+              </CardHeader>
                           {isSessionExpanded && (
-                            <CardContent>
+              <CardContent>
                               <div className="space-y-4 pl-8">
                                 {sessionData.terms.map((termData) => {
                                   const termKey = termData.termId;
@@ -1107,10 +1107,10 @@ export default function StudentDetailPage() {
                                     </div>
                                   );
                                 })}
-                              </div>
-                            </CardContent>
+                </div>
+              </CardContent>
                           )}
-                        </Card>
+            </Card>
                       );
                     })}
                   </div>
@@ -1145,16 +1145,16 @@ export default function StudentDetailPage() {
                 </Card>
               ) : (
                 <>
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-xl font-bold text-light-text-primary dark:text-dark-text-primary flex items-center gap-2">
-                        <FileText className="h-5 w-5" />
-                        Academic Transcript
-                      </CardTitle>
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-xl font-bold text-light-text-primary dark:text-dark-text-primary flex items-center gap-2">
+                  <FileText className="h-5 w-5" />
+                  Academic Transcript
+                </CardTitle>
                       <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary mt-2">
                         Complete academic history for {student?.firstName} {student?.lastName}
                       </p>
-                    </CardHeader>
+              </CardHeader>
                   </Card>
 
                   {/* Hierarchical Transcript Display */}
@@ -1199,7 +1199,7 @@ export default function StudentDetailPage() {
                             </button>
                           </CardHeader>
                           {isSessionExpanded && (
-                            <CardContent>
+              <CardContent>
                               <div className="space-y-4 pl-8">
                                 {sessionData.terms.map((termData) => {
                                   const termKey = termData.termId;
@@ -1295,10 +1295,10 @@ export default function StudentDetailPage() {
                                     </div>
                                   );
                                 })}
-                              </div>
-                            </CardContent>
+                </div>
+              </CardContent>
                           )}
-                        </Card>
+            </Card>
                       );
                     })}
                   </div>

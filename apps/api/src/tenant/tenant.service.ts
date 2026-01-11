@@ -21,4 +21,3 @@ export class TenantService {
     return request.tenantId || null;
   }
 }
-

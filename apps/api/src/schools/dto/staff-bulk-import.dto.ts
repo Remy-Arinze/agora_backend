@@ -1,7 +1,11 @@
 import { ApiProperty } from '@nestjs/swagger';
 
 export class StaffBulkImportRowDto {
-  @ApiProperty({ example: 'teacher', description: 'Staff type: "teacher" or "admin"', enum: ['teacher', 'admin'] })
+  @ApiProperty({
+    example: 'teacher',
+    description: 'Staff type: "teacher" or "admin"',
+    enum: ['teacher', 'admin'],
+  })
   type: 'teacher' | 'admin';
 
   @ApiProperty({ example: 'John', description: 'First name' })
@@ -16,31 +20,32 @@ export class StaffBulkImportRowDto {
   @ApiProperty({ example: '+2348012345678', description: 'Phone number' })
   phone: string;
 
-  @ApiProperty({ 
-    example: 'Bursar', 
+  @ApiProperty({
+    example: 'Bursar',
     description: 'Admin role (required for admin type, ignored for teacher type)',
-    required: false 
+    required: false,
   })
   role?: string;
 
-  @ApiProperty({ 
-    example: 'Mathematics', 
-    description: 'Subject name to assign teacher to (must match an existing subject in the school, case-insensitive). If found, creates SubjectTeacher relationship for competency tracking.',
-    required: false 
+  @ApiProperty({
+    example: 'Mathematics',
+    description:
+      'Subject name to assign teacher to (must match an existing subject in the school, case-insensitive). If found, creates SubjectTeacher relationship for competency tracking.',
+    required: false,
   })
   subject?: string;
 
-  @ApiProperty({ 
-    example: 'EMP001', 
+  @ApiProperty({
+    example: 'EMP001',
     description: 'Employee ID (optional)',
-    required: false 
+    required: false,
   })
   employeeId?: string;
 
-  @ApiProperty({ 
-    example: 'false', 
+  @ApiProperty({
+    example: 'false',
     description: 'Whether teacher is temporary: "true" or "false" (optional, defaults to false)',
-    required: false 
+    required: false,
   })
   isTemporary?: string;
 }
@@ -71,4 +76,3 @@ export class StaffImportSummaryDto {
   })
   errors: Array<{ row: number; error: string }>;
 }
-

@@ -60,7 +60,10 @@ export class CreateTimetablePeriodDto {
   @IsOptional()
   roomId?: string;
 
-  @ApiProperty({ description: 'Class ID (for PRIMARY/SECONDARY - direct class assignment)', required: false })
+  @ApiProperty({
+    description: 'Class ID (for PRIMARY/SECONDARY - direct class assignment)',
+    required: false,
+  })
   @IsString()
   @IsOptional()
   classId?: string;
@@ -91,4 +94,3 @@ export class CreateMasterScheduleDto {
     type?: PeriodType;
   }>;
 }
-

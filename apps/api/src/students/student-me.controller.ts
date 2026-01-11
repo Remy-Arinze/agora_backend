@@ -34,9 +34,7 @@ import { Response } from 'express';
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth('JWT-auth')
 export class StudentMeController {
-  constructor(
-    private readonly studentsService: StudentsService,
-  ) {}
+  constructor(private readonly studentsService: StudentsService) {}
 
   @Get('me')
   @ApiOperation({ summary: 'Get current student profile' })
@@ -45,9 +43,7 @@ export class StudentMeController {
     description: 'Student profile retrieved successfully',
   })
   @ApiResponse({ status: 404, description: 'Student profile not found' })
-  async getMyProfile(
-    @CurrentUser() user: UserWithContext,
-  ): Promise<ResponseDto<any>> {
+  async getMyProfile(@CurrentUser() user: UserWithContext): Promise<ResponseDto<any>> {
     const data = await this.studentsService.getMyProfile(user);
     return ResponseDto.ok(data, 'Student profile retrieved successfully');
   }
@@ -82,9 +78,7 @@ export class StudentMeController {
     status: 200,
     description: 'Enrollments retrieved successfully',
   })
-  async getMyEnrollments(
-    @CurrentUser() user: UserWithContext,
-  ): Promise<ResponseDto<any[]>> {
+  async getMyEnrollments(@CurrentUser() user: UserWithContext): Promise<ResponseDto<any[]>> {
     const data = await this.studentsService.getMyEnrollments(user);
     return ResponseDto.ok(data, 'Enrollments retrieved successfully');
   }
@@ -98,15 +92,11 @@ export class StudentMeController {
   })
   async getMyTimetable(
     @CurrentUser() user: UserWithContext,
-    @Query('termId') termId?: string,
+    @Query('termId') termId?: string
   ): Promise<ResponseDto<any[]>> {
     // Get schoolId from user context or find from enrollments
     const schoolId = user.currentSchoolId || null;
-    const data = await this.studentsService.getMyTimetable(
-      user,
-      schoolId,
-      termId,
-    );
+    const data = await this.studentsService.getMyTimetable(user, schoolId, termId);
     return ResponseDto.ok(data, 'Timetable retrieved successfully');
   }
 
@@ -123,14 +113,14 @@ export class StudentMeController {
     @CurrentUser() user: UserWithContext,
     @Query('classId') classId?: string,
     @Query('termId') termId?: string,
-    @Query('subject') subject?: string,
+    @Query('subject') subject?: string
   ): Promise<ResponseDto<any[]>> {
     const schoolId = user.currentSchoolId || null;
-    const data = await this.studentsService.getMyGrades(
-      user,
-      schoolId,
-      { classId, termId, subject },
-    );
+    const data = await this.studentsService.getMyGrades(user, schoolId, {
+      classId,
+      termId,
+      subject,
+    });
     return ResponseDto.ok(data, 'Grades retrieved successfully');
   }
 
@@ -149,14 +139,15 @@ export class StudentMeController {
     @Query('classId') classId?: string,
     @Query('termId') termId?: string,
     @Query('startDate') startDate?: string,
-    @Query('endDate') endDate?: string,
+    @Query('endDate') endDate?: string
   ): Promise<ResponseDto<any[]>> {
     const schoolId = user.currentSchoolId || null;
-    const data = await this.studentsService.getMyAttendance(
-      user,
-      schoolId,
-      { classId, termId, startDate, endDate },
-    );
+    const data = await this.studentsService.getMyAttendance(user, schoolId, {
+      classId,
+      termId,
+      startDate,
+      endDate,
+    });
     return ResponseDto.ok(data, 'Attendance retrieved successfully');
   }
 
@@ -171,14 +162,13 @@ export class StudentMeController {
   async getMyResources(
     @CurrentUser() user: UserWithContext,
     @Query('classId') classId?: string,
-    @Query('resourceType') resourceType?: string,
+    @Query('resourceType') resourceType?: string
   ): Promise<ResponseDto<any[]>> {
     const schoolId = user.currentSchoolId || null;
-    const data = await this.studentsService.getMyResources(
-      user,
-      schoolId,
-      { classId, resourceType },
-    );
+    const data = await this.studentsService.getMyResources(user, schoolId, {
+      classId,
+      resourceType,
+    });
     return ResponseDto.ok(data, 'Resources retrieved successfully');
   }
 
@@ -193,15 +183,10 @@ export class StudentMeController {
   async getMyCalendar(
     @CurrentUser() user: UserWithContext,
     @Query('startDate') startDate?: string,
-    @Query('endDate') endDate?: string,
+    @Query('endDate') endDate?: string
   ): Promise<ResponseDto<any>> {
     const schoolId = user.currentSchoolId || null;
-    const data = await this.studentsService.getMyCalendar(
-      user,
-      schoolId,
-      startDate,
-      endDate,
-    );
+    const data = await this.studentsService.getMyCalendar(user, schoolId, startDate, endDate);
     return ResponseDto.ok(data, 'Calendar data retrieved successfully');
   }
 
@@ -220,7 +205,7 @@ export class StudentMeController {
     @CurrentUser() user: UserWithContext,
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
-    @Query('schoolId') schoolId?: string,
+    @Query('schoolId') schoolId?: string
   ): Promise<ResponseDto<any>> {
     const data = await this.studentsService.getMyTranscript(user, {
       startDate,
@@ -239,7 +224,7 @@ export class StudentMeController {
   })
   async getMyTransfers(
     @CurrentUser() user: UserWithContext,
-    @Query('status') status?: string,
+    @Query('status') status?: string
   ): Promise<ResponseDto<any[]>> {
     const data = await this.studentsService.getMyTransfers(user, { status });
     return ResponseDto.ok(data, 'Transfers retrieved successfully');
@@ -251,9 +236,7 @@ export class StudentMeController {
     status: 200,
     description: 'Classes retrieved successfully',
   })
-  async getMyClasses(
-    @CurrentUser() user: UserWithContext,
-  ): Promise<ResponseDto<any[]>> {
+  async getMyClasses(@CurrentUser() user: UserWithContext): Promise<ResponseDto<any[]>> {
     const data = await this.studentsService.getMyClasses(user);
     return ResponseDto.ok(data, 'Classes retrieved successfully');
   }
@@ -267,7 +250,7 @@ export class StudentMeController {
   })
   async getMyClassmates(
     @CurrentUser() user: UserWithContext,
-    @Query('classId') classId?: string,
+    @Query('classId') classId?: string
   ): Promise<ResponseDto<any[]>> {
     const data = await this.studentsService.getMyClassmates(user, classId);
     return ResponseDto.ok(data, 'Classmates retrieved successfully');
@@ -279,9 +262,7 @@ export class StudentMeController {
     status: 200,
     description: 'School retrieved successfully',
   })
-  async getMySchool(
-    @CurrentUser() user: UserWithContext,
-  ): Promise<ResponseDto<any>> {
+  async getMySchool(@CurrentUser() user: UserWithContext): Promise<ResponseDto<any>> {
     const data = await this.studentsService.getMySchool(user);
     return ResponseDto.ok(data, 'School retrieved successfully');
   }
@@ -292,9 +273,7 @@ export class StudentMeController {
     status: 200,
     description: 'Personal resources retrieved successfully',
   })
-  async getMyPersonalResources(
-    @CurrentUser() user: UserWithContext,
-  ): Promise<ResponseDto<any[]>> {
+  async getMyPersonalResources(@CurrentUser() user: UserWithContext): Promise<ResponseDto<any[]>> {
     const data = await this.studentsService.getMyPersonalResources(user);
     return ResponseDto.ok(data, 'Personal resources retrieved successfully');
   }
@@ -311,13 +290,9 @@ export class StudentMeController {
   async uploadPersonalResource(
     @CurrentUser() user: UserWithContext,
     @UploadedFile() file: Express.Multer.File,
-    @Body('description') description?: string,
+    @Body('description') description?: string
   ): Promise<ResponseDto<any>> {
-    const data = await this.studentsService.uploadPersonalResource(
-      user,
-      file,
-      description,
-    );
+    const data = await this.studentsService.uploadPersonalResource(user, file, description);
     return ResponseDto.ok(data, 'Resource uploaded successfully');
   }
 
@@ -331,13 +306,13 @@ export class StudentMeController {
   async downloadPersonalResource(
     @CurrentUser() user: UserWithContext,
     @Param('resourceId') resourceId: string,
-    @Res() res: Response,
+    @Res() res: Response
   ): Promise<void> {
     const { buffer, resource } = await this.studentsService.getPersonalResourceFile(
       user,
-      resourceId,
+      resourceId
     );
-    
+
     res.setHeader('Content-Type', resource.mimeType);
     res.setHeader('Content-Disposition', `attachment; filename="${resource.name}"`);
     res.setHeader('Content-Length', resource.fileSize);
@@ -353,10 +328,9 @@ export class StudentMeController {
   @ApiResponse({ status: 404, description: 'Resource not found' })
   async deletePersonalResource(
     @CurrentUser() user: UserWithContext,
-    @Param('resourceId') resourceId: string,
+    @Param('resourceId') resourceId: string
   ): Promise<ResponseDto<void>> {
     await this.studentsService.deletePersonalResource(user, resourceId);
     return ResponseDto.ok(undefined, 'Resource deleted successfully');
   }
 }
-

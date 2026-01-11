@@ -101,4 +101,3 @@ export class CourseRegistrationController {
     return ResponseDto.ok(undefined, 'Course registration deleted successfully');
   }
 }
-

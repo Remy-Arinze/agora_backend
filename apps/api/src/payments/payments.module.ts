@@ -13,19 +13,3 @@ import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
 })
 export class PaymentsModule {}
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

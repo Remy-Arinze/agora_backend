@@ -1,4 +1,9 @@
-import { Injectable, BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { EmailService } from '../../email/email.service';
 import { SchoolRepository } from '../domain/repositories/school.repository';
@@ -39,7 +44,11 @@ export class ClassService {
   /**
    * Check if school uses ClassArms (has any ClassArms for PRIMARY/SECONDARY)
    */
-  private async schoolUsesClassArms(schoolId: string, academicYear: string, typeFilter?: ClassType): Promise<boolean> {
+  private async schoolUsesClassArms(
+    schoolId: string,
+    academicYear: string,
+    typeFilter?: ClassType
+  ): Promise<boolean> {
     const where: any = {
       classLevel: {
         schoolId,
@@ -110,7 +119,7 @@ export class ClassService {
     const now = new Date();
     const currentYear = now.getFullYear();
     const month = now.getMonth(); // 0-11
-    
+
     // Academic year typically starts in September (month 8)
     // If we're before September, use previous year as start
     if (month < 8) {
@@ -134,12 +143,9 @@ export class ClassService {
     }
 
     // Validate teacher exists in school - check both id and teacherId fields
-    let teacher = await this.prisma.teacher.findFirst({
+    const teacher = await this.prisma.teacher.findFirst({
       where: {
-        OR: [
-          { id: teacherId },
-          { teacherId: teacherId },
-        ],
+        OR: [{ id: teacherId }, { teacherId: teacherId }],
         schoolId: school.id,
       },
     });
@@ -158,7 +164,7 @@ export class ClassService {
       // 1. ClassTeacher records (form teacher assignments - PRIMARY)
       // 2. TimetablePeriod records (timetable-based assignments - SECONDARY)
       const classArmIds = new Set<string>();
-      
+
       // 1. Get ClassArms from ClassTeacher records (form teacher for PRIMARY)
       const classTeacherAssignments = await (this.prisma as any).classTeacher.findMany({
         where: {
@@ -218,10 +224,7 @@ export class ClassService {
             },
           },
         },
-        orderBy: [
-          { classLevel: { level: 'asc' } },
-          { name: 'asc' },
-        ],
+        orderBy: [{ classLevel: { level: 'asc' } }, { name: 'asc' }],
       });
 
       // Get student counts and subject info for each ClassArm
@@ -282,7 +285,10 @@ export class ClassService {
                 lastName: teacher.lastName,
                 email: teacher.email,
                 subject: teacherSubjects || null,
-                isPrimary: arm.classTeachers?.some((ct: any) => ct.teacherId === teacher.id && ct.isPrimary) || false,
+                isPrimary:
+                  arm.classTeachers?.some(
+                    (ct: any) => ct.teacherId === teacher.id && ct.isPrimary
+                  ) || false,
                 createdAt: arm.createdAt,
               },
               // Include other form teachers if any
@@ -406,10 +412,7 @@ export class ClassService {
           },
         },
       },
-      orderBy: [
-        { classLevel: { level: 'asc' } },
-        { name: 'asc' },
-      ],
+      orderBy: [{ classLevel: { level: 'asc' } }, { name: 'asc' }],
     });
 
     // Get student counts for all ClassArms
@@ -545,10 +548,7 @@ export class ClassService {
           },
         },
       },
-      orderBy: [
-        { classLevel: { level: 'asc' } },
-        { name: 'asc' },
-      ],
+      orderBy: [{ classLevel: { level: 'asc' } }, { name: 'asc' }],
     });
 
     // Get student counts for ClassArms
@@ -678,10 +678,7 @@ export class ClassService {
         OR: [
           { classId: classData.id },
           {
-            AND: [
-              { classId: null },
-              { classLevel: classData.classLevel },
-            ],
+            AND: [{ classId: null }, { classLevel: classData.classLevel }],
           },
         ],
       },
@@ -784,7 +781,9 @@ export class ClassService {
     });
 
     if (existingAssignment) {
-      throw new ConflictException('Teacher is already assigned to this class/arm with this subject');
+      throw new ConflictException(
+        'Teacher is already assigned to this class/arm with this subject'
+      );
     }
 
     // For primary schools, if this is the primary teacher, unset other primary teachers
@@ -844,7 +843,9 @@ export class ClassService {
         console.error('Failed to send teacher class assignment email:', error);
       }
     } else if (!teacherEmail) {
-      console.warn(`Teacher ${teacher.id} does not have an email address. Cannot send class assignment notification.`);
+      console.warn(
+        `Teacher ${teacher.id} does not have an email address. Cannot send class assignment notification.`
+      );
     }
 
     // Return updated class
@@ -994,19 +995,19 @@ export class ClassService {
       // For ClassArms, only the arm name (e.g., "A", "B", "Gold") can be updated
       // The full display name is constructed as "ClassLevel Name + Arm Name"
       const armUpdatePayload: any = {};
-      
+
       if (updateData.name !== undefined) {
         // The name coming in might be the full display name (e.g., "Class 1 Gold")
         // or just the arm name (e.g., "Gold")
         // We need to extract just the arm name
         const classLevelName = classArm.classLevel.name;
         let newArmName = updateData.name;
-        
+
         // If the name starts with the class level name, extract just the arm portion
         if (newArmName.startsWith(classLevelName + ' ')) {
           newArmName = newArmName.substring(classLevelName.length + 1).trim();
         }
-        
+
         armUpdatePayload.name = newArmName || 'A'; // Default to 'A' if empty
       }
 
@@ -1137,7 +1138,11 @@ export class ClassService {
    * Supports both Classes (backward compatibility) and ClassArms (for PRIMARY/SECONDARY)
    * @param forceDelete - If true, will unenroll students and delete even if students are enrolled
    */
-  async deleteClass(schoolId: string, classId: string, forceDelete: boolean = false): Promise<void> {
+  async deleteClass(
+    schoolId: string,
+    classId: string,
+    forceDelete: boolean = false
+  ): Promise<void> {
     // Validate school exists
     const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
     if (!school) {
@@ -1309,10 +1314,7 @@ export class ClassService {
         OR: [
           { classId: classId },
           {
-            AND: [
-              { classLevel: classData.classLevel },
-              { classId: null },
-            ],
+            AND: [{ classLevel: classData.classLevel }, { classId: null }],
           },
         ],
       };
@@ -1383,7 +1385,8 @@ export class ClassService {
 
       // Filter to only PRIMARY school classes
       const primaryClassAssignments = teacherOtherAssignments.filter(
-        (assignment: any) => assignment.class.type === ClassType.PRIMARY && assignment.class.id !== classData.id
+        (assignment: any) =>
+          assignment.class.type === ClassType.PRIMARY && assignment.class.id !== classData.id
       );
 
       if (primaryClassAssignments.length > 0) {
@@ -1409,12 +1412,15 @@ export class ClassService {
       }
 
       // If subject is provided, it should be "Class Teacher" or similar
-      if (assignmentData.subject && !assignmentData.subject.toLowerCase().includes('class teacher')) {
+      if (
+        assignmentData.subject &&
+        !assignmentData.subject.toLowerCase().includes('class teacher')
+      ) {
         // Allow it but warn - we'll accept it
       }
     }
 
-    // For secondary schools: 
+    // For secondary schools:
     // - Form teachers (isPrimary: true) don't need a subject
     // - Subject teachers (isPrimary: false/undefined) require a subject
     if (classData.type === ClassType.SECONDARY) {
@@ -1437,7 +1443,9 @@ export class ClassService {
       } else {
         // Subject teacher - subject is required
         if (!assignmentData.subject) {
-          throw new BadRequestException('Subject is required for subject teacher assignments in secondary schools');
+          throw new BadRequestException(
+            'Subject is required for subject teacher assignments in secondary schools'
+          );
         }
 
         // Check if another teacher is already assigned to this subject
@@ -1472,7 +1480,7 @@ export class ClassService {
   private mapToClassDto(classData: any): ClassDto {
     // Check if teachers are already mapped (pre-processed from ClassArm)
     let teachers: any[] = [];
-    
+
     if (classData.classTeachers && Array.isArray(classData.classTeachers)) {
       // Raw Prisma data with classTeachers relation
       teachers = classData.classTeachers.map((ct: any) => ({
@@ -1518,4 +1526,3 @@ export class ClassService {
     };
   }
 }
-

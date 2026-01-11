@@ -34,7 +34,7 @@ export enum PermissionType {
  */
 export const PRINCIPAL_ROLES = [
   'principal',
-  'school principal', 
+  'school principal',
   'head teacher',
   'headmaster',
   'headmistress',
@@ -45,7 +45,7 @@ export const PRINCIPAL_ROLES = [
  */
 export function isPrincipalRole(role: string): boolean {
   const normalizedRole = role.toLowerCase().trim();
-  return PRINCIPAL_ROLES.includes(normalizedRole as typeof PRINCIPAL_ROLES[number]);
+  return PRINCIPAL_ROLES.includes(normalizedRole as (typeof PRINCIPAL_ROLES)[number]);
 }
 
 export class PermissionDto {
@@ -86,4 +86,3 @@ export class StaffPermissionsDto {
   @ApiProperty({ type: [PermissionDto], description: 'Assigned permissions' })
   permissions: PermissionDto[];
 }
-

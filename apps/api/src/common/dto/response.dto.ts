@@ -28,4 +28,3 @@ export class ResponseDto<T> {
     return new ResponseDto(data as T, message, false);
   }
 }
-

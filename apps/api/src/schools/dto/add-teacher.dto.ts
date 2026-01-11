@@ -18,18 +18,19 @@ export class AddTeacherDto {
   @IsString()
   phone: string;
 
-  @ApiPropertyOptional({ 
-    description: 'Primary course/subject the teacher will teach (legacy, use subjectIds for multi-subject)',
-    deprecated: true 
+  @ApiPropertyOptional({
+    description:
+      'Primary course/subject the teacher will teach (legacy, use subjectIds for multi-subject)',
+    deprecated: true,
   })
   @IsOptional()
   @IsString()
   subject?: string;
 
-  @ApiPropertyOptional({ 
+  @ApiPropertyOptional({
     description: 'Array of subject IDs the teacher is qualified to teach (for SECONDARY schools)',
     type: [String],
-    example: ['clxxx1', 'clxxx2']
+    example: ['clxxx1', 'clxxx2'],
   })
   @IsOptional()
   @IsArray()
@@ -41,7 +42,9 @@ export class AddTeacherDto {
   @IsBoolean()
   isTemporary?: boolean;
 
-  @ApiPropertyOptional({ description: 'Employee ID (optional internal identifier for the teacher)' })
+  @ApiPropertyOptional({
+    description: 'Employee ID (optional internal identifier for the teacher)',
+  })
   @IsOptional()
   @IsString()
   employeeId?: string;
@@ -51,4 +54,3 @@ export class AddTeacherDto {
   @IsString()
   profileImage?: string;
 }
-

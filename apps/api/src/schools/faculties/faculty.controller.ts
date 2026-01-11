@@ -41,9 +41,7 @@ export class FacultyController {
     description: 'Faculties retrieved successfully',
     type: [FacultyDto],
   })
-  async getFaculties(
-    @Param('schoolId') schoolId: string
-  ): Promise<ResponseDto<FacultyDto[]>> {
+  async getFaculties(@Param('schoolId') schoolId: string): Promise<ResponseDto<FacultyDto[]>> {
     const data = await this.facultyService.getFaculties(schoolId);
     return ResponseDto.ok(data, 'Faculties retrieved successfully');
   }
@@ -403,4 +401,3 @@ export class LevelController {
     return ResponseDto.ok(data, 'Resources retrieved successfully');
   }
 }
-

@@ -96,10 +96,7 @@ export class StudentCurrentSchoolService {
           },
         },
       },
-      orderBy: [
-        { academicYear: 'desc' },
-        { term: 'desc' },
-      ],
+      orderBy: [{ academicYear: 'desc' }, { term: 'desc' }],
     });
 
     return grades.map((grade) => ({
@@ -183,4 +180,3 @@ export class StudentCurrentSchoolService {
     }));
   }
 }
-

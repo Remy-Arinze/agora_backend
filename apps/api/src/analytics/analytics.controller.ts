@@ -22,7 +22,7 @@ export class AnalyticsController {
   })
   async getAnalytics(
     @Query('month') month?: string,
-    @Query('year') year?: string,
+    @Query('year') year?: string
   ): Promise<ResponseDto<AnalyticsStats>> {
     const monthNum = month ? parseInt(month, 10) : undefined;
     const yearNum = year ? parseInt(year, 10) : undefined;
@@ -30,4 +30,3 @@ export class AnalyticsController {
     return ResponseDto.ok(data, 'Analytics retrieved successfully');
   }
 }
-

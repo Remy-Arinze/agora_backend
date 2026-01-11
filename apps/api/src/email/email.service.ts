@@ -9,24 +9,35 @@ export class EmailService {
 
   constructor(private configService: ConfigService) {
     // Support both MAIL_* and SMTP_* environment variable names
-    const host = this.configService.get<string>('MAIL_HOST') || this.configService.get<string>('SMTP_HOST');
+    const host =
+      this.configService.get<string>('MAIL_HOST') || this.configService.get<string>('SMTP_HOST');
     // Parse port as number, default to 587 for standard SMTP, but Mailtrap uses 2525
-    const portRaw = this.configService.get<string>('MAIL_PORT') || this.configService.get<string>('SMTP_PORT');
+    const portRaw =
+      this.configService.get<string>('MAIL_PORT') || this.configService.get<string>('SMTP_PORT');
     const port = portRaw ? parseInt(portRaw, 10) : 587;
-    const user = this.configService.get<string>('MAIL_USER') || this.configService.get<string>('SMTP_USER');
-    const password = this.configService.get<string>('MAIL_PASSWORD') || this.configService.get<string>('SMTP_PASSWORD');
+    const user =
+      this.configService.get<string>('MAIL_USER') || this.configService.get<string>('SMTP_USER');
+    const password =
+      this.configService.get<string>('MAIL_PASSWORD') ||
+      this.configService.get<string>('SMTP_PASSWORD');
     // Mailtrap uses secure: false, so default to false if not specified
-    const secureRaw = this.configService.get<string>('MAIL_SECURE') || this.configService.get<string>('SMTP_SECURE');
+    const secureRaw =
+      this.configService.get<string>('MAIL_SECURE') ||
+      this.configService.get<string>('SMTP_SECURE');
     const secure = secureRaw === 'true';
-    
+
     // Log configuration (without sensitive data)
     this.logger.log(`Initializing email service with host: ${host}, port: ${port}`);
-    
+
     if (!host || !user || !password) {
-      this.logger.warn('Email service configuration incomplete. Some environment variables may be missing.');
-      this.logger.warn(`Host: ${host ? '✓' : '✗'}, User: ${user ? '✓' : '✗'}, Password: ${password ? '✓' : '✗'}`);
+      this.logger.warn(
+        'Email service configuration incomplete. Some environment variables may be missing.'
+      );
+      this.logger.warn(
+        `Host: ${host ? '✓' : '✗'}, User: ${user ? '✓' : '✗'}, Password: ${password ? '✓' : '✗'}`
+      );
     }
-    
+
     this.transporter = nodemailer.createTransport({
       host,
       port,
@@ -36,7 +47,7 @@ export class EmailService {
         pass: password,
       },
     });
-    
+
     // Verify connection on startup
     this.verifyConnection().catch((error) => {
       this.logger.error('Initial SMTP connection verification failed:', error);
@@ -55,13 +66,16 @@ export class EmailService {
     const frontendUrl = this.configService.get<string>('FRONTEND_URL') || 'http://localhost:3000';
     const resetUrl = `${frontendUrl}/auth/reset-password?token=${resetToken}`;
 
-    const fromEmail = this.configService.get<string>('MAIL_FROM') || 
-                      this.configService.get<string>('SMTP_FROM') || 
-                      this.configService.get<string>('MAIL_USER') || 
-                      this.configService.get<string>('SMTP_USER');
-    
+    const fromEmail =
+      this.configService.get<string>('MAIL_FROM') ||
+      this.configService.get<string>('SMTP_FROM') ||
+      this.configService.get<string>('MAIL_USER') ||
+      this.configService.get<string>('SMTP_USER');
+
     if (!fromEmail) {
-      this.logger.error('No FROM email address configured. Check MAIL_FROM or SMTP_FROM environment variable.');
+      this.logger.error(
+        'No FROM email address configured. Check MAIL_FROM or SMTP_FROM environment variable.'
+      );
       throw new Error('Email configuration error: No FROM address');
     }
 
@@ -79,13 +93,17 @@ export class EmailService {
         `;
       } else {
         // Multiple schools - show all
-        const schoolsList = schools.map(school => `
+        const schoolsList = schools
+          .map(
+            (school) => `
           <div style="background-color: white; padding: 12px; margin: 8px 0; border-radius: 4px; border: 1px solid #dbeafe;">
             <p style="margin: 0; color: #1e40af; font-weight: bold;">${school.name} (${school.role})</p>
             <p style="margin: 5px 0 0 0; color: #1e40af; font-size: 14px;">Public ID: <code style="background-color: #f3f4f6; padding: 2px 6px; border-radius: 3px; font-size: 14px;">${school.publicId}</code></p>
           </div>
-        `).join('');
-        
+        `
+          )
+          .join('');
+
         schoolsSection = `
           <div style="background-color: #eff6ff; border-left: 4px solid #3b82f6; padding: 15px; margin: 20px 0; border-radius: 4px;">
             <p style="margin: 0; color: #1e40af; font-weight: bold; font-size: 16px;">Your Schools & Public IDs:</p>
@@ -108,17 +126,19 @@ export class EmailService {
         </div>
       `;
     }
-    
+
     // Determine if this is a password reset request or new account setup
     // If schools array is provided (even with 1 school), it's a password reset request
     // If schools is undefined but schoolName/publicId are provided, it's a new account setup
     const isPasswordReset = schools !== undefined; // schools array provided = password reset
     const isNewAccount = !isPasswordReset && (schoolName || publicId); // legacy params = new account
-    
+
     const mailOptions = {
       from: fromEmail,
       to: email,
-      subject: isPasswordReset ? 'Reset Your Password - Agora Education Platform' : 'Set Your Password - Agora Education Platform',
+      subject: isPasswordReset
+        ? 'Reset Your Password - Agora Education Platform'
+        : 'Set Your Password - Agora Education Platform',
       html: `
         <!DOCTYPE html>
         <html>
@@ -132,16 +152,20 @@ export class EmailService {
             <h1 style="color: #1f2937; margin: 0; font-size: 24px;">Agora Education Platform</h1>
           </div>
           <div style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px;">
-            ${isPasswordReset ? `
+            ${
+              isPasswordReset
+                ? `
             <h2 style="color: #1f2937; margin-top: 0;">Password Reset Request</h2>
             <p>Hello ${name},</p>
             <p>We received a request to reset your password for your <strong>${role}</strong> account on the Agora Education Platform.</p>
             <p>If you didn't make this request, you can safely ignore this email. Your password will remain unchanged.</p>
-            ` : `
+            `
+                : `
             <h2 style="color: #1f2937; margin-top: 0;">Welcome, ${name}!</h2>
             <p>Your account has been created${schoolName ? ` at <strong>${schoolName}</strong>` : ''} on the Agora Education Platform as a <strong>${role}</strong>.</p>
             <p>To get started, please set your password using the link below.</p>
-            `}
+            `
+            }
             ${schoolsSection}
             <div style="background-color: #fff; border: 1px solid #e5e7eb; border-radius: 6px; padding: 20px; margin: 25px 0;">
               <p style="margin: 0 0 15px 0; color: #374151; font-weight: 600;">${isPasswordReset ? 'Click the button below to reset your password:' : 'Click the button below to set your password:'}</p>
@@ -158,11 +182,15 @@ export class EmailService {
                 <strong>⏱️ Important:</strong> This link will expire in ${isPasswordReset ? '1 hour' : '24 hours'}. ${isPasswordReset ? 'For security reasons, password reset links expire quickly.' : 'Please set your password as soon as possible.'}
               </p>
             </div>
-            ${isPasswordReset ? `
+            ${
+              isPasswordReset
+                ? `
             <p style="color: #6b7280; font-size: 14px; margin-top: 20px;">
               <strong>Security Tip:</strong> If you didn't request this password reset, please ignore this email. Your account remains secure, and no changes will be made.
             </p>
-            ` : ''}
+            `
+                : ''
+            }
             <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
             <p style="color: #9ca3af; font-size: 12px; text-align: center; margin: 0;">
               © ${new Date().getFullYear()} Agora Education Platform. All rights reserved.
@@ -176,7 +204,9 @@ export class EmailService {
     try {
       this.logger.log(`Attempting to send password reset email to ${email} from ${fromEmail}`);
       const result = await this.transporter.sendMail(mailOptions);
-      this.logger.log(`Password reset email sent successfully to ${email}. MessageId: ${result.messageId}`);
+      this.logger.log(
+        `Password reset email sent successfully to ${email}. MessageId: ${result.messageId}`
+      );
     } catch (error: any) {
       this.logger.error(`Failed to send email to ${email}:`, error);
       this.logger.error(`Error details: ${error.message}`);
@@ -196,13 +226,16 @@ export class EmailService {
     publicId?: string,
     schoolName?: string
   ): Promise<void> {
-    const fromEmail = this.configService.get<string>('MAIL_FROM') || 
-                      this.configService.get<string>('SMTP_FROM') || 
-                      this.configService.get<string>('MAIL_USER') || 
-                      this.configService.get<string>('SMTP_USER');
-    
+    const fromEmail =
+      this.configService.get<string>('MAIL_FROM') ||
+      this.configService.get<string>('SMTP_FROM') ||
+      this.configService.get<string>('MAIL_USER') ||
+      this.configService.get<string>('SMTP_USER');
+
     if (!fromEmail) {
-      this.logger.error('No FROM email address configured. Check MAIL_FROM or SMTP_FROM environment variable.');
+      this.logger.error(
+        'No FROM email address configured. Check MAIL_FROM or SMTP_FROM environment variable.'
+      );
       throw new Error('Email configuration error: No FROM address');
     }
 
@@ -229,12 +262,16 @@ export class EmailService {
             <h2 style="color: #1f2937; margin-top: 0;">Password Successfully Changed</h2>
             <p>Hello ${name},</p>
             <p>Your password has been successfully changed${schoolName ? ` for your account at <strong>${schoolName}</strong>` : ''} on <strong>${new Date().toLocaleString()}</strong>.</p>
-            ${publicId ? `
+            ${
+              publicId
+                ? `
             <div style="background-color: #eff6ff; border-left: 4px solid #3b82f6; padding: 15px; margin: 20px 0; border-radius: 4px;">
               <p style="margin: 0; color: #1e40af; font-weight: bold;">Your Public ID: <code style="background-color: white; padding: 4px 8px; border-radius: 4px; font-size: 16px;">${publicId}</code></p>
               <p style="margin: 10px 0 0 0; color: #1e40af; font-size: 14px;">Use this Public ID along with your password to log in.</p>
             </div>
-            ` : ''}
+            `
+                : ''
+            }
             <p>You can now log in to your account using your ${publicId ? 'Public ID or ' : ''}email and your new password.</p>
             <div style="text-align: center; margin: 30px 0;">
               <a href="${loginUrl}" style="background-color: #3b82f6; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: bold;">Log In</a>
@@ -253,9 +290,13 @@ export class EmailService {
     };
 
     try {
-      this.logger.log(`Attempting to send password reset confirmation email to ${email} from ${fromEmail}`);
+      this.logger.log(
+        `Attempting to send password reset confirmation email to ${email} from ${fromEmail}`
+      );
       const result = await this.transporter.sendMail(mailOptions);
-      this.logger.log(`Password reset confirmation email sent successfully to ${email}. MessageId: ${result.messageId}`);
+      this.logger.log(
+        `Password reset confirmation email sent successfully to ${email}. MessageId: ${result.messageId}`
+      );
     } catch (error: any) {
       this.logger.error(`Failed to send confirmation email to ${email}:`, error);
       this.logger.error(`Error details: ${error.message}`);
@@ -277,13 +318,16 @@ export class EmailService {
     publicId?: string,
     schoolName?: string
   ): Promise<void> {
-    const fromEmail = this.configService.get<string>('MAIL_FROM') || 
-                      this.configService.get<string>('SMTP_FROM') || 
-                      this.configService.get<string>('MAIL_USER') || 
-                      this.configService.get<string>('SMTP_USER');
-    
+    const fromEmail =
+      this.configService.get<string>('MAIL_FROM') ||
+      this.configService.get<string>('SMTP_FROM') ||
+      this.configService.get<string>('MAIL_USER') ||
+      this.configService.get<string>('SMTP_USER');
+
     if (!fromEmail) {
-      this.logger.error('No FROM email address configured. Check MAIL_FROM or SMTP_FROM environment variable.');
+      this.logger.error(
+        'No FROM email address configured. Check MAIL_FROM or SMTP_FROM environment variable.'
+      );
       throw new Error('Email configuration error: No FROM address');
     }
 
@@ -314,12 +358,16 @@ export class EmailService {
               <p style="margin: 0; color: #92400e; font-weight: bold;">Previous Role: ${oldRole}</p>
               <p style="margin: 10px 0 0 0; color: #92400e; font-weight: bold;">New Role: <span style="color: #059669;">${newRole}</span></p>
             </div>
-            ${publicId ? `
+            ${
+              publicId
+                ? `
             <div style="background-color: #eff6ff; border-left: 4px solid #3b82f6; padding: 15px; margin: 20px 0; border-radius: 4px;">
               <p style="margin: 0; color: #1e40af; font-weight: bold;">Your Public ID: <code style="background-color: white; padding: 4px 8px; border-radius: 4px; font-size: 16px;">${publicId}</code></p>
               <p style="margin: 10px 0 0 0; color: #1e40af; font-size: 14px;">Use this Public ID and your password to log in to your account.</p>
             </div>
-            ` : ''}
+            `
+                : ''
+            }
             <p>You can now access your account with your new role permissions. Please log in using your ${publicId ? 'Public ID and password' : 'email and password'} to see the updated dashboard.</p>
             <div style="text-align: center; margin: 30px 0;">
               <a href="${loginUrl}" style="background-color: #3b82f6; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: bold;">Log In</a>
@@ -340,7 +388,9 @@ export class EmailService {
     try {
       this.logger.log(`Attempting to send role change email to ${email} from ${fromEmail}`);
       const result = await this.transporter.sendMail(mailOptions);
-      this.logger.log(`Role change email sent successfully to ${email}. MessageId: ${result.messageId}`);
+      this.logger.log(
+        `Role change email sent successfully to ${email}. MessageId: ${result.messageId}`
+      );
     } catch (error: any) {
       this.logger.error(`Failed to send role change email to ${email}:`, error);
       this.logger.error(`Error details: ${error.message}`);
@@ -362,13 +412,16 @@ export class EmailService {
     schoolName: string,
     expiresAt: Date
   ): Promise<void> {
-    const fromEmail = this.configService.get<string>('MAIL_FROM') || 
-                      this.configService.get<string>('SMTP_FROM') || 
-                      this.configService.get<string>('MAIL_USER') || 
-                      this.configService.get<string>('SMTP_USER');
-    
+    const fromEmail =
+      this.configService.get<string>('MAIL_FROM') ||
+      this.configService.get<string>('SMTP_FROM') ||
+      this.configService.get<string>('MAIL_USER') ||
+      this.configService.get<string>('SMTP_USER');
+
     if (!fromEmail) {
-      this.logger.error('No FROM email address configured. Check MAIL_FROM or SMTP_FROM environment variable.');
+      this.logger.error(
+        'No FROM email address configured. Check MAIL_FROM or SMTP_FROM environment variable.'
+      );
       throw new Error('Email configuration error: No FROM address');
     }
 
@@ -432,7 +485,9 @@ export class EmailService {
     try {
       this.logger.log(`Attempting to send transfer initiation email to ${email} from ${fromEmail}`);
       const result = await this.transporter.sendMail(mailOptions);
-      this.logger.log(`Transfer initiation email sent successfully to ${email}. MessageId: ${result.messageId}`);
+      this.logger.log(
+        `Transfer initiation email sent successfully to ${email}. MessageId: ${result.messageId}`
+      );
     } catch (error: any) {
       this.logger.error(`Failed to send transfer initiation email to ${email}:`, error);
       this.logger.error(`Error details: ${error.message}`);
@@ -451,13 +506,16 @@ export class EmailService {
     studentName: string,
     schoolName: string
   ): Promise<void> {
-    const fromEmail = this.configService.get<string>('MAIL_FROM') || 
-                      this.configService.get<string>('SMTP_FROM') || 
-                      this.configService.get<string>('MAIL_USER') || 
-                      this.configService.get<string>('SMTP_USER');
-    
+    const fromEmail =
+      this.configService.get<string>('MAIL_FROM') ||
+      this.configService.get<string>('SMTP_FROM') ||
+      this.configService.get<string>('MAIL_USER') ||
+      this.configService.get<string>('SMTP_USER');
+
     if (!fromEmail) {
-      this.logger.error('No FROM email address configured. Check MAIL_FROM or SMTP_FROM environment variable.');
+      this.logger.error(
+        'No FROM email address configured. Check MAIL_FROM or SMTP_FROM environment variable.'
+      );
       throw new Error('Email configuration error: No FROM address');
     }
 
@@ -508,7 +566,9 @@ export class EmailService {
     try {
       this.logger.log(`Attempting to send transfer revocation email to ${email} from ${fromEmail}`);
       const result = await this.transporter.sendMail(mailOptions);
-      this.logger.log(`Transfer revocation email sent successfully to ${email}. MessageId: ${result.messageId}`);
+      this.logger.log(
+        `Transfer revocation email sent successfully to ${email}. MessageId: ${result.messageId}`
+      );
     } catch (error: any) {
       this.logger.error(`Failed to send transfer revocation email to ${email}:`, error);
       this.logger.error(`Error details: ${error.message}`);
@@ -532,13 +592,16 @@ export class EmailService {
     schoolName: string,
     academicYear: string
   ): Promise<void> {
-    const fromEmail = this.configService.get<string>('MAIL_FROM') || 
-                      this.configService.get<string>('SMTP_FROM') || 
-                      this.configService.get<string>('MAIL_USER') || 
-                      this.configService.get<string>('SMTP_USER');
-    
+    const fromEmail =
+      this.configService.get<string>('MAIL_FROM') ||
+      this.configService.get<string>('SMTP_FROM') ||
+      this.configService.get<string>('MAIL_USER') ||
+      this.configService.get<string>('SMTP_USER');
+
     if (!fromEmail) {
-      this.logger.error('No FROM email address configured. Check MAIL_FROM or SMTP_FROM environment variable.');
+      this.logger.error(
+        'No FROM email address configured. Check MAIL_FROM or SMTP_FROM environment variable.'
+      );
       throw new Error('Email configuration error: No FROM address');
     }
 
@@ -595,9 +658,13 @@ export class EmailService {
     };
 
     try {
-      this.logger.log(`Attempting to send teacher class assignment email to ${email} from ${fromEmail}`);
+      this.logger.log(
+        `Attempting to send teacher class assignment email to ${email} from ${fromEmail}`
+      );
       const result = await this.transporter.sendMail(mailOptions);
-      this.logger.log(`Teacher class assignment email sent successfully to ${email}. MessageId: ${result.messageId}`);
+      this.logger.log(
+        `Teacher class assignment email sent successfully to ${email}. MessageId: ${result.messageId}`
+      );
     } catch (error: any) {
       this.logger.error(`Failed to send teacher class assignment email to ${email}:`, error);
       this.logger.error(`Error details: ${error.message}`);
@@ -619,13 +686,16 @@ export class EmailService {
     subject: string | null,
     schoolName: string
   ): Promise<void> {
-    const fromEmail = this.configService.get<string>('MAIL_FROM') || 
-                      this.configService.get<string>('SMTP_FROM') || 
-                      this.configService.get<string>('MAIL_USER') || 
-                      this.configService.get<string>('SMTP_USER');
-    
+    const fromEmail =
+      this.configService.get<string>('MAIL_FROM') ||
+      this.configService.get<string>('SMTP_FROM') ||
+      this.configService.get<string>('MAIL_USER') ||
+      this.configService.get<string>('SMTP_USER');
+
     if (!fromEmail) {
-      this.logger.error('No FROM email address configured. Check MAIL_FROM or SMTP_FROM environment variable.');
+      this.logger.error(
+        'No FROM email address configured. Check MAIL_FROM or SMTP_FROM environment variable.'
+      );
       throw new Error('Email configuration error: No FROM address');
     }
 
@@ -674,9 +744,13 @@ export class EmailService {
     };
 
     try {
-      this.logger.log(`Attempting to send teacher class removal email to ${email} from ${fromEmail}`);
+      this.logger.log(
+        `Attempting to send teacher class removal email to ${email} from ${fromEmail}`
+      );
       const result = await this.transporter.sendMail(mailOptions);
-      this.logger.log(`Teacher class removal email sent successfully to ${email}. MessageId: ${result.messageId}`);
+      this.logger.log(
+        `Teacher class removal email sent successfully to ${email}. MessageId: ${result.messageId}`
+      );
     } catch (error: any) {
       this.logger.error(`Failed to send teacher class removal email to ${email}:`, error);
       this.logger.error(`Error details: ${error.message}`);
@@ -696,13 +770,16 @@ export class EmailService {
     permissions: Array<{ resource: string; type: string; description?: string }>,
     schoolName: string
   ): Promise<void> {
-    const fromEmail = this.configService.get<string>('MAIL_FROM') || 
-                      this.configService.get<string>('SMTP_FROM') || 
-                      this.configService.get<string>('MAIL_USER') || 
-                      this.configService.get<string>('SMTP_USER');
-    
+    const fromEmail =
+      this.configService.get<string>('MAIL_FROM') ||
+      this.configService.get<string>('SMTP_FROM') ||
+      this.configService.get<string>('MAIL_USER') ||
+      this.configService.get<string>('SMTP_USER');
+
     if (!fromEmail) {
-      this.logger.error('No FROM email address configured. Check MAIL_FROM or SMTP_FROM environment variable.');
+      this.logger.error(
+        'No FROM email address configured. Check MAIL_FROM or SMTP_FROM environment variable.'
+      );
       throw new Error('Email configuration error: No FROM address');
     }
 
@@ -771,9 +848,13 @@ export class EmailService {
     };
 
     try {
-      this.logger.log(`Attempting to send permission assignment email to ${email} from ${fromEmail}`);
+      this.logger.log(
+        `Attempting to send permission assignment email to ${email} from ${fromEmail}`
+      );
       const result = await this.transporter.sendMail(mailOptions);
-      this.logger.log(`Permission assignment email sent successfully to ${email}. MessageId: ${result.messageId}`);
+      this.logger.log(
+        `Permission assignment email sent successfully to ${email}. MessageId: ${result.messageId}`
+      );
     } catch (error: any) {
       this.logger.error(`Failed to send permission assignment email to ${email}:`, error);
       this.logger.error(`Error details: ${error.message}`);
@@ -811,11 +892,12 @@ export class EmailService {
     endDate: Date,
     schoolName: string
   ): Promise<void> {
-    const fromEmail = this.configService.get<string>('MAIL_FROM') || 
-                      this.configService.get<string>('SMTP_FROM') || 
-                      this.configService.get<string>('MAIL_USER') || 
-                      this.configService.get<string>('SMTP_USER');
-    
+    const fromEmail =
+      this.configService.get<string>('MAIL_FROM') ||
+      this.configService.get<string>('SMTP_FROM') ||
+      this.configService.get<string>('MAIL_USER') ||
+      this.configService.get<string>('SMTP_USER');
+
     if (!fromEmail) {
       this.logger.error('No FROM email address configured.');
       throw new Error('Email configuration error: No FROM address');
@@ -892,11 +974,12 @@ export class EmailService {
     endDate: Date,
     schoolName: string
   ): Promise<void> {
-    const fromEmail = this.configService.get<string>('MAIL_FROM') || 
-                      this.configService.get<string>('SMTP_FROM') || 
-                      this.configService.get<string>('MAIL_USER') || 
-                      this.configService.get<string>('SMTP_USER');
-    
+    const fromEmail =
+      this.configService.get<string>('MAIL_FROM') ||
+      this.configService.get<string>('SMTP_FROM') ||
+      this.configService.get<string>('MAIL_USER') ||
+      this.configService.get<string>('SMTP_USER');
+
     if (!fromEmail) {
       this.logger.error('No FROM email address configured.');
       throw new Error('Email configuration error: No FROM address');
@@ -971,11 +1054,12 @@ export class EmailService {
     sessionName: string,
     schoolName: string
   ): Promise<void> {
-    const fromEmail = this.configService.get<string>('MAIL_FROM') || 
-                      this.configService.get<string>('SMTP_FROM') || 
-                      this.configService.get<string>('MAIL_USER') || 
-                      this.configService.get<string>('SMTP_USER');
-    
+    const fromEmail =
+      this.configService.get<string>('MAIL_FROM') ||
+      this.configService.get<string>('SMTP_FROM') ||
+      this.configService.get<string>('MAIL_USER') ||
+      this.configService.get<string>('SMTP_USER');
+
     if (!fromEmail) {
       this.logger.error('No FROM email address configured.');
       throw new Error('Email configuration error: No FROM address');
@@ -1066,7 +1150,7 @@ export class EmailService {
     const batchSize = 10;
     for (let i = 0; i < emails.length; i += batchSize) {
       const batch = emails.slice(i, i + batchSize);
-      
+
       await Promise.all(
         batch.map(async (recipient) => {
           try {
@@ -1103,7 +1187,7 @@ export class EmailService {
 
       // Small delay between batches
       if (i + batchSize < emails.length) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise((resolve) => setTimeout(resolve, 1000));
       }
     }
 
@@ -1122,13 +1206,16 @@ export class EmailService {
     verificationUrl: string,
     changes: any
   ): Promise<void> {
-    const fromEmail = this.configService.get<string>('MAIL_FROM') || 
-                      this.configService.get<string>('SMTP_FROM') || 
-                      this.configService.get<string>('MAIL_USER') || 
-                      this.configService.get<string>('SMTP_USER');
-    
+    const fromEmail =
+      this.configService.get<string>('MAIL_FROM') ||
+      this.configService.get<string>('SMTP_FROM') ||
+      this.configService.get<string>('MAIL_USER') ||
+      this.configService.get<string>('SMTP_USER');
+
     if (!fromEmail) {
-      this.logger.error('No FROM email address configured. Check MAIL_FROM or SMTP_FROM environment variable.');
+      this.logger.error(
+        'No FROM email address configured. Check MAIL_FROM or SMTP_FROM environment variable.'
+      );
       throw new Error('Email configuration error: No FROM address');
     }
 
@@ -1176,7 +1263,7 @@ export class EmailService {
             <div style="background-color: #eff6ff; border-left: 4px solid #3b82f6; padding: 15px; margin: 20px 0; border-radius: 4px;">
               <h3 style="margin-top: 0; color: #1e40af;">Proposed Changes:</h3>
               <ul style="margin: 0; padding-left: 20px; color: #1e40af;">
-                ${changesList.map(change => `<li>${change}</li>`).join('')}
+                ${changesList.map((change) => `<li>${change}</li>`).join('')}
               </ul>
             </div>
 
@@ -1212,11 +1299,12 @@ export class EmailService {
     try {
       this.logger.log(`Attempting to send school profile edit verification email to ${email}`);
       const result = await this.transporter.sendMail(mailOptions);
-      this.logger.log(`School profile edit verification email sent successfully to ${email}. MessageId: ${result.messageId}`);
+      this.logger.log(
+        `School profile edit verification email sent successfully to ${email}. MessageId: ${result.messageId}`
+      );
     } catch (error: any) {
       this.logger.error(`Failed to send email to ${email}:`, error);
       throw error;
     }
   }
 }
-

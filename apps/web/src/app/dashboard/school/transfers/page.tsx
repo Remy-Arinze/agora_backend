@@ -27,6 +27,7 @@ import {
   Trash2,
   X,
   Award,
+  AlertCircle,
 } from 'lucide-react';
 import {
   useGetMySchoolQuery,

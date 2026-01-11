@@ -51,7 +51,7 @@ export class PublicService {
       if (school.hasPrimary) types.push('Primary');
       if (school.hasSecondary) types.push('Secondary');
       if (school.hasTertiary) types.push('Tertiary');
-      
+
       return {
         id: school.id,
         name: school.name,
@@ -78,7 +78,7 @@ export class PublicService {
 
     // Records = enrollments + grades + attendance (simplified to enrollments for now)
     const totalEnrollments = await this.prisma.enrollment.count();
-    
+
     // Estimate total records as enrollments * 3 (for various record types)
     // This gives a more impressive but still realistic number
     const totalRecords = totalEnrollments + totalStudents;
@@ -91,4 +91,3 @@ export class PublicService {
     };
   }
 }
-

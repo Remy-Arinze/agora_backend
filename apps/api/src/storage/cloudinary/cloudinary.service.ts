@@ -5,8 +5,19 @@ import { Readable } from 'stream';
 
 // Allowed file types for raw uploads (documents, spreadsheets, presentations)
 const ALLOWED_RAW_EXTENSIONS = [
-  'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
-  'txt', 'csv', 'rtf', 'odt', 'ods', 'odp',
+  'pdf',
+  'doc',
+  'docx',
+  'xls',
+  'xlsx',
+  'ppt',
+  'pptx',
+  'txt',
+  'csv',
+  'rtf',
+  'odt',
+  'ods',
+  'odp',
 ];
 
 const ALLOWED_RAW_MIMETYPES = [
@@ -57,7 +68,9 @@ export class CloudinaryService {
   ): Promise<{ url: string; publicId: string }> {
     // Validate file buffer exists
     if (!file || !file.buffer) {
-      throw new Error('File buffer is not available. Ensure FileInterceptor is configured with memoryStorage.');
+      throw new Error(
+        'File buffer is not available. Ensure FileInterceptor is configured with memoryStorage.'
+      );
     }
 
     // Validate Cloudinary is configured
@@ -66,7 +79,9 @@ export class CloudinaryService {
     const apiSecret = this.configService.get<string>('CLOUDINARY_API_SECRET');
 
     if (!cloudName || !apiKey || !apiSecret) {
-      throw new Error('Cloudinary is not configured. Please set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET environment variables.');
+      throw new Error(
+        'Cloudinary is not configured. Please set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET environment variables.'
+      );
     }
 
     return new Promise((resolve, reject) => {
@@ -74,32 +89,26 @@ export class CloudinaryService {
         folder,
         resource_type: 'image',
         allowed_formats: ['jpg', 'jpeg', 'png', 'gif', 'webp'],
-        transformation: [
-          { quality: 'auto' },
-          { fetch_format: 'auto' },
-        ],
+        transformation: [{ quality: 'auto' }, { fetch_format: 'auto' }],
       };
 
       if (publicId) {
         uploadOptions.public_id = publicId;
       }
 
-      const uploadStream = cloudinary.uploader.upload_stream(
-        uploadOptions,
-        (error, result) => {
-          if (error) {
-            console.error('Cloudinary upload error:', error);
-            reject(error);
-          } else if (result) {
-            resolve({
-              url: result.secure_url,
-              publicId: result.public_id,
-            });
-          } else {
-            reject(new Error('Upload failed: No result returned'));
-          }
+      const uploadStream = cloudinary.uploader.upload_stream(uploadOptions, (error, result) => {
+        if (error) {
+          console.error('Cloudinary upload error:', error);
+          reject(error);
+        } else if (result) {
+          resolve({
+            url: result.secure_url,
+            publicId: result.public_id,
+          });
+        } else {
+          reject(new Error('Upload failed: No result returned'));
         }
-      );
+      });
 
       // Convert buffer to stream
       const bufferStream = new Readable();
@@ -138,7 +147,9 @@ export class CloudinaryService {
   ): Promise<{ url: string; publicId: string }> {
     // Validate file buffer exists
     if (!file || !file.buffer) {
-      throw new Error('File buffer is not available. Ensure FileInterceptor is configured with memoryStorage.');
+      throw new Error(
+        'File buffer is not available. Ensure FileInterceptor is configured with memoryStorage.'
+      );
     }
 
     // Validate file type for security - prevent malicious file uploads
@@ -152,9 +163,7 @@ export class CloudinaryService {
     }
 
     if (!mimeType || !ALLOWED_RAW_MIMETYPES.includes(mimeType)) {
-      throw new BadRequestException(
-        `Invalid file MIME type. Please upload a valid document file.`
-      );
+      throw new BadRequestException(`Invalid file MIME type. Please upload a valid document file.`);
     }
 
     // Validate Cloudinary is configured
@@ -163,7 +172,9 @@ export class CloudinaryService {
     const apiSecret = this.configService.get<string>('CLOUDINARY_API_SECRET');
 
     if (!cloudName || !apiKey || !apiSecret) {
-      throw new Error('Cloudinary is not configured. Please set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET environment variables.');
+      throw new Error(
+        'Cloudinary is not configured. Please set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET environment variables.'
+      );
     }
 
     return new Promise((resolve, reject) => {
@@ -178,22 +189,19 @@ export class CloudinaryService {
         uploadOptions.public_id = publicId;
       }
 
-      const uploadStream = cloudinary.uploader.upload_stream(
-        uploadOptions,
-        (error, result) => {
-          if (error) {
-            console.error('Cloudinary upload error:', error);
-            reject(error);
-          } else if (result) {
-            resolve({
-              url: result.secure_url,
-              publicId: result.public_id,
-            });
-          } else {
-            reject(new Error('Upload failed: No result returned'));
-          }
+      const uploadStream = cloudinary.uploader.upload_stream(uploadOptions, (error, result) => {
+        if (error) {
+          console.error('Cloudinary upload error:', error);
+          reject(error);
+        } else if (result) {
+          resolve({
+            url: result.secure_url,
+            publicId: result.public_id,
+          });
+        } else {
+          reject(new Error('Upload failed: No result returned'));
         }
-      );
+      });
 
       // Convert buffer to stream
       const bufferStream = new Readable();
@@ -225,11 +233,10 @@ export class CloudinaryService {
    */
   extractPublicId(url: string): string | null {
     if (!url) return null;
-    
+
     // Cloudinary URL format: https://res.cloudinary.com/{cloud_name}/image/upload/{version}/{public_id}.{format}
     // or: https://res.cloudinary.com/{cloud_name}/raw/upload/{version}/{public_id}.{format}
     const match = url.match(/\/upload\/(?:v\d+\/)?(.+?)(?:\.[^.]+)?$/);
     return match ? match[1] : null;
   }
 }
-

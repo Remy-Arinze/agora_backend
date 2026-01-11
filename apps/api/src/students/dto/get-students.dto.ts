@@ -13,4 +13,3 @@ export class GetStudentsDto extends PaginationDto {
   @IsEnum(ClassType)
   schoolType?: ClassType;
 }
-

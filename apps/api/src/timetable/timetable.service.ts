@@ -1,7 +1,15 @@
-import { Injectable, BadRequestException, NotFoundException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+  ConflictException,
+} from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { SchoolRepository } from '../schools/domain/repositories/school.repository';
-import { CreateTimetablePeriodDto, CreateMasterScheduleDto } from './dto/create-timetable-period.dto';
+import {
+  CreateTimetablePeriodDto,
+  CreateMasterScheduleDto,
+} from './dto/create-timetable-period.dto';
 import { TimetablePeriodDto, ConflictInfo } from './dto/timetable.dto';
 import { DayOfWeek, PeriodType } from './dto/create-timetable-period.dto';
 
@@ -23,10 +31,7 @@ export class TimetableService {
   /**
    * Create a timetable period with conflict detection
    */
-  async createPeriod(
-    schoolId: string,
-    dto: CreateTimetablePeriodDto
-  ): Promise<TimetablePeriodDto> {
+  async createPeriod(schoolId: string, dto: CreateTimetablePeriodDto): Promise<TimetablePeriodDto> {
     const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
@@ -218,10 +223,7 @@ export class TimetableService {
           },
         },
       },
-      orderBy: [
-        { dayOfWeek: 'asc' },
-        { startTime: 'asc' },
-      ],
+      orderBy: [{ dayOfWeek: 'asc' }, { startTime: 'asc' }],
     });
 
     return periods.map((p: any) => this.mapToPeriodDto(p));
@@ -251,10 +253,7 @@ export class TimetableService {
     // Note: teacherId parameter can be either the database id or the unique teacherId field
     const teacher = await this.prisma.teacher.findFirst({
       where: {
-        OR: [
-          { id: teacherId },
-          { teacherId: teacherId },
-        ],
+        OR: [{ id: teacherId }, { teacherId: teacherId }],
         schoolId: school.id,
       },
       include: {
@@ -315,10 +314,7 @@ export class TimetableService {
         },
         term: true,
       },
-      orderBy: [
-        { dayOfWeek: 'asc' },
-        { startTime: 'asc' },
-      ],
+      orderBy: [{ dayOfWeek: 'asc' }, { startTime: 'asc' }],
     });
 
     return periods.map((p: any) => this.mapToPeriodDto(p));
@@ -353,10 +349,7 @@ export class TimetableService {
       whereClause.classArmId = classId;
     } else {
       // It's a Class ID - check both classId and courseId for TERTIARY
-      whereClause.OR = [
-        { classId: classId },
-        { courseId: classId },
-      ];
+      whereClause.OR = [{ classId: classId }, { courseId: classId }];
     }
 
     const periods = await this.timetablePeriodModel.findMany({
@@ -373,10 +366,7 @@ export class TimetableService {
           },
         },
       },
-      orderBy: [
-        { dayOfWeek: 'asc' },
-        { startTime: 'asc' },
-      ],
+      orderBy: [{ dayOfWeek: 'asc' }, { startTime: 'asc' }],
     });
 
     return periods.map((p: any) => this.mapToPeriodDto(p));
@@ -488,10 +478,7 @@ export class TimetableService {
             },
           },
         },
-        orderBy: [
-          { dayOfWeek: 'asc' },
-          { startTime: 'asc' },
-        ],
+        orderBy: [{ dayOfWeek: 'asc' }, { startTime: 'asc' }],
       });
 
       registeredSubjectTimetable = registeredPeriods.map((p: any) => {
@@ -529,7 +516,12 @@ export class TimetableService {
         // Check if periods are on the same day and overlap in time
         if (
           period1.dayOfWeek === period2.dayOfWeek &&
-          this.doPeriodsOverlap(period1.startTime, period1.endTime, period2.startTime, period2.endTime)
+          this.doPeriodsOverlap(
+            period1.startTime,
+            period1.endTime,
+            period2.startTime,
+            period2.endTime
+          )
         ) {
           conflicts.push(period2.id);
           if (!period2.hasConflict) {
@@ -559,12 +551,7 @@ export class TimetableService {
    * Check if two time periods overlap
    * Periods overlap if: startTime1 < endTime2 AND endTime1 > startTime2
    */
-  private doPeriodsOverlap(
-    start1: string,
-    end1: string,
-    start2: string,
-    end2: string
-  ): boolean {
+  private doPeriodsOverlap(start1: string, end1: string, start2: string, end2: string): boolean {
     // Times are in HH:mm format, so string comparison works for lexicographic ordering
     return start1 < end2 && end1 > start2;
   }
@@ -630,10 +617,7 @@ export class TimetableService {
         },
         term: true,
       },
-      orderBy: [
-        { dayOfWeek: 'asc' },
-        { startTime: 'asc' },
-      ],
+      orderBy: [{ dayOfWeek: 'asc' }, { startTime: 'asc' }],
     });
 
     // Group periods by class or classArm
@@ -789,11 +773,7 @@ export class TimetableService {
   /**
    * Delete all timetable periods for a class and term (delete entire timetable)
    */
-  async deleteTimetableForClass(
-    schoolId: string,
-    classId: string,
-    termId: string
-  ): Promise<void> {
+  async deleteTimetableForClass(schoolId: string, classId: string, termId: string): Promise<void> {
     const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
@@ -806,7 +786,7 @@ export class TimetableService {
     });
 
     let isClassArm = false;
-    
+
     if (classArm) {
       // Validate ClassArm belongs to school
       if (classArm.classLevel.schoolId !== school.id) {
@@ -908,9 +888,7 @@ export class TimetableService {
 
     // Check teacher conflict
     if (dto.teacherId) {
-      const teacherConflict = overlappingPeriods.find(
-        (p: any) => p.teacherId === dto.teacherId
-      );
+      const teacherConflict = overlappingPeriods.find((p: any) => p.teacherId === dto.teacherId);
 
       if (teacherConflict) {
         const teacherName = teacherConflict.teacher
@@ -930,17 +908,15 @@ export class TimetableService {
 
     // Check room conflict
     if (dto.roomId) {
-      const roomConflict = overlappingPeriods.find(
-        (p: any) => p.roomId === dto.roomId
-      );
+      const roomConflict = overlappingPeriods.find((p: any) => p.roomId === dto.roomId);
 
       if (roomConflict) {
         const roomName = roomConflict.room?.name || 'Unknown';
         const classArmName = roomConflict.classArm
           ? `${roomConflict.classArm.classLevel.name} ${roomConflict.classArm.name}`
           : roomConflict.class
-          ? roomConflict.class.name
-          : 'Unknown';
+            ? roomConflict.class.name
+            : 'Unknown';
 
         return {
           type: 'ROOM',
@@ -959,7 +935,9 @@ export class TimetableService {
   private validateTimeFormat(time: string): void {
     const timeRegex = /^([0-1][0-9]|2[0-3]):[0-5][0-9]$/;
     if (!timeRegex.test(time)) {
-      throw new BadRequestException(`Invalid time format: ${time}. Expected HH:mm format (e.g., "08:00")`);
+      throw new BadRequestException(
+        `Invalid time format: ${time}. Expected HH:mm format (e.g., "08:00")`
+      );
     }
   }
 
@@ -982,14 +960,16 @@ export class TimetableService {
         ? `${period.teacher.firstName} ${period.teacher.lastName}`
         : undefined,
       // Include full teacher details for secondary school class detail pages
-      teacher: period.teacher ? {
-        id: period.teacher.id,
-        firstName: period.teacher.firstName,
-        lastName: period.teacher.lastName,
-        email: period.teacher.email || '',
-        phone: period.teacher.phone || '',
-        profileImage: period.teacher.profileImage || null,
-      } : undefined,
+      teacher: period.teacher
+        ? {
+            id: period.teacher.id,
+            firstName: period.teacher.firstName,
+            lastName: period.teacher.lastName,
+            email: period.teacher.email || '',
+            phone: period.teacher.phone || '',
+            profileImage: period.teacher.profileImage || null,
+          }
+        : undefined,
       roomId: period.roomId,
       roomName: period.room?.name,
       classArmId: period.classArmId,
@@ -1017,4 +997,3 @@ export class TimetableService {
     return dto;
   }
 }
-

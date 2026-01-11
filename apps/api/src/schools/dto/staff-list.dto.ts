@@ -34,7 +34,10 @@ export class StaffListItemDto {
   @ApiProperty({ description: 'Account status (simplified)' })
   status: 'active' | 'inactive';
 
-  @ApiProperty({ description: 'Account activation status (SHADOW=pending, ACTIVE=activated, SUSPENDED, ARCHIVED)' })
+  @ApiProperty({
+    description:
+      'Account activation status (SHADOW=pending, ACTIVE=activated, SUSPENDED, ARCHIVED)',
+  })
   accountStatus: 'SHADOW' | 'ACTIVE' | 'SUSPENDED' | 'ARCHIVED';
 
   @ApiProperty({ description: 'Profile image URL', nullable: true })
@@ -88,7 +91,9 @@ export class GetStaffListQueryDto {
   @ApiProperty({ description: 'Filter by role', required: false })
   role?: string;
 
-  @ApiProperty({ description: 'Filter by school type (PRIMARY, SECONDARY, TERTIARY)', required: false })
+  @ApiProperty({
+    description: 'Filter by school type (PRIMARY, SECONDARY, TERTIARY)',
+    required: false,
+  })
   schoolType?: string;
 }
-
