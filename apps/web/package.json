@@ -10,6 +10,9 @@
     "generate-client": "openapi-typescript-codegen --input http://localhost:4000/api/swagger-json --output ./src/lib/api/generated --client axios"
   },
   "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
     "@reduxjs/toolkit": "^2.0.1",
     "axios": "^1.6.5",
     "clsx": "^2.1.1",
