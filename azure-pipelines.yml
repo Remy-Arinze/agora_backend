@@ -2,16 +2,16 @@ trigger:
   - develop
 
 pool:
-  name: 'SandboxAgent'
+  name: 'SandboxAgent' # KEPT AS REQUESTED
 
 variables:
-  azureSubscription: 'agora-current-sc' # Name of the Service Connection in DevOps
-  apiAppName: 'agora-api-dev'                 # Name of your Backend Web App
-  webAppName: 'agora-web-dev'                 # Name of your Frontend Web App
+  azureSubscription: 'agora-current-sc'
+  apiAppName: 'agora-api-dev'
+  webAppName: 'agora-web-dev'
 
 stages:
 # ==========================================================
-# STAGE 1: INTELLIGENT CHANGE DETECTION
+# STAGE 1: INTELLIGENT CHANGE DETECTION (PowerShell Version)
 # ==========================================================
 - stage: CheckChanges
   displayName: 'Analyze Changed Paths'
@@ -20,38 +20,40 @@ stages:
     displayName: 'Check Git Diff'
     steps:
     - checkout: self
-      fetchDepth: 0 # We need history to compare commits
-    - bash: |
-        echo "Checking for changes..."
+      fetchDepth: 0
+    
+    # CHANGED: Replaced 'bash' with 'powershell' to work on Windows Agent
+    - powershell: |
+        Write-Host "Checking for changes..."
         
-        # Check if apps/api folder was touched
-        # We compare the current commit (HEAD) with the previous one (HEAD~1)
-        if git diff --name-only HEAD~1 HEAD | grep "^apps/api/"; then
-          echo "Changes detected in apps/api"
-          echo "##vso[task.setvariable variable=apiChanged;isOutput=true]true"
-        else
-          echo "No changes in apps/api"
-          echo "##vso[task.setvariable variable=apiChanged;isOutput=true]false"
-        fi
+        # Capture the git diff output into a variable
+        $changes = git diff --name-only HEAD~1 HEAD
+        
+        # Check if apps/api folder was touched using regex matching
+        if ($changes -match "^apps/api/") {
+          Write-Host "Changes detected in apps/api"
+          Write-Host "##vso[task.setvariable variable=apiChanged;isOutput=true]true"
+        } else {
+          Write-Host "No changes in apps/api"
+          Write-Host "##vso[task.setvariable variable=apiChanged;isOutput=true]false"
+        }
         
         # Check if apps/web folder was touched
-        if git diff --name-only HEAD~1 HEAD | grep "^apps/web/"; then
-          echo "Changes detected in apps/web"
-          echo "##vso[task.setvariable variable=webChanged;isOutput=true]true"
-        else
-          echo "No changes in apps/web"
-          echo "##vso[task.setvariable variable=webChanged;isOutput=true]false"
-        fi
+        if ($changes -match "^apps/web/") {
+          Write-Host "Changes detected in apps/web"
+          Write-Host "##vso[task.setvariable variable=webChanged;isOutput=true]true"
+        } else {
+          Write-Host "No changes in apps/web"
+          Write-Host "##vso[task.setvariable variable=webChanged;isOutput=true]false"
+        }
       name: CheckStep
 
 # ==========================================================
 # STAGE 2: BACKEND DEPLOY (Apps/API)
-# Runs ONLY if 'apiChanged' is true
 # ==========================================================
 - stage: Backend
   displayName: 'Deploy Backend (API)'
   dependsOn: CheckChanges
-  # This condition reads the variable output from the previous stage
   condition: eq(dependencies.CheckChanges.outputs['Check.CheckStep.apiChanged'], 'true')
   variables:
     workingDir: 'apps/api'
@@ -62,22 +64,18 @@ stages:
       inputs:
         versionSpec: '20.x'
     
-    # Install dependencies ONLY in the api folder
     - script: npm ci
       workingDirectory: $(workingDir)
       displayName: 'Install API Dependencies'
 
-    # Build the NestJS app
     - script: npm run build
       workingDirectory: $(workingDir)
       displayName: 'Build NestJS'
 
-    # Remove dev dependencies (like typescript, eslint) to make the deployment lighter
     - script: npm prune --production
       workingDirectory: $(workingDir)
       displayName: 'Prune Dev Dependencies'
 
-    # Zip the result
     - task: ArchiveFiles@2
       inputs:
         rootFolderOrFile: '$(workingDir)'
@@ -86,24 +84,20 @@ stages:
         archiveFile: '$(Build.ArtifactStagingDirectory)/api.zip'
         replaceExistingArchive: true
 
-    # Deploy to Azure
     - task: AzureWebApp@1
       inputs:
         azureSubscription: $(azureSubscription)
         appType: 'webAppLinux'
         appName: $(apiAppName)
         package: '$(Build.ArtifactStagingDirectory)/api.zip'
-        # NestJS apps typically start by running the compiled main.js file
         startUpCommand: 'node dist/main'
 
 # ==========================================================
 # STAGE 3: FRONTEND DEPLOY (Apps/Web)
-# Runs ONLY if 'webChanged' is true
 # ==========================================================
 - stage: Frontend
   displayName: 'Deploy Frontend (Web)'
   dependsOn: CheckChanges
-  # This condition reads the variable output from the previous stage
   condition: eq(dependencies.CheckChanges.outputs['Check.CheckStep.webChanged'], 'true')
   variables:
     workingDir: 'apps/web'
@@ -118,21 +112,24 @@ stages:
       workingDirectory: $(workingDir)
       displayName: 'Install Web Dependencies'
 
-    # Standard Next.js Build
     - script: npm run build
       workingDirectory: $(workingDir)
       displayName: 'Build Next.js'
 
-    # CRITICAL STEP: Copy static assets for Standalone mode
-    # Next.js "Standalone" mode excludes public files by default to save space.
-    # We must manually copy them back in for images/icons to work.
-    - script: |
-        cp -r public .next/standalone/apps/web/public
-        cp -r .next/static .next/standalone/apps/web/.next/static
+    # CHANGED: Replaced 'cp' (Linux) with 'Copy-Item' (PowerShell)
+    - powershell: |
+        # Create destination directories first to avoid errors
+        New-Item -ItemType Directory -Force -Path .next/standalone/apps/web/public
+        New-Item -ItemType Directory -Force -Path .next/standalone/apps/web/.next/static
+        
+        # Copy Public folder
+        Copy-Item -Path "public\*" -Destination ".next/standalone/apps/web/public" -Recurse -Force
+        
+        # Copy Static folder
+        Copy-Item -Path ".next/static\*" -Destination ".next/standalone/apps/web/.next/static" -Recurse -Force
       workingDirectory: $(workingDir)
       displayName: 'Copy Static Assets'
 
-    # Zip ONLY the standalone folder (this is your optimized production build)
     - task: ArchiveFiles@2
       inputs:
         rootFolderOrFile: '$(workingDir)/.next/standalone/apps/web'
@@ -141,7 +138,6 @@ stages:
         archiveFile: '$(Build.ArtifactStagingDirectory)/web.zip'
         replaceExistingArchive: true
 
-    # Deploy to Azure
     - task: AzureWebApp@1
       inputs:
         azureSubscription: $(azureSubscription)
