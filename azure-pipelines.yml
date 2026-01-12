@@ -140,7 +140,8 @@ stages:
 
     - task: ArchiveFiles@2
       inputs:
-        rootFolderOrFile: '$(workingDir)/.next/standalone/apps/web'
+        # We zip the PARENT folder to include 'node_modules'
+        rootFolderOrFile: '$(workingDir)/.next/standalone' 
         includeRootFolder: false
         archiveType: 'zip'
         archiveFile: '$(Build.ArtifactStagingDirectory)/web.zip'
