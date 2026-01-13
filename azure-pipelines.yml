@@ -95,7 +95,7 @@ stages:
 - stage: Frontend
   displayName: 'Deploy Frontend'
   dependsOn: CheckChanges
-  # Deploy if web changed OR if we force it (you can remove 'true' later)
+  # Runs if web changed OR if triggered manually
   condition: or(eq(dependencies.CheckChanges.outputs['Check.CheckStep.webChanged'], 'true'), eq(variables['Build.Reason'], 'Manual'))
   variables:
     workingDir: 'apps/web'
@@ -105,27 +105,25 @@ stages:
     - task: NodeTool@0
       inputs:
         versionSpec: '20.x'
-    
-    # Install dependencies
+
     - script: npm ci
       workingDirectory: $(workingDir)
-      displayName: 'Install Web Deps'
-      
-    # Build Next.js
+      displayName: 'Install Dependencies'
+
     - script: npm run build
       workingDirectory: $(workingDir)
-      displayName: 'Build Web'
-      
-    # Copy public assets (Images/Icons) to the standalone build
+      displayName: 'Build Next.js App'
+
+    # ROOT CAUSE FIX 1: Manually copy the static assets to the standalone build
+    # Without this, your site loads but images and CSS will be broken (404s).
     - script: |
         cp -r public .next/standalone/apps/web/public
         cp -r .next/static .next/standalone/apps/web/.next/static
       workingDirectory: $(workingDir)
-      displayName: 'Copy Static Assets'
+      displayName: 'Copy Static Assets to Standalone'
 
-    # --- THE CRITICAL FIX IS HERE ---
-    # We are zipping '.next/standalone', NOT '.next/standalone/apps/web'
-    # This ensures 'node_modules' is included in the zip.
+    # ROOT CAUSE FIX 2: Archive the PARENT folder
+    # We zip '.next/standalone' (which contains node_modules), NOT 'apps/web'.
     - task: ArchiveFiles@2
       inputs:
         rootFolderOrFile: '$(workingDir)/.next/standalone' 
@@ -140,5 +138,5 @@ stages:
         appType: 'webAppLinux'
         appName: $(webAppName)
         package: '$(Build.ArtifactStagingDirectory)/web.zip'
-        # The correct startup command for this structure
+        # ROOT CAUSE FIX 3: Point to the nested server file
         startUpCommand: 'node apps/web/server.js'
