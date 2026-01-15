@@ -967,7 +967,7 @@ export class FacultyService {
         isActive: true,
       },
       include: {
-        teachers: {
+        subjectTeachers: {
           include: {
             teacher: {
               select: {
@@ -987,9 +987,7 @@ export class FacultyService {
       name: subject.name,
       code: subject.code,
       description: subject.description,
-      creditUnits: subject.creditUnits,
-      isCore: subject.isCore,
-      teachers: subject.teachers.map((st) => ({
+      teachers: subject.subjectTeachers.map((st: any) => ({
         id: st.teacher.id,
         name: `${st.teacher.firstName} ${st.teacher.lastName}`,
       })),
@@ -1130,16 +1128,33 @@ export class FacultyService {
 
     const resources = await this.prisma.classResource.findMany({
       where: {
-        classArms: {
-          some: { id: levelId },
-        },
-      },
-      include: {
-        uploader: {
-          select: { id: true, firstName: true, lastName: true },
+        classArm: {
+          id: levelId,
         },
       },
       orderBy: { createdAt: 'desc' },
+    });
+
+    // Fetch user profile details for uploadedBy fields
+    // Try to get name from SchoolAdmin or TeacherProfile
+    const userIds = [...new Set(resources.map((r) => r.uploadedBy))];
+    const [schoolAdmins, teachers] = await Promise.all([
+      this.prisma.schoolAdmin.findMany({
+        where: { userId: { in: userIds } },
+        select: { userId: true, firstName: true, lastName: true },
+      }),
+      this.prisma.teacher.findMany({
+        where: { userId: { in: userIds } },
+        select: { userId: true, firstName: true, lastName: true },
+      }),
+    ]);
+    
+    const nameMap = new Map<string, string>();
+    schoolAdmins.forEach((admin) => {
+      nameMap.set(admin.userId, `${admin.firstName} ${admin.lastName}`);
+    });
+    teachers.forEach((teacher) => {
+      nameMap.set(teacher.userId, `${teacher.firstName} ${teacher.lastName}`);
     });
 
     return resources.map((resource) => ({
@@ -1151,9 +1166,7 @@ export class FacultyService {
       mimeType: resource.mimeType,
       fileType: resource.fileType,
       description: resource.description,
-      uploadedBy: resource.uploader
-        ? `${resource.uploader.firstName} ${resource.uploader.lastName}`
-        : null,
+      uploadedBy: nameMap.get(resource.uploadedBy) || null,
       createdAt: resource.createdAt,
     }));
   }
@@ -1327,7 +1340,7 @@ export class FacultyService {
       for (const arm of department.classArms) {
         await this.prisma.enrollment.updateMany({
           where: { classArmId: arm.id, isActive: true },
-          data: { isActive: false, endDate: new Date() },
+          data: { isActive: false },
         });
       }
     }

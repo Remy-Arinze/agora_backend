@@ -457,7 +457,7 @@ export class TimetableService {
     ]);
 
     // 3. Get timetable slots for registered subjects (carry-overs)
-    const registeredSubjectIds = courseRegistrations.map((cr) => cr.subjectId);
+    const registeredSubjectIds = courseRegistrations.map((cr: any) => cr.subjectId);
     let registeredSubjectTimetable: TimetablePeriodDto[] = [];
 
     if (registeredSubjectIds.length > 0) {

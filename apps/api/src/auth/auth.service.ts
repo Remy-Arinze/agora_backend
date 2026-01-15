@@ -336,6 +336,10 @@ export class AuthService {
       });
     }
 
+    if (!updatedUser) {
+      throw new BadRequestException('Failed to update user');
+    }
+
     const tokens = await this.generateTokens(updatedUser.id, updatedUser.role);
 
     // Get profile-specific ID (for parents, this would be null)
@@ -672,8 +676,9 @@ export class AuthService {
         name,
         token,
         role,
-        publicId || undefined,
-        schoolName
+        undefined, // schools array (not used in this context)
+        publicId || undefined, // legacy publicId parameter
+        schoolName // legacy schoolName parameter
       );
     } catch (error) {
       // Log error but don't fail the request

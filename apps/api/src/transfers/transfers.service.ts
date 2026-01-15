@@ -27,6 +27,17 @@ export class TransfersService {
   ) {}
 
   /**
+   * Compute letter grade from percentage
+   */
+  private getLetterGrade(percentage: number): string {
+    if (percentage >= 70) return 'A';
+    if (percentage >= 60) return 'B';
+    if (percentage >= 50) return 'C';
+    if (percentage >= 40) return 'D';
+    return 'F';
+  }
+
+  /**
    * Generate a unique TAC (Transfer Access Code) for outgoing transfer
    */
   async generateTac(schoolId: string, userId: string, dto: GenerateTacDto) {
@@ -260,6 +271,11 @@ export class TransfersService {
       throw new BadRequestException('Cannot transfer within the same school.');
     }
 
+    // Validate TAC and studentId exist
+    if (!transfer.tac || !transfer.studentId) {
+      throw new BadRequestException('Transfer TAC or student ID is missing');
+    }
+
     // Get student data from source school
     const studentData = await this.getStudentDataByTac(transfer.tac, transfer.studentId);
 
@@ -312,6 +328,12 @@ export class TransfersService {
     const student = await this.prisma.student.findUnique({
       where: { id: studentId },
       include: {
+        user: {
+          select: {
+            email: true,
+            phone: true,
+          },
+        },
         enrollments: {
           where: {
             schoolId: transfer.fromSchoolId,
@@ -346,23 +368,31 @@ export class TransfersService {
       academicYear: enrollment.academicYear,
       enrollmentDate: enrollment.enrollmentDate.toISOString(),
       isActive: enrollment.isActive,
-      grades: enrollment.grades.map((grade) => ({
-        id: grade.id,
-        subject: grade.subject || 'N/A', // Ensure subject is never null
-        gradeType: grade.gradeType,
-        assessmentName: grade.assessmentName,
-        sequence: grade.sequence,
-        assessmentDate: grade.assessmentDate?.toISOString(),
-        score: grade.score.toNumber(),
-        maxScore: grade.maxScore.toNumber(),
-        grade: grade.grade,
-        term: grade.term,
-        academicYear: grade.academicYear,
-        remarks: grade.remarks,
-        signedAt: grade.signedAt?.toISOString(),
-        createdAt: grade.createdAt.toISOString(),
-      })),
+      grades: enrollment.grades.map((grade) => {
+        const score = grade.score.toNumber();
+        const maxScore = grade.maxScore.toNumber();
+        const percentage = maxScore > 0 ? (score / maxScore) * 100 : 0;
+        return {
+          id: grade.id,
+          subject: grade.subject || 'N/A', // Ensure subject is never null
+          gradeType: grade.gradeType,
+          assessmentName: grade.assessmentName,
+          sequence: grade.sequence,
+          assessmentDate: grade.assessmentDate?.toISOString(),
+          score,
+          maxScore,
+          grade: this.getLetterGrade(percentage),
+          term: grade.term,
+          academicYear: grade.academicYear,
+          remarks: grade.remarks,
+          signedAt: grade.signedAt?.toISOString(),
+          createdAt: grade.createdAt.toISOString(),
+        };
+      }),
     }));
+
+    // Extract healthInfo from JSON
+    const healthInfo = (student.healthInfo as any) || {};
 
     return {
       student: {
@@ -372,16 +402,14 @@ export class TransfersService {
         middleName: student.middleName,
         lastName: student.lastName,
         dateOfBirth: student.dateOfBirth.toISOString(),
-        email: student.email,
-        phone: student.phone,
-        address: student.address,
-        gender: student.gender,
-        bloodGroup: student.bloodGroup,
-        allergies: student.allergies,
-        medications: student.medications,
-        emergencyContact: student.emergencyContact,
-        emergencyContactPhone: student.emergencyContactPhone,
-        medicalNotes: student.medicalNotes,
+        email: student.user?.email || undefined,
+        phone: student.user?.phone || undefined,
+        bloodGroup: healthInfo.bloodGroup || undefined,
+        allergies: healthInfo.allergies || undefined,
+        medications: healthInfo.medications || undefined,
+        emergencyContact: healthInfo.emergencyContact || undefined,
+        emergencyContactPhone: healthInfo.emergencyContactPhone || undefined,
+        medicalNotes: healthInfo.medicalNotes || undefined,
       },
       enrollment: {
         id: activeEnrollment.id,
@@ -393,22 +421,27 @@ export class TransfersService {
       // Include all enrollments grouped by class level
       enrollments,
       // Keep backward compatibility - include grades from active enrollment
-      grades: activeEnrollment.grades.map((grade) => ({
-        id: grade.id,
-        subject: grade.subject || 'N/A', // Ensure subject is never null
-        gradeType: grade.gradeType,
-        assessmentName: grade.assessmentName,
-        sequence: grade.sequence,
-        assessmentDate: grade.assessmentDate?.toISOString(),
-        score: grade.score.toNumber(),
-        maxScore: grade.maxScore.toNumber(),
-        grade: grade.grade,
-        term: grade.term,
-        academicYear: grade.academicYear,
-        remarks: grade.remarks,
-        signedAt: grade.signedAt?.toISOString(),
-        createdAt: grade.createdAt.toISOString(),
-      })),
+      grades: activeEnrollment.grades.map((grade) => {
+        const score = grade.score.toNumber();
+        const maxScore = grade.maxScore.toNumber();
+        const percentage = maxScore > 0 ? (score / maxScore) * 100 : 0;
+        return {
+          id: grade.id,
+          subject: grade.subject || 'N/A', // Ensure subject is never null
+          gradeType: grade.gradeType,
+          assessmentName: grade.assessmentName,
+          sequence: grade.sequence,
+          assessmentDate: grade.assessmentDate?.toISOString(),
+          score,
+          maxScore,
+          grade: this.getLetterGrade(percentage),
+          term: grade.term,
+          academicYear: grade.academicYear,
+          remarks: grade.remarks,
+          signedAt: grade.signedAt?.toISOString(),
+          createdAt: grade.createdAt.toISOString(),
+        };
+      }),
       fromSchool: {
         id: transfer.fromSchool.id,
         name: transfer.fromSchool.name,
@@ -447,7 +480,10 @@ export class TransfersService {
     }
 
     // Get student data
-    const studentData = await this.getStudentDataByTac(transfer.tac!, transfer.studentId);
+    if (!transfer.tac || !transfer.studentId) {
+      throw new BadRequestException('Transfer TAC or student ID is missing');
+    }
+    const studentData = await this.getStudentDataByTac(transfer.tac, transfer.studentId);
 
     // Find or create student in destination school
     const student = await this.prisma.student.findUnique({
@@ -568,32 +604,44 @@ export class TransfersService {
           assessmentDate: grade.assessmentDate ? new Date(grade.assessmentDate) : null,
           score: grade.score,
           maxScore: grade.maxScore,
-          grade: grade.grade,
           term: grade.term,
           academicYear: grade.academicYear,
           remarks: grade.remarks,
-          signedAt: grade.signedAt ? new Date(grade.signedAt) : null,
+          signedAt: grade.signedAt ? new Date(grade.signedAt) : undefined,
           createdAt: new Date(grade.createdAt), // Preserve original date
+          // Note: grade field doesn't exist in schema, so we don't store it
         },
       });
     }
 
     // Update student health records if provided
-    if (
+    const hasHealthInfo =
       studentData.student.bloodGroup ||
       studentData.student.allergies ||
-      studentData.student.medications
-    ) {
+      studentData.student.medications ||
+      studentData.student.emergencyContact ||
+      studentData.student.emergencyContactPhone ||
+      studentData.student.medicalNotes;
+
+    if (hasHealthInfo) {
+      // Get current healthInfo or initialize empty object
+      const currentHealthInfo = (student.healthInfo as any) || {};
+      
+      // Merge new health info with existing
+      const updatedHealthInfo = {
+        ...currentHealthInfo,
+        ...(studentData.student.bloodGroup && { bloodGroup: studentData.student.bloodGroup }),
+        ...(studentData.student.allergies && { allergies: studentData.student.allergies }),
+        ...(studentData.student.medications && { medications: studentData.student.medications }),
+        ...(studentData.student.emergencyContact && { emergencyContact: studentData.student.emergencyContact }),
+        ...(studentData.student.emergencyContactPhone && { emergencyContactPhone: studentData.student.emergencyContactPhone }),
+        ...(studentData.student.medicalNotes && { medicalNotes: studentData.student.medicalNotes }),
+      };
+
       await this.prisma.student.update({
         where: { id: student.id },
         data: {
-          bloodGroup: studentData.student.bloodGroup || student.bloodGroup,
-          allergies: studentData.student.allergies || student.allergies,
-          medications: studentData.student.medications || student.medications,
-          emergencyContact: studentData.student.emergencyContact || student.emergencyContact,
-          emergencyContactPhone:
-            studentData.student.emergencyContactPhone || student.emergencyContactPhone,
-          medicalNotes: studentData.student.medicalNotes || student.medicalNotes,
+          healthInfo: updatedHealthInfo,
         },
       });
     }
@@ -714,22 +762,27 @@ export class TransfersService {
       academicYear: enrollment.academicYear,
       enrollmentDate: enrollment.enrollmentDate.toISOString(),
       isActive: enrollment.isActive,
-      grades: enrollment.grades.map((grade) => ({
-        id: grade.id,
-        subject: grade.subject || 'N/A',
-        gradeType: grade.gradeType,
-        assessmentName: grade.assessmentName,
-        sequence: grade.sequence,
-        assessmentDate: grade.assessmentDate?.toISOString(),
-        score: grade.score.toNumber(),
-        maxScore: grade.maxScore.toNumber(),
-        grade: grade.grade,
-        term: grade.term,
-        academicYear: grade.academicYear,
-        remarks: grade.remarks,
-        signedAt: grade.signedAt?.toISOString(),
-        createdAt: grade.createdAt.toISOString(),
-      })),
+      grades: enrollment.grades.map((grade) => {
+        const score = grade.score.toNumber();
+        const maxScore = grade.maxScore.toNumber();
+        const percentage = maxScore > 0 ? (score / maxScore) * 100 : 0;
+        return {
+          id: grade.id,
+          subject: grade.subject || 'N/A',
+          gradeType: grade.gradeType,
+          assessmentName: grade.assessmentName,
+          sequence: grade.sequence,
+          assessmentDate: grade.assessmentDate?.toISOString(),
+          score,
+          maxScore,
+          grade: this.getLetterGrade(percentage),
+          term: grade.term,
+          academicYear: grade.academicYear,
+          remarks: grade.remarks,
+          signedAt: grade.signedAt?.toISOString(),
+          createdAt: grade.createdAt.toISOString(),
+        };
+      }),
     }));
 
     return {

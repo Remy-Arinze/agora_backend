@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { ClassService } from './class.service';
-import { CreateClassDto } from '../dto/create-class.dto';
+import { CreateClassDto, ClassType } from '../dto/create-class.dto';
 import { AssignTeacherToClassDto } from '../dto/assign-teacher-to-class.dto';
 import { ClassDto } from '../dto/class.dto';
 import { ResponseDto } from '../../common/dto/response.dto';
@@ -66,7 +66,7 @@ export class ClassController {
       return ResponseDto.ok(data, 'Teacher classes retrieved successfully');
     }
 
-    const data = await this.classService.getClasses(schoolId, academicYear, type);
+    const data = await this.classService.getClasses(schoolId, academicYear, type as ClassType | undefined);
     return ResponseDto.ok(data, 'Classes retrieved successfully');
   }
 

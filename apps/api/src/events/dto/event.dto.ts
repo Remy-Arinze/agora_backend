@@ -41,6 +41,15 @@ export class EventDto {
   @ApiProperty()
   isAllDay: boolean;
 
+  @ApiProperty({ required: false })
+  googleEventId?: string | null;
+
+  @ApiProperty({ required: false })
+  syncedAt?: Date | null;
+
+  @ApiProperty({ required: false })
+  syncStatus?: string | null;
+
   @ApiProperty()
   createdAt: Date;
 

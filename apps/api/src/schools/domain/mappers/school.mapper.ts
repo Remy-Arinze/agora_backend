@@ -23,7 +23,7 @@ export class SchoolMapper {
 
     return {
       id: school.id,
-      schoolId: school.schoolId,
+      schoolId: school.schoolId || '',
       name: school.name,
       subdomain: school.subdomain,
       domain: school.domain,

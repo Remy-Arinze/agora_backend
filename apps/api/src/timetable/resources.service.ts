@@ -1398,7 +1398,6 @@ export class ResourcesService {
     const teachers = await this.prisma.teacher.findMany({
       where: {
         schoolId: school.id,
-        isActive: true,
       },
       select: {
         id: true,
@@ -1589,7 +1588,6 @@ export class ResourcesService {
         teacherId: { notIn: excludeTeacherIds },
         teacher: {
           schoolId: school.id,
-          isActive: true,
         },
       },
       include: {
@@ -1625,21 +1623,32 @@ export class ResourcesService {
     });
 
     // Find teacher with lowest workload
-    let leastLoaded = subjectTeachers[0];
-    let minPeriods = periodCountMap.get(leastLoaded.teacher.id) || 0;
+    if (subjectTeachers.length === 0) {
+      return null;
+    }
 
-    subjectTeachers.forEach((st: any) => {
-      const periods = periodCountMap.get(st.teacher.id) || 0;
+    let leastLoaded = subjectTeachers[0];
+    const leastLoadedTeacherId = leastLoaded.teacher?.id || leastLoaded.teacherId;
+    let minPeriods = periodCountMap.get(leastLoadedTeacherId) || 0;
+
+    subjectTeachers.forEach((st) => {
+      const teacherId = st.teacher?.id || st.teacherId;
+      const periods = periodCountMap.get(teacherId) || 0;
       if (periods < minPeriods) {
         minPeriods = periods;
         leastLoaded = st;
       }
     });
 
+    const selectedTeacher = leastLoaded.teacher;
+    if (!selectedTeacher) {
+      return null;
+    }
+
     return {
-      id: leastLoaded.teacher.id,
-      firstName: leastLoaded.teacher.firstName,
-      lastName: leastLoaded.teacher.lastName,
+      id: selectedTeacher.id,
+      firstName: selectedTeacher.firstName,
+      lastName: selectedTeacher.lastName,
       periodCount: minPeriods,
     };
   }

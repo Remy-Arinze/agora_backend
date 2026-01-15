@@ -152,7 +152,7 @@ export class AuthController {
   ): Promise<ResponseDto<void>> {
     await this.authService.requestPasswordReset(requestPasswordResetDto);
     return ResponseDto.ok(
-      null,
+      undefined,
       'If an account exists with this email, a password reset link has been sent'
     );
   }
@@ -173,7 +173,7 @@ export class AuthController {
   })
   async resetPassword(@Body() resetPasswordDto: ResetPasswordDto): Promise<ResponseDto<void>> {
     await this.authService.resetPassword(resetPasswordDto);
-    return ResponseDto.ok(null, 'Password reset successfully');
+    return ResponseDto.ok(undefined, 'Password reset successfully');
   }
 
   @Post('refresh')
@@ -236,6 +236,6 @@ export class AuthController {
   async logout(@Res({ passthrough: true }) res: Response): Promise<ResponseDto<void>> {
     // Clear the refresh token cookie
     this.clearRefreshTokenCookie(res);
-    return ResponseDto.ok(null, 'Logged out successfully');
+    return ResponseDto.ok(undefined, 'Logged out successfully');
   }
 }

@@ -365,7 +365,7 @@ export class ClassService {
           },
         });
 
-        return this.mapToClassDto(classData, studentsCount);
+        return this.mapToClassDto({ ...classData, studentsCount });
       })
     );
 
@@ -1181,7 +1181,6 @@ export class ClassService {
           },
           data: {
             isActive: false,
-            endDate: new Date(),
           },
         });
       }
@@ -1229,7 +1228,6 @@ export class ClassService {
         },
         data: {
           isActive: false,
-          endDate: new Date(),
         },
       });
     }

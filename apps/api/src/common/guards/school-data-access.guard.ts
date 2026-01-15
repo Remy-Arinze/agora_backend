@@ -44,10 +44,8 @@ export class SchoolDataAccessGuard implements CanActivate {
     const userSchoolId = user.currentSchoolId;
 
     if (!userSchoolId) {
-      // ✅ This is expected for SUPER_ADMIN (they log in with email, no school context)
-      if (user.role === 'SUPER_ADMIN') {
-        return true; // Super admin can access any school
-      }
+      // This code path should only be reached for non-SUPER_ADMIN roles
+      // (SUPER_ADMIN is already handled above at line 32)
 
       // ✅ STUDENT: If no schoolId in JWT, try to find active enrollment
       if (user.role === 'STUDENT') {
@@ -72,7 +70,7 @@ export class SchoolDataAccessGuard implements CanActivate {
 
       // For SCHOOL_ADMIN/TEACHER, this means they logged in with email (legacy/backward compat)
       // Fallback: Try to extract from relations (for backward compatibility)
-      const fallbackSchoolId = this.extractSchoolIdFromUser(user);
+      const fallbackSchoolId = await this.extractSchoolIdFromUser(user);
       if (!fallbackSchoolId) {
         throw new ForbiddenException('User is not associated with any school');
       }
@@ -131,14 +129,30 @@ export class SchoolDataAccessGuard implements CanActivate {
     return !!teacher;
   }
 
-  private extractSchoolIdFromUser(user: UserWithContext): string | null {
+  private async extractSchoolIdFromUser(user: UserWithContext): Promise<string | null> {
     // Fallback method - only used if JWT doesn't have schoolId
-    if (user.schoolAdmins && user.schoolAdmins.length > 0) {
-      return user.schoolAdmins[0].schoolId;
+    // Fetch school admin relation if user is SCHOOL_ADMIN
+    if (user.role === 'SCHOOL_ADMIN') {
+      const schoolAdmin = await this.prisma.schoolAdmin.findFirst({
+        where: { userId: user.id },
+        select: { schoolId: true },
+      });
+      if (schoolAdmin) {
+        return schoolAdmin.schoolId;
+      }
     }
-    if (user.teacherProfiles && user.teacherProfiles.length > 0) {
-      return user.teacherProfiles[0].schoolId;
+    
+    // Fetch teacher profile relation if user is TEACHER
+    if (user.role === 'TEACHER') {
+      const teacher = await this.prisma.teacher.findFirst({
+        where: { userId: user.id },
+        select: { schoolId: true },
+      });
+      if (teacher) {
+        return teacher.schoolId;
+      }
     }
+    
     return null;
   }
 }

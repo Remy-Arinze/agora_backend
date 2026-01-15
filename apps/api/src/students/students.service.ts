@@ -220,6 +220,7 @@ export class StudentsService {
             id: student.enrollments[0].id,
             classLevel: student.enrollments[0].classLevel,
             academicYear: student.enrollments[0].academicYear,
+            enrollmentDate: student.enrollments[0].enrollmentDate.toISOString(),
             school: student.enrollments[0].school,
           }
         : undefined,
@@ -273,6 +274,7 @@ export class StudentsService {
         id: student.enrollments[0].id,
         classLevel: student.enrollments[0].classLevel,
         academicYear: student.enrollments[0].academicYear,
+        enrollmentDate: student.enrollments[0].enrollmentDate.toISOString(),
         school: student.enrollments[0].school,
       },
     };
@@ -322,6 +324,7 @@ export class StudentsService {
             id: student.enrollments[0].id,
             classLevel: student.enrollments[0].classLevel,
             academicYear: student.enrollments[0].academicYear,
+            enrollmentDate: student.enrollments[0].enrollmentDate.toISOString(),
             school: student.enrollments[0].school,
           }
         : undefined,
@@ -865,10 +868,11 @@ export class StudentsService {
     const attendance = await this.prisma.attendance.findMany({
       where,
       include: {
-        class: {
+        enrollment: {
           select: {
-            id: true,
-            name: true,
+            studentId: true,
+            classId: true,
+            termId: true,
           },
         },
         teacher: {
@@ -884,13 +888,12 @@ export class StudentsService {
 
     return attendance.map((a) => ({
       id: a.id,
-      studentId: a.studentId,
-      classId: a.classId,
-      termId: a.termId,
+      studentId: a.enrollment.studentId,
+      classId: a.enrollment.classId,
+      termId: a.enrollment.termId,
       date: a.date.toISOString(),
       status: a.status,
-      notes: a.notes,
-      class: a.class,
+      notes: a.remarks,
       teacher: a.teacher,
     }));
   }
@@ -1748,7 +1751,6 @@ export class StudentsService {
       completedAt: t.completedAt?.toISOString(),
       rejectedAt: t.rejectedAt?.toISOString(),
       reason: t.reason,
-      notes: t.notes,
       fromSchool: t.fromSchool,
       toSchool: t.toSchool,
       createdAt: t.createdAt.toISOString(),

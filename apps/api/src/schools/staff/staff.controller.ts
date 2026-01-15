@@ -642,6 +642,6 @@ export class StaffController {
     }
 
     await this.authService.resendPasswordResetEmail(userId, schoolId);
-    return ResponseDto.ok(null, 'Password reset email resent successfully');
+    return ResponseDto.ok(undefined, 'Password reset email resent successfully');
   }
 }

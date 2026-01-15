@@ -203,8 +203,13 @@ export class GradesService {
 
       if (term) {
         termName = term.name;
-        academicYear = term.academicSession?.academicYear || academicYear;
+        academicYear = term.academicSession?.name || academicYear; // Use session name, not academicYear property
       }
+    }
+
+    // Ensure termName is defined
+    if (!termName) {
+      throw new BadRequestException('Term name is required. Please provide termId or ensure term exists.');
     }
 
     // Create grade
@@ -346,7 +351,7 @@ export class GradesService {
     }
 
     // Validate assessment date if provided
-    let assessmentDate: Date | null = undefined;
+    let assessmentDate: Date | null = null;
     if (dto.assessmentDate !== undefined) {
       if (dto.assessmentDate) {
         assessmentDate = new Date(dto.assessmentDate);
@@ -1039,7 +1044,8 @@ export class GradesService {
 
       if (term) {
         termName = term.name;
-        academicYear = term.academicSession?.academicYear || academicYear;
+        // AcademicSession doesn't have academicYear field, use name instead
+        academicYear = term.academicSession?.name || academicYear;
       }
     }
 

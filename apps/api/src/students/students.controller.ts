@@ -294,7 +294,7 @@ export class SchoolStudentAdmissionController {
     }
 
     await this.authService.resendPasswordResetEmail(studentWithUser.userId, schoolId);
-    return ResponseDto.ok(null, 'Password reset email resent successfully');
+    return ResponseDto.ok(undefined, 'Password reset email resent successfully');
   }
 
   @Patch(':id')

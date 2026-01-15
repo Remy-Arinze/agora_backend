@@ -198,6 +198,11 @@ export class StudentAdmissionService {
         }
 
         // Create enrollment with term link
+        // enrollmentClassLevel is guaranteed to be defined at this point due to validation above
+        if (!enrollmentClassLevel) {
+          throw new BadRequestException('Class level is required for enrollment');
+        }
+
         await tx.enrollment.create({
           data: {
             studentId: newStudent.id,

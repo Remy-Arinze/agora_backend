@@ -6,6 +6,17 @@ import { Enrollment, Grade, Attendance } from '@prisma/client';
  */
 export class TranscriptMapper {
   /**
+   * Compute letter grade from percentage
+   */
+  private getLetterGrade(percentage: number): string {
+    if (percentage >= 70) return 'A';
+    if (percentage >= 60) return 'B';
+    if (percentage >= 50) return 'C';
+    if (percentage >= 40) return 'D';
+    return 'F';
+  }
+
+  /**
    * Convert enrollment with grades and attendance to SchoolTranscriptDto
    */
   toSchoolTranscriptDto(
@@ -26,20 +37,25 @@ export class TranscriptMapper {
         academicYear: enrollment.academicYear,
         classLevel: enrollment.classLevel,
         enrollmentDate: enrollment.enrollmentDate,
-        graduationDate: enrollment.graduationDate,
         isActive: enrollment.isActive,
       },
       grades:
-        enrollment.grades?.map((grade) => ({
-          id: grade.id,
-          subject: grade.subject,
-          score: grade.score,
-          maxScore: grade.maxScore,
-          grade: grade.grade,
-          term: grade.term,
-          academicYear: grade.academicYear,
-          createdAt: grade.createdAt,
-        })) || [],
+        enrollment.grades?.map((grade) => {
+          const score = typeof grade.score === 'object' ? grade.score.toNumber() : grade.score;
+          const maxScore = typeof grade.maxScore === 'object' ? grade.maxScore.toNumber() : grade.maxScore;
+          const percentage = maxScore > 0 ? (score / maxScore) * 100 : 0;
+          const letterGrade = this.getLetterGrade(percentage);
+          return {
+            id: grade.id,
+            subject: grade.subject,
+            score,
+            maxScore,
+            grade: letterGrade,
+            term: grade.term,
+            academicYear: grade.academicYear,
+            createdAt: grade.createdAt,
+          };
+        }) || [],
       attendance:
         enrollment.attendances?.map((attendance) => ({
           id: attendance.id,
