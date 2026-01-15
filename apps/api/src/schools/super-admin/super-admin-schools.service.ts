@@ -84,7 +84,7 @@ export class SuperAdminSchoolsService {
           },
         });
 
-        const createdAdmins = [];
+        const createdAdmins: any[] = [];
         const emailQueue: Array<{
           userId: string;
           email: string;

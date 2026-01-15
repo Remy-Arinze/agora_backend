@@ -135,7 +135,7 @@ export class TeacherCurrentSchoolService {
       },
     });
 
-    let classEntity = null;
+    let classEntity: any = null;
     let schoolType: 'PRIMARY' | 'SECONDARY' | 'TERTIARY' = 'SECONDARY';
     let classLevelId: string | null = null;
 
