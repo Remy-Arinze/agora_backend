@@ -1390,7 +1390,7 @@ export class FacultyService {
     const year = now.getFullYear();
     const academicYear = now.getMonth() >= 8 ? `${year}/${year + 1}` : `${year - 1}/${year}`;
 
-    const levelsToCreate = [];
+    const levelsToCreate: any[] = [];
     for (let i = 1; i <= levelCount; i++) {
       levelsToCreate.push({
         name: `${i * 100} Level`,

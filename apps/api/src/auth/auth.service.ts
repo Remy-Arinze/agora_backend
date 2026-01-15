@@ -33,8 +33,8 @@ export class AuthService {
       const isEmail = emailOrPublicId.includes('@');
 
       let user;
-      let schoolAdmin = null;
-      let teacherProfile = null;
+      let schoolAdmin: any = null;
+      let teacherProfile: any = null;
 
       if (isEmail) {
         // Super admin or user logging in with email

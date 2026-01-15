@@ -333,7 +333,7 @@ export class StudentsService {
 
   private toDto(student: any): StudentDto {
     // Parse healthInfo from JSON if it exists
-    let healthInfo = null;
+    let healthInfo: any = null;
     if (student.healthInfo) {
       if (typeof student.healthInfo === 'string') {
         try {

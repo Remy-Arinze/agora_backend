@@ -229,7 +229,7 @@ export class AnalyticsService {
   }
 
   private async calculateGrowthTrends(): Promise<MonthlyData[]> {
-    const months = [];
+    const months: any[] = [];
     const now = new Date();
 
     for (let i = 5; i >= 0; i--) {
@@ -283,7 +283,7 @@ export class AnalyticsService {
   }
 
   private async calculateWeeklyActivity(startDate: Date, endDate: Date): Promise<WeeklyActivity[]> {
-    const days = [];
+    const days: WeeklyActivity[] = [];
     const currentDate = new Date(startDate);
     currentDate.setHours(0, 0, 0, 0);
     const end = new Date(endDate);

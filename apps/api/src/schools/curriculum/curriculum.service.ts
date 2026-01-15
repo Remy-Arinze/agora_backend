@@ -399,7 +399,7 @@ export class CurriculumService {
 
     // Get NERDC template - try to match by subject name/code
     const classLevelCode = getClassLevelCode(classLevel.name, classLevel.type);
-    let nerdcTemplate = null;
+    let nerdcTemplate: any = null;
 
     if (classLevelCode) {
       // Try to find NERDC template by matching subject name or code
@@ -427,7 +427,7 @@ export class CurriculumService {
 
     if (nerdcTemplate && nerdcTemplate.weeks.length > 0) {
       nerdcCurriculumId = nerdcTemplate.id;
-      items = nerdcTemplate.weeks.map((w, index) => ({
+      items = nerdcTemplate.weeks.map((w: any, index: number) => ({
         weekNumber: w.weekNumber,
         topic: w.topic,
         subTopics: w.subTopics || [],
