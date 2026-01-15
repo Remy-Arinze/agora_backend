@@ -24,9 +24,10 @@ export class AddStudentDto {
   @IsEmail()
   email?: string;
 
-  @ApiProperty({ description: 'Student phone number' })
+  @ApiPropertyOptional({ description: 'Student phone number' })
+  @IsOptional()
   @IsString()
-  phone: string;
+  phone?: string;
 
   @ApiPropertyOptional({ description: 'Student address' })
   @IsOptional()

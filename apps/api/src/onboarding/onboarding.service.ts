@@ -103,7 +103,7 @@ export class OnboardingService {
 
         // Validate required fields
         if (!firstName || !lastName || !dateOfBirth || !classLevel || !parentPhone) {
-          const missingFields = [];
+          const missingFields: string[] = [];
           if (!firstName) missingFields.push('firstName');
           if (!lastName) missingFields.push('lastName');
           if (!dateOfBirth) missingFields.push('dateOfBirth');
