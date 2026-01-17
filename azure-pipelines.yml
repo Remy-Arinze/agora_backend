@@ -81,7 +81,7 @@ stages:
       workingDirectory: $(workingDir)
       displayName: 'Generate Prisma Client'
 
-    # 2. Force Disable Strict Mode (Critical for build success)
+    # 2. Force Disable Strict Mode
     - powershell: |
         $path = "$(workingDir)/tsconfig.json"
         if (Test-Path $path) {
@@ -103,33 +103,55 @@ stages:
       env:
         NODE_OPTIONS: '--max-old-space-size=4096'
 
-    # --- 3. CRITICAL FIX: MOVE BUILD ARTIFACTS ---
-    # This ensures the 'dist' folder is actually inside the folder we are about to zip.
+    # --- 3. FIX: SMART ARTIFACT FLATTENER ---
+    # This script searches for main.js recursively and moves it to the root of dist/
     - powershell: |
-        $rootDist = "../../dist/apps/api"
         $localDist = "dist"
+        $rootDist = "../../dist/apps/api"
         
-        Write-Host "Checking build output location..."
+        Write-Host "--- Checking Build Output ---"
         
-        # Check if NestJS outputted to the Monorepo Root
+        # 1. Check if NestJS dropped files in the Monorepo Root (common behavior)
         if (Test-Path $rootDist) {
-            Write-Host "Found build artifacts in root ($rootDist). Moving to local dist..."
+            Write-Host "Found build artifacts in root ($rootDist). Copying to local dist..."
             if (-not (Test-Path $localDist)) { New-Item -ItemType Directory -Force -Path $localDist }
             Copy-Item -Path "$rootDist/*" -Destination $localDist -Recurse -Force
-            Write-Host "Artifacts moved successfully."
         } 
-        # Check if it outputted locally (standard behavior)
-        elseif (Test-Path "$localDist/main.js") {
-             Write-Host "Build artifacts found locally in '$localDist'. No action needed."
-        } 
-        else {
-             Write-Host "##vso[task.logissue type=error]CRITICAL: Could not find 'dist/main.js' in root or local path."
-             Write-Host "Listing current directory:"
-             Get-ChildItem .
-             exit 1
+        
+        # 2. Find where main.js is actually hiding
+        $mainFile = Get-ChildItem -Path $localDist -Filter "main.js" -Recurse | Select-Object -First 1
+        
+        if (-not $mainFile) {
+            Write-Host "##vso[task.logissue type=error]CRITICAL: 'main.js' was not found anywhere in the dist folder!"
+            Write-Host "Listing all files in dist for debugging:"
+            Get-ChildItem $localDist -Recurse | Format-Table FullName
+            exit 1
+        }
+        
+        Write-Host "Found entry point at: $($mainFile.FullName)"
+        
+        # 3. If main.js is nested (e.g. dist/src/main.js), move everything up
+        if ($mainFile.Directory.Name -ne "dist") {
+            Write-Host "Artifacts are nested inside '$($mainFile.Directory.Name)'. Flattening structure..."
+            
+            $sourceDir = $mainFile.Directory.FullName
+            # Copy all files from the nested folder to the main dist folder
+            Copy-Item -Path "$sourceDir/*" -Destination $localDist -Recurse -Force
+            
+            Write-Host "Files moved to $localDist successfully."
+        } else {
+            Write-Host "Artifacts are already in the correct structure."
+        }
+
+        # 4. Final Verification
+        if (Test-Path "$localDist/main.js") {
+            Write-Host "SUCCESS: dist/main.js is ready for deployment."
+        } else {
+            Write-Host "##vso[task.logissue type=error]ERROR: Failed to prepare dist/main.js."
+            exit 1
         }
       workingDirectory: $(workingDir)
-      displayName: 'Ensure Dist Folder Exists'
+      displayName: 'Normalize Build Artifacts'
 
     - script: npm prune --production
       workingDirectory: $(workingDir)
