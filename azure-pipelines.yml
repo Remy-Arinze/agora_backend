@@ -95,25 +95,22 @@ stages:
       workingDirectory: $(workingDir)
       displayName: 'Install API Dependencies'
 
-    # 1. Generate Prisma Client (Critical for build)
+    # 1. Generate Prisma Client
     - script: npx prisma generate --schema=../../packages/database/prisma/schema.prisma
       workingDirectory: $(workingDir)
       displayName: 'Generate Prisma Client'
 
-    # 2. Force Disable Strict Mode (Critical for build success)
+    # 2. Force Disable Strict Mode
     - powershell: |
         $path = "$(workingDir)/tsconfig.json"
         if (Test-Path $path) {
             $json = Get-Content $path -Raw | ConvertFrom-Json
-            
             if (-not $json.PSObject.Properties['compilerOptions']) {
                 $json | Add-Member -MemberType NoteProperty -Name 'compilerOptions' -Value @{}
             }
-
             $json.compilerOptions | Add-Member -MemberType NoteProperty -Name "strict" -Value $false -Force
             $json.compilerOptions | Add-Member -MemberType NoteProperty -Name "noImplicitAny" -Value $false -Force
             $json.compilerOptions | Add-Member -MemberType NoteProperty -Name "skipLibCheck" -Value $true -Force
-
             $json | ConvertTo-Json -Depth 10 | Set-Content $path
             Write-Host "Disabled strict mode in tsconfig.json"
         }
@@ -124,6 +121,30 @@ stages:
       displayName: 'Build NestJS'
       env:
         NODE_OPTIONS: '--max-old-space-size=4096'
+
+    # --- NEW STEP: MOVE BUILD ARTIFACTS ---
+    # This grabs the files from the Monorepo root output and puts them where Azure expects them.
+    - powershell: |
+        $monorepoDist = "../../dist/apps/api"
+        $localDist = "dist"
+        
+        Write-Host "Checking for build output..."
+        
+        if (Test-Path $monorepoDist) {
+            Write-Host "Found build output in Monorepo root ($monorepoDist). Moving to local dist folder..."
+            # Create local dist folder
+            New-Item -ItemType Directory -Force -Path $localDist
+            # Copy contents
+            Copy-Item -Path "$monorepoDist/*" -Destination $localDist -Recurse -Force
+            Write-Host "Successfully moved dist files."
+        } elseif (Test-Path $localDist) {
+             Write-Host "Build output found in local dist folder. No action needed."
+        } else {
+             Write-Host "##vso[task.logissue type=error]ERROR: Could not find 'dist' folder in root or local path. Build failed."
+             exit 1
+        }
+      workingDirectory: $(workingDir)
+      displayName: 'Move Build Artifacts'
 
     - script: npm prune --production
       workingDirectory: $(workingDir)
