@@ -19,57 +19,39 @@ stages:
   - job: Check
     displayName: 'Check Git Diff'
     steps:
-    # 1. Checkout with enough depth to see history
     - checkout: self
       fetchDepth: 0 # Fetch all history so we can compare properly
 
-    # 2. Run logic to detect where changes happened
     - powershell: |
         Write-Host "Checking for changes..."
-        
-        # Get the list of changed files. 
-        # "origin/develop..HEAD" checks ALL commits in this push, not just the last one.
-        # We use 'try/catch' to fallback if it fails (e.g. first run)
         try {
             $changes = git diff --name-only origin/develop..HEAD
         } catch {
-            Write-Host "Git diff failed (likely first run or new branch), defaulting to DEPLOY ALL."
+            Write-Host "Git diff failed (likely first run), defaulting to DEPLOY ALL."
             $changes = "apps/api apps/web azure-pipelines.yml"
         }
         
         if (-not $changes) {
-            Write-Host "No changes found via diff. Checking last commit only as fallback..."
             $changes = git show --name-only --format= HEAD
         }
 
-        Write-Host "Files changed in this push:"
-        Write-Host $changes
+        Write-Host "Files changed: $changes"
 
-        # Initialize flags
         $apiChanged = "false"
         $webChanged = "false"
 
-        # --- LOGIC ---
-        
-        # 1. API Changes: Trigger if 'apps/api' OR 'packages' OR 'pipeline' changes
+        # Logic: If API, Packages, or Pipeline changes -> Deploy API
         if ($changes -match "apps/api" -or $changes -match "packages" -or $changes -match "azure-pipelines.yml") {
             $apiChanged = "true"
             Write-Host ">> Detected changes for API."
         }
 
-        # 2. Web Changes: Trigger if 'apps/web' OR 'packages' OR 'pipeline' changes
+        # Logic: If Web, Packages, or Pipeline changes -> Deploy Web
         if ($changes -match "apps/web" -or $changes -match "packages" -or $changes -match "azure-pipelines.yml") {
             $webChanged = "true"
             Write-Host ">> Detected changes for Web."
         }
 
-        # 3. SAFETY NET: If absolutely nothing matched but we are here, force deploy both? 
-        # (Optional: Uncomment below if you prefer safety over speed)
-        # if ($apiChanged -eq "false" -and $webChanged -eq "false") { 
-        #     $apiChanged = "true"; $webChanged = "true" 
-        # }
-
-        # Set Output Variables
         Write-Host "##vso[task.setvariable variable=apiChanged;isOutput=true]$apiChanged"
         Write-Host "##vso[task.setvariable variable=webChanged;isOutput=true]$webChanged"
       name: CheckStep
@@ -80,7 +62,6 @@ stages:
 - stage: Backend
   displayName: 'Deploy Backend (API)'
   dependsOn: CheckChanges
-  # Deploy if API changed OR if triggered Manually
   condition: or(eq(dependencies.CheckChanges.outputs['Check.CheckStep.apiChanged'], 'true'), eq(variables['Build.Reason'], 'Manual'))
   variables:
     workingDir: 'apps/api'
@@ -100,7 +81,7 @@ stages:
       workingDirectory: $(workingDir)
       displayName: 'Generate Prisma Client'
 
-    # 2. Force Disable Strict Mode
+    # 2. Force Disable Strict Mode (Critical for build success)
     - powershell: |
         $path = "$(workingDir)/tsconfig.json"
         if (Test-Path $path) {
@@ -122,29 +103,33 @@ stages:
       env:
         NODE_OPTIONS: '--max-old-space-size=4096'
 
-    # --- NEW STEP: MOVE BUILD ARTIFACTS ---
-    # This grabs the files from the Monorepo root output and puts them where Azure expects them.
+    # --- 3. CRITICAL FIX: MOVE BUILD ARTIFACTS ---
+    # This ensures the 'dist' folder is actually inside the folder we are about to zip.
     - powershell: |
-        $monorepoDist = "../../dist/apps/api"
+        $rootDist = "../../dist/apps/api"
         $localDist = "dist"
         
-        Write-Host "Checking for build output..."
+        Write-Host "Checking build output location..."
         
-        if (Test-Path $monorepoDist) {
-            Write-Host "Found build output in Monorepo root ($monorepoDist). Moving to local dist folder..."
-            # Create local dist folder
-            New-Item -ItemType Directory -Force -Path $localDist
-            # Copy contents
-            Copy-Item -Path "$monorepoDist/*" -Destination $localDist -Recurse -Force
-            Write-Host "Successfully moved dist files."
-        } elseif (Test-Path $localDist) {
-             Write-Host "Build output found in local dist folder. No action needed."
-        } else {
-             Write-Host "##vso[task.logissue type=error]ERROR: Could not find 'dist' folder in root or local path. Build failed."
+        # Check if NestJS outputted to the Monorepo Root
+        if (Test-Path $rootDist) {
+            Write-Host "Found build artifacts in root ($rootDist). Moving to local dist..."
+            if (-not (Test-Path $localDist)) { New-Item -ItemType Directory -Force -Path $localDist }
+            Copy-Item -Path "$rootDist/*" -Destination $localDist -Recurse -Force
+            Write-Host "Artifacts moved successfully."
+        } 
+        # Check if it outputted locally (standard behavior)
+        elseif (Test-Path "$localDist/main.js") {
+             Write-Host "Build artifacts found locally in '$localDist'. No action needed."
+        } 
+        else {
+             Write-Host "##vso[task.logissue type=error]CRITICAL: Could not find 'dist/main.js' in root or local path."
+             Write-Host "Listing current directory:"
+             Get-ChildItem .
              exit 1
         }
       workingDirectory: $(workingDir)
-      displayName: 'Move Build Artifacts'
+      displayName: 'Ensure Dist Folder Exists'
 
     - script: npm prune --production
       workingDirectory: $(workingDir)
@@ -172,7 +157,6 @@ stages:
 - stage: Frontend
   displayName: 'Deploy Frontend'
   dependsOn: CheckChanges
-  # Deploy if Web changed OR if triggered Manually
   condition: or(eq(dependencies.CheckChanges.outputs['Check.CheckStep.webChanged'], 'true'), eq(variables['Build.Reason'], 'Manual'))
   variables:
     workingDir: 'apps/web'
@@ -187,12 +171,10 @@ stages:
       workingDirectory: $(workingDir)
       displayName: 'Install Dependencies'
 
-    # Fix: Skip Linting
     - script: npm run build -- --no-lint
       workingDirectory: $(workingDir)
       displayName: 'Build Next.js App (No Lint)'
 
-    # Fix: Use PowerShell for Windows Agent
     - powershell: |
         Copy-Item -Path "public" -Destination ".next/standalone/apps/web" -Recurse -Force
         New-Item -Path ".next/standalone/apps/web/.next" -ItemType Directory -Force
