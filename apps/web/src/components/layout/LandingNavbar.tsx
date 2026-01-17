@@ -3,6 +3,7 @@
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/Button';
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
@@ -124,9 +125,14 @@ export function LandingNavbar() {
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div className="flex justify-between h-16">
                     <div className="flex items-center">
-                        <Link href="/" className="flex items-center space-x-2">
-                            <div className={`h-6 w-7 rounded-br-lg rounded-tr-sm rounded-tl-lg rounded-bl-sm flex-shrink-0 transition-colors duration-300 ${logoColor}`} />
-                            <span className={`text-2xl font-bold transition-colors duration-300 ${textColor}`}>Agora</span>
+                        <Link href="/" className="flex items-center">
+                            <Image
+                                src="/assets/logos/agora_main.png"
+                                alt="Agora"
+                                width={120}
+                                height={32}
+                                className="h-8 w-auto flex-shrink-0 transition-opacity duration-300"
+                            />
                         </Link>
                         <div className="hidden md:flex items-center ml-10 space-x-6">
                             {navLinks.map((link) => (

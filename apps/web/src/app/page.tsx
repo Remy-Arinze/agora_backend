@@ -122,12 +122,16 @@ export default function Home() {
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ duration: 0.8, delay: 0.2 }}
-              className="flex items-center justify-center gap-3 mb-10"
+              className="flex items-center justify-center mb-10"
             >
-              <div className="h-16 w-20 bg-gradient-to-br from-blue-400 to-blue-600 dark:from-blue-500 dark:to-blue-700 rounded-br-lg rounded-tr-sm rounded-tl-lg rounded-bl-sm flex-shrink-0 shadow-2xl" />
-              <h1 className="text-5xl md:text-6xl lg:text-7xl font-extrabold text-white drop-shadow-2xl tracking-tight">
-                Agora
-              </h1>
+              <Image
+                src="/assets/logos/agora_worded_white.png"
+                alt="Agora"
+                width={300}
+                height={80}
+                className="h-16 md:h-20 lg:h-24 w-auto drop-shadow-2xl"
+                priority
+              />
             </motion.div>
             
             {/* Main Tagline */}

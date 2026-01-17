@@ -2,15 +2,53 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Acumin Pro Font Family */
+@font-face {
+  font-family: 'Acumin Pro';
+  src: url('/assets/fonts/Acumin-RPro.otf') format('opentype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Acumin Pro';
+  src: url('/assets/fonts/Acumin-ItPro.otf') format('opentype');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Acumin Pro';
+  src: url('/assets/fonts/Acumin-BdPro.otf') format('opentype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Acumin Pro';
+  src: url('/assets/fonts/Acumin-BdItPro.otf') format('opentype');
+  font-weight: 700;
+  font-style: italic;
+  font-display: swap;
+}
+
 @layer base {
   :root {
+    /* Agora Brand Colors */
+    --agora-blue: #2490FD; /* Main accent blue */
+    --agora-success: #36FE96; /* Success/green color */
+    --agora-text: #02173D; /* Primary text color */
+    
     /* Light Mode Colors - using hex for better compatibility */
     --light-bg: #e4edff; /* gray-200 */
     --light-card: #ffffff; /* Pure white for cards */
     --light-surface: #f8fafc; /* slate-50 - subtle surface color */
     --light-hover: #f1f5f9; /* slate-100 - hover background */
     --light-input: #ffffff; /* White input background */
-    --light-text-primary: #111827; /* gray-900 */
+    --light-text-primary: #02173D; /* Agora text color */
     --light-text-secondary: #4b5563; /* gray-600 */
     --light-text-muted: #6b7280; /* gray-500 */
     --light-border: #1a3262; /* gray-100 - very light gray border */
@@ -32,6 +70,7 @@
     /* Background is handled by layout.tsx div, not body */
     color: var(--light-text-primary);
     transition: color 200ms;
+    font-family: var(--font-acumin-pro), system-ui, sans-serif;
   }
 
   .dark body {
@@ -87,6 +126,18 @@
   }
 
   /* ========================================
+     Form Elements Focus Styles
+     ======================================== */
+  
+  /* Light mode input focus */
+  input:focus,
+  select:focus,
+  textarea:focus {
+    border-color: var(--agora-blue) !important;
+    outline: none;
+  }
+  
+  /* ========================================
      Dark Mode Form Elements
      ======================================== */
   
@@ -112,7 +163,7 @@
   .dark input:focus,
   .dark select:focus,
   .dark textarea:focus {
-    border-color: #3b82f6 !important;
+    border-color: var(--agora-blue) !important;
     outline: none;
   }
 
@@ -178,7 +229,7 @@
   /* Checkbox and Radio */
   .dark input[type="checkbox"],
   .dark input[type="radio"] {
-    accent-color: #3b82f6;
+    accent-color: var(--agora-blue);
   }
 
   /* File input button */

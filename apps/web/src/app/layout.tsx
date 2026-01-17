@@ -1,11 +1,36 @@
 import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
+import localFont from 'next/font/local';
 import './globals.css';
 import StoreProvider from '@/lib/store/StoreProvider';
 import { ThemeProvider } from '@/contexts/ThemeContext';
 import { Toaster } from 'react-hot-toast';
 
-const inter = Inter({ subsets: ['latin'] });
+const acuminPro = localFont({
+  src: [
+    {
+      path: '../../public/assets/fonts/Acumin-RPro.otf',
+      weight: '400',
+      style: 'normal',
+    },
+    {
+      path: '../../public/assets/fonts/Acumin-ItPro.otf',
+      weight: '400',
+      style: 'italic',
+    },
+    {
+      path: '../../public/assets/fonts/Acumin-BdPro.otf',
+      weight: '700',
+      style: 'normal',
+    },
+    {
+      path: '../../public/assets/fonts/Acumin-BdItPro.otf',
+      weight: '700',
+      style: 'italic',
+    },
+  ],
+  variable: '--font-acumin-pro',
+  display: 'swap',
+});
 
 export const metadata: Metadata = {
   title: 'Agora - Digital Education Identity',
@@ -19,7 +44,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={inter.className}>
+      <body className={acuminPro.variable}>
         <ThemeProvider>
           <StoreProvider>
             {children}
@@ -33,7 +58,7 @@ export default function RootLayout({
                 },
                 success: {
                   iconTheme: {
-                    primary: '#2563eb',
+                    primary: '#2490FD', // Agora blue
                     secondary: '#fff',
                   },
                 },
