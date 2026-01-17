@@ -11,7 +11,7 @@ variables:
 
 stages:
 # ==========================================================
-# STAGE 1: SMART CHANGE DETECTION
+# STAGE 1: SMART CHANGE DETECTION (V2 - ROBUST)
 # ==========================================================
 - stage: CheckChanges
   displayName: 'Analyze Changed Paths'
@@ -19,18 +19,29 @@ stages:
   - job: Check
     displayName: 'Check Git Diff'
     steps:
-    # 1. Checkout code with depth 2 to compare HEAD vs previous commit
+    # 1. Checkout with enough depth to see history
     - checkout: self
-      fetchDepth: 2
+      fetchDepth: 0 # Fetch all history so we can compare properly
 
     # 2. Run logic to detect where changes happened
     - powershell: |
         Write-Host "Checking for changes..."
         
-        # Get list of changed files between current and previous commit
-        # We use 'git diff' to look at file names only
-        $changes = git diff HEAD~1 HEAD --name-only
+        # Get the list of changed files. 
+        # "origin/develop..HEAD" checks ALL commits in this push, not just the last one.
+        # We use 'try/catch' to fallback if it fails (e.g. first run)
+        try {
+            $changes = git diff --name-only origin/develop..HEAD
+        } catch {
+            Write-Host "Git diff failed (likely first run or new branch), defaulting to DEPLOY ALL."
+            $changes = "apps/api apps/web azure-pipelines.yml"
+        }
         
+        if (-not $changes) {
+            Write-Host "No changes found via diff. Checking last commit only as fallback..."
+            $changes = git show --name-only --format= HEAD
+        }
+
         Write-Host "Files changed in this push:"
         Write-Host $changes
 
@@ -39,19 +50,26 @@ stages:
         $webChanged = "false"
 
         # --- LOGIC ---
-        # If 'apps/api' OR 'packages' (shared) changes -> Deploy Backend
-        if ($changes -match "apps/api" -or $changes -match "packages") {
+        
+        # 1. API Changes: Trigger if 'apps/api' OR 'packages' OR 'pipeline' changes
+        if ($changes -match "apps/api" -or $changes -match "packages" -or $changes -match "azure-pipelines.yml") {
             $apiChanged = "true"
-            Write-Host "Detected changes in API or Packages."
+            Write-Host ">> Detected changes for API."
         }
 
-        # If 'apps/web' OR 'packages' (shared) changes -> Deploy Frontend
-        if ($changes -match "apps/web" -or $changes -match "packages") {
+        # 2. Web Changes: Trigger if 'apps/web' OR 'packages' OR 'pipeline' changes
+        if ($changes -match "apps/web" -or $changes -match "packages" -or $changes -match "azure-pipelines.yml") {
             $webChanged = "true"
-            Write-Host "Detected changes in Web or Packages."
+            Write-Host ">> Detected changes for Web."
         }
 
-        # Set Output Variables for next stages
+        # 3. SAFETY NET: If absolutely nothing matched but we are here, force deploy both? 
+        # (Optional: Uncomment below if you prefer safety over speed)
+        # if ($apiChanged -eq "false" -and $webChanged -eq "false") { 
+        #     $apiChanged = "true"; $webChanged = "true" 
+        # }
+
+        # Set Output Variables
         Write-Host "##vso[task.setvariable variable=apiChanged;isOutput=true]$apiChanged"
         Write-Host "##vso[task.setvariable variable=webChanged;isOutput=true]$webChanged"
       name: CheckStep
