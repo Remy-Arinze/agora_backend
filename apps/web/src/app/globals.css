@@ -41,6 +41,7 @@
     --agora-blue: #2490FD; /* Main accent blue */
     --agora-success: #36FE96; /* Success/green color */
     --agora-text: #02173D; /* Primary text color */
+    --agora-accent: #FF532A; /* High-impact orange accent */
     
     /* Light Mode Colors - using hex for better compatibility */
     --light-bg: #e4edff; /* gray-200 */

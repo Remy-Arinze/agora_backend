@@ -17,6 +17,7 @@ const config: Config = {
         'agora-blue': '#2490FD',
         'agora-success': '#36FE96',
         'agora-text': '#02173D',
+        'agora-accent': '#FF532A',
         
         // Light Mode - using CSS variables from globals.css (hex values)
         'light-bg': '#e5e7eb',

@@ -158,12 +158,12 @@ export function LandingNavbar() {
                         {isMounted && !user && (
                             <div className="flex items-center space-x-2">
                                 <Link href="/auth/login">
-                                    <Button variant="ghost" size="sm" className={useLightNavbar ? '' : 'text-white hover:bg-white/10'}>
+                                    <Button variant="white" size="sm" className="rounded-full px-5 font-bold">
                                         Login
                                     </Button>
                                 </Link>
                                 <Link href="/auth/login">
-                                    <Button variant="primary" size="sm" className={useLightNavbar ? '' : 'bg-white text-blue-600 hover:bg-white/90'}>
+                                    <Button variant="primary" size="sm" className="rounded-full px-5 font-bold">
                                         Get Started
                                     </Button>
                                 </Link>
