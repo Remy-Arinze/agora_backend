@@ -19,39 +19,39 @@ stages:
   - job: Check
     displayName: 'Check Git Diff'
     steps:
-    # 1. Checkout code with depth 2 to compare HEAD vs previous commit
     - checkout: self
-      fetchDepth: 2
+      fetchDepth: 0 
 
-    # 2. Run logic to detect where changes happened
     - powershell: |
         Write-Host "Checking for changes..."
+        try {
+            $changes = git diff --name-only origin/develop..HEAD
+        } catch {
+            Write-Host "Git diff failed, defaulting to DEPLOY ALL."
+            $changes = "apps/api apps/web azure-pipelines.yml"
+        }
         
-        # Get list of changed files between current and previous commit
-        # We use 'git diff' to look at file names only
-        $changes = git diff HEAD~1 HEAD --name-only
-        
-        Write-Host "Files changed in this push:"
-        Write-Host $changes
+        if (-not $changes) {
+            $changes = git show --name-only --format= HEAD
+        }
 
-        # Initialize flags
+        Write-Host "Files changed: $changes"
+
         $apiChanged = "false"
         $webChanged = "false"
 
-        # --- LOGIC ---
-        # If 'apps/api' OR 'packages' (shared) changes -> Deploy Backend
-        if ($changes -match "apps/api" -or $changes -match "packages") {
+        # Logic: If API, Packages, or Pipeline changes -> Deploy API
+        if ($changes -match "apps/api" -or $changes -match "packages" -or $changes -match "azure-pipelines.yml") {
             $apiChanged = "true"
-            Write-Host "Detected changes in API or Packages."
+            Write-Host ">> Detected changes for API."
         }
 
-        # If 'apps/web' OR 'packages' (shared) changes -> Deploy Frontend
-        if ($changes -match "apps/web" -or $changes -match "packages") {
+        # Logic: If Web, Packages, or Pipeline changes -> Deploy Web
+        if ($changes -match "apps/web" -or $changes -match "packages" -or $changes -match "azure-pipelines.yml") {
             $webChanged = "true"
-            Write-Host "Detected changes in Web or Packages."
+            Write-Host ">> Detected changes for Web."
         }
 
-        # Set Output Variables for next stages
         Write-Host "##vso[task.setvariable variable=apiChanged;isOutput=true]$apiChanged"
         Write-Host "##vso[task.setvariable variable=webChanged;isOutput=true]$webChanged"
       name: CheckStep
@@ -62,7 +62,6 @@ stages:
 - stage: Backend
   displayName: 'Deploy Backend (API)'
   dependsOn: CheckChanges
-  # Deploy if API changed OR if triggered Manually
   condition: or(eq(dependencies.CheckChanges.outputs['Check.CheckStep.apiChanged'], 'true'), eq(variables['Build.Reason'], 'Manual'))
   variables:
     workingDir: 'apps/api'
@@ -73,47 +72,97 @@ stages:
       inputs:
         versionSpec: '20.x'
     
+    # 1. Install at ROOT to ensure all dependencies are present
     - script: npm ci
-      workingDirectory: $(workingDir)
-      displayName: 'Install API Dependencies'
+      workingDirectory: . 
+      displayName: 'Install All Dependencies (Root)'
 
-    # 1. Generate Prisma Client (Critical for build)
-    - script: npx prisma generate --schema=../../packages/database/prisma/schema.prisma
-      workingDirectory: $(workingDir)
+    # 2. Generate Prisma Client
+    - script: npx prisma generate --schema=packages/database/prisma/schema.prisma
+      workingDirectory: .
       displayName: 'Generate Prisma Client'
 
-    # 2. Force Disable Strict Mode (Critical for build success)
+    # 3. Force Disable Strict Mode
     - powershell: |
         $path = "$(workingDir)/tsconfig.json"
         if (Test-Path $path) {
             $json = Get-Content $path -Raw | ConvertFrom-Json
-            
             if (-not $json.PSObject.Properties['compilerOptions']) {
                 $json | Add-Member -MemberType NoteProperty -Name 'compilerOptions' -Value @{}
             }
-
             $json.compilerOptions | Add-Member -MemberType NoteProperty -Name "strict" -Value $false -Force
             $json.compilerOptions | Add-Member -MemberType NoteProperty -Name "noImplicitAny" -Value $false -Force
             $json.compilerOptions | Add-Member -MemberType NoteProperty -Name "skipLibCheck" -Value $true -Force
-
             $json | ConvertTo-Json -Depth 10 | Set-Content $path
             Write-Host "Disabled strict mode in tsconfig.json"
         }
       displayName: 'Disable Strict TypeScript Checks'
 
+    # 4. Build the API
     - script: npm run build
       workingDirectory: $(workingDir)
       displayName: 'Build NestJS'
       env:
         NODE_OPTIONS: '--max-old-space-size=4096'
 
-    - script: npm prune --production
-      workingDirectory: $(workingDir)
-      displayName: 'Prune Dev Dependencies'
+    # 5. PREPARE DEPLOYMENT ARTIFACTS (FIXED PATHS)
+    - powershell: |
+        $rootSource = "$(Build.SourcesDirectory)"
+        $appDir = "$rootSource/apps/api"
+        # The build output is INSIDE apps/api/dist because of workingDirectory
+        $buildDist = "$appDir/dist" 
+        $deployDir = "$rootSource/deploy_api"
+        
+        Write-Host "Checking for build artifacts in: $buildDist"
+        
+        if (-not (Test-Path $buildDist)) {
+             Write-Host "##vso[task.logissue type=error]CRITICAL: 'dist' folder not found at $buildDist"
+             Write-Host "Listing apps/api:"
+             Get-ChildItem $appDir
+             exit 1
+        }
 
+        Write-Host "Preparing deployment package at $deployDir..."
+        New-Item -ItemType Directory -Force -Path $deployDir | Out-Null
+
+        # A. Copy package.json
+        Copy-Item -Path "$appDir/package.json" -Destination $deployDir -Force
+
+        # B. Find and Copy built files (recursive search for main.js)
+        # We search inside apps/api/dist
+        $mainFile = Get-ChildItem -Path $buildDist -Filter "main.js" -Recurse | Select-Object -First 1
+        
+        if ($mainFile) {
+            Write-Host "Found compiled entry point at: $($mainFile.FullName)"
+            
+            # The folder containing main.js is what we want to be our 'dist'
+            $sourceDistContent = $mainFile.Directory.FullName
+            $targetDist = "$deployDir/dist"
+            New-Item -ItemType Directory -Force -Path $targetDist | Out-Null
+            
+            Write-Host "Flattening structure: Copying content from $sourceDistContent to $targetDist"
+            Copy-Item -Path "$sourceDistContent/*" -Destination $targetDist -Recurse -Force
+        } else {
+            Write-Host "##vso[task.logissue type=error]CRITICAL: Could not find 'main.js' inside $buildDist"
+            Write-Host "Listing dist contents for debugging:"
+            Get-ChildItem $buildDist -Recurse
+            exit 1
+        }
+
+        # C. Copy node_modules (Fixes 'Cannot find module' error)
+        Write-Host "Copying dependencies from Root node_modules..."
+        $rootModules = "$rootSource/node_modules"
+        $targetModules = "$deployDir/node_modules"
+        
+        robocopy $rootModules $targetModules /E /SL /NFL /NDL /XO
+        if ($LASTEXITCODE -gt 7) { Write-Host "##vso[task.logissue type=warning]Robocopy finished with code $LASTEXITCODE" }
+
+      displayName: 'Assemble Deployment Package'
+
+    # 6. Archive the PREPARED folder
     - task: ArchiveFiles@2
       inputs:
-        rootFolderOrFile: '$(workingDir)'
+        rootFolderOrFile: '$(Build.SourcesDirectory)/deploy_api'
         includeRootFolder: false
         archiveType: 'zip'
         archiveFile: '$(Build.ArtifactStagingDirectory)/api.zip'
@@ -133,7 +182,6 @@ stages:
 - stage: Frontend
   displayName: 'Deploy Frontend'
   dependsOn: CheckChanges
-  # Deploy if Web changed OR if triggered Manually
   condition: or(eq(dependencies.CheckChanges.outputs['Check.CheckStep.webChanged'], 'true'), eq(variables['Build.Reason'], 'Manual'))
   variables:
     workingDir: 'apps/web'
@@ -148,12 +196,10 @@ stages:
       workingDirectory: $(workingDir)
       displayName: 'Install Dependencies'
 
-    # Fix: Skip Linting
     - script: npm run build -- --no-lint
       workingDirectory: $(workingDir)
       displayName: 'Build Next.js App (No Lint)'
 
-    # Fix: Use PowerShell for Windows Agent
     - powershell: |
         Copy-Item -Path "public" -Destination ".next/standalone/apps/web" -Recurse -Force
         New-Item -Path ".next/standalone/apps/web/.next" -ItemType Directory -Force
