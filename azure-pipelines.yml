@@ -103,12 +103,11 @@ stages:
       env:
         NODE_OPTIONS: '--max-old-space-size=4096'
 
-    # 5. PREPARE DEPLOYMENT ARTIFACTS (Fixes Robocopy Hangs)
+    # 5. PREPARE DEPLOYMENT ARTIFACTS (Fixes Robocopy Exit Code)
     - powershell: |
         $rootSource = "$(Build.SourcesDirectory)"
         $appDir = "$rootSource/apps/api"
-        # Since we run build in apps/api, output is usually at root/dist/apps/api or apps/api/dist depending on nest-cli
-        # We will look in both places to be safe.
+        $buildDist = "$appDir/dist" 
         $deployDir = "$rootSource/deploy_api"
         
         Write-Host "Preparing deployment package at $deployDir..."
@@ -119,7 +118,7 @@ stages:
         Copy-Item -Path "$appDir/package.json" -Destination $deployDir -Force
 
         # B. Find Compiled Code (main.js)
-        # Search recursively in the 'dist' folder at root AND in apps/api
+        # Search recursively for main.js
         $mainFile = Get-ChildItem -Path "$rootSource" -Filter "main.js" -Recurse | Where-Object { $_.FullName -like "*dist*" } | Select-Object -First 1
         
         if ($mainFile) {
@@ -135,26 +134,32 @@ stages:
             exit 1
         }
 
-        # C. Copy node_modules (Optimized Robocopy)
-        # We remove /SL (Dereference links so local packages work)
-        # We add /MT:8 (Multi-threaded speed)
-        # We add /R:0 /W:0 (Fail fast on locks, don't hang)
+        # C. Copy node_modules (With Exit Code Fix)
         Write-Host "Copying dependencies from Root node_modules..."
         $rootModules = "$rootSource/node_modules"
         $targetModules = "$deployDir/node_modules"
         
+        # Robocopy Options:
         # /E = Recursive
-        # /MT:8 = 8 Parallel threads (Faster)
-        # /R:0 /W:0 = No retries, no wait (Prevents hanging)
-        # /NFL /NDL = No File/Dir Logging (Keeps logs clean)
-        # We REMOVED /SL to force copying actual files for symlinks
-        robocopy $rootModules $targetModules /E /MT:8 /R:0 /W:0 /NFL /NDL /XO
+        # /MT:8 = Multi-threaded (Fast)
+        # /R:0 /W:0 = No retries (Fail fast)
+        # /XD .git .cache = Exclude junk folders to prevent loops
+        # /NFL /NDL = Quiet mode
+        robocopy $rootModules $targetModules /E /MT:8 /R:0 /W:0 /XD .git .cache /NFL /NDL /XO
         
-        # Check Exit Code (Robocopy < 8 is success)
+        # --- CRITICAL FIX: Handle Robocopy Exit Codes ---
+        # 0 = No files copied (Success)
+        # 1 = Files copied successfully (Success)
+        # 2-7 = Various success states (Extra files, etc.)
+        # 8+ = Actual Failure
+        
         if ($LASTEXITCODE -ge 8) { 
-            Write-Host "##vso[task.logissue type=warning]Robocopy reported errors (Code $LASTEXITCODE). Check for locked files." 
+            Write-Host "##vso[task.logissue type=error]Robocopy failed with exit code $LASTEXITCODE"
+            exit 1
         } else {
-            Write-Host "Dependencies copied successfully."
+            Write-Host "Dependencies copied successfully (Exit code $LASTEXITCODE treated as Success)."
+            # Force reset exit code to 0 so pipeline passes
+            exit 0
         }
 
       displayName: 'Assemble Deployment Package'
