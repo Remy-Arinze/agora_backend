@@ -108,7 +108,7 @@ function LoginContent() {
               alt="Agora"
               width={180}
               height={48}
-              className="h-12 w-auto brightness-0 dark:brightness-100"
+              className="h-12 w-auto"
               priority
             />
           </Link>
