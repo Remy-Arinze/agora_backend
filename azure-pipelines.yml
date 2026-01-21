@@ -40,13 +40,11 @@ stages:
         $apiChanged = "false"
         $webChanged = "false"
 
-        # Logic: If API, Packages, or Pipeline changes -> Deploy API
         if ($changes -match "apps/api" -or $changes -match "packages" -or $changes -match "azure-pipelines.yml") {
             $apiChanged = "true"
             Write-Host ">> Detected changes for API."
         }
 
-        # Logic: If Web, Packages, or Pipeline changes -> Deploy Web
         if ($changes -match "apps/web" -or $changes -match "packages" -or $changes -match "azure-pipelines.yml") {
             $webChanged = "true"
             Write-Host ">> Detected changes for Web."
@@ -72,7 +70,7 @@ stages:
       inputs:
         versionSpec: '20.x'
     
-    # 1. Install at ROOT to ensure all dependencies are present
+    # 1. Install EVERYTHING (Needed for Build)
     - script: npm ci
       workingDirectory: . 
       displayName: 'Install All Dependencies (Root)'
@@ -105,61 +103,61 @@ stages:
       env:
         NODE_OPTIONS: '--max-old-space-size=4096'
 
-    # 5. PREPARE DEPLOYMENT ARTIFACTS (FIXED PATHS)
+    # --- 5. NEW STEP: PRUNE DEV DEPENDENCIES ---
+    # This deletes typescript, eslint, jest, etc. to shrink the zip file.
+    - script: npm prune --production
+      workingDirectory: .
+      displayName: 'Remove Dev Dependencies (Shrink Node Modules)'
+
+    # 6. PREPARE DEPLOYMENT ARTIFACTS
     - powershell: |
         $rootSource = "$(Build.SourcesDirectory)"
         $appDir = "$rootSource/apps/api"
-        # The build output is INSIDE apps/api/dist because of workingDirectory
         $buildDist = "$appDir/dist" 
         $deployDir = "$rootSource/deploy_api"
         
-        Write-Host "Checking for build artifacts in: $buildDist"
-        
-        if (-not (Test-Path $buildDist)) {
-             Write-Host "##vso[task.logissue type=error]CRITICAL: 'dist' folder not found at $buildDist"
-             Write-Host "Listing apps/api:"
-             Get-ChildItem $appDir
-             exit 1
-        }
-
         Write-Host "Preparing deployment package at $deployDir..."
+        if (Test-Path $deployDir) { Remove-Item $deployDir -Recurse -Force }
         New-Item -ItemType Directory -Force -Path $deployDir | Out-Null
 
         # A. Copy package.json
         Copy-Item -Path "$appDir/package.json" -Destination $deployDir -Force
 
-        # B. Find and Copy built files (recursive search for main.js)
-        # We search inside apps/api/dist
-        $mainFile = Get-ChildItem -Path $buildDist -Filter "main.js" -Recurse | Select-Object -First 1
+        # B. Find Compiled Code (main.js)
+        $mainFile = Get-ChildItem -Path "$rootSource" -Filter "main.js" -Recurse | Where-Object { $_.FullName -like "*dist*" } | Select-Object -First 1
         
         if ($mainFile) {
             Write-Host "Found compiled entry point at: $($mainFile.FullName)"
-            
-            # The folder containing main.js is what we want to be our 'dist'
             $sourceDistContent = $mainFile.Directory.FullName
             $targetDist = "$deployDir/dist"
             New-Item -ItemType Directory -Force -Path $targetDist | Out-Null
             
-            Write-Host "Flattening structure: Copying content from $sourceDistContent to $targetDist"
+            Write-Host "Copying compiled code..."
             Copy-Item -Path "$sourceDistContent/*" -Destination $targetDist -Recurse -Force
         } else {
-            Write-Host "##vso[task.logissue type=error]CRITICAL: Could not find 'main.js' inside $buildDist"
-            Write-Host "Listing dist contents for debugging:"
-            Get-ChildItem $buildDist -Recurse
+            Write-Host "##vso[task.logissue type=error]CRITICAL: Could not find 'main.js' build artifact."
             exit 1
         }
 
-        # C. Copy node_modules (Fixes 'Cannot find module' error)
+        # C. Copy node_modules (Now much smaller)
         Write-Host "Copying dependencies from Root node_modules..."
         $rootModules = "$rootSource/node_modules"
         $targetModules = "$deployDir/node_modules"
         
-        robocopy $rootModules $targetModules /E /SL /NFL /NDL /XO
-        if ($LASTEXITCODE -gt 7) { Write-Host "##vso[task.logissue type=warning]Robocopy finished with code $LASTEXITCODE" }
-
+        # Robocopy with fast options
+        robocopy $rootModules $targetModules /E /MT:8 /R:0 /W:0 /XD .git .cache /NFL /NDL /XO
+        
+        # Handle Exit Codes (0-7 are success)
+        if ($LASTEXITCODE -ge 8) { 
+            Write-Host "##vso[task.logissue type=error]Robocopy failed with exit code $LASTEXITCODE"
+            exit 1
+        } else {
+            Write-Host "Dependencies copied successfully."
+            exit 0
+        }
       displayName: 'Assemble Deployment Package'
 
-    # 6. Archive the PREPARED folder
+    # 7. Archive (Will be fast now)
     - task: ArchiveFiles@2
       inputs:
         rootFolderOrFile: '$(Build.SourcesDirectory)/deploy_api'
@@ -168,6 +166,7 @@ stages:
         archiveFile: '$(Build.ArtifactStagingDirectory)/api.zip'
         replaceExistingArchive: true
 
+    # 8. Deploy (Will not timeout)
     - task: AzureWebApp@1
       inputs:
         azureSubscription: $(azureSubscription)
