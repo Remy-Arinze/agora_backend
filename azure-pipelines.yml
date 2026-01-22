@@ -2,7 +2,7 @@ trigger:
   - develop
 
 pool:
-  vmImage: 'ubuntu-latest' # <--- CRITICAL CHANGE: Build on Linux to get Linux binaries
+  name: 'SandboxAgent'
 
 variables:
   azureSubscription: 'agora-current-sc'
@@ -22,8 +22,7 @@ stages:
     - checkout: self
       fetchDepth: 0 
 
-    # Use 'pwsh' (PowerShell Core) which works natively on Linux
-    - pwsh: |
+    - powershell: |
         Write-Host "Checking for changes..."
         try {
             $changes = git diff --name-only origin/develop..HEAD
@@ -71,18 +70,18 @@ stages:
       inputs:
         versionSpec: '20.x'
     
-    # 1. Install at ROOT (Gets Linux binaries now!)
+    # 1. Install EVERYTHING (Needed for Build)
     - script: npm ci
       workingDirectory: . 
       displayName: 'Install All Dependencies (Root)'
 
-    # 2. Generate Prisma Client (Gets Linux Engine now!)
+    # 2. Generate Prisma Client
     - script: npx prisma generate --schema=packages/database/prisma/schema.prisma
       workingDirectory: .
       displayName: 'Generate Prisma Client'
 
-    # 3. Force Disable Strict Mode (pwsh works on Linux too)
-    - pwsh: |
+    # 3. Force Disable Strict Mode
+    - powershell: |
         $path = "$(workingDir)/tsconfig.json"
         if (Test-Path $path) {
             $json = Get-Content $path -Raw | ConvertFrom-Json
@@ -104,46 +103,61 @@ stages:
       env:
         NODE_OPTIONS: '--max-old-space-size=4096'
 
-    # 5. Prune Dev Dependencies
+    # --- 5. NEW STEP: PRUNE DEV DEPENDENCIES ---
+    # This deletes typescript, eslint, jest, etc. to shrink the zip file.
     - script: npm prune --production
       workingDirectory: .
-      displayName: 'Remove Dev Dependencies'
+      displayName: 'Remove Dev Dependencies (Shrink Node Modules)'
 
-    # 6. ASSEMBLE DEPLOYMENT (Linux Version)
-    # We replaced 'robocopy' (Windows only) with 'cp' (Linux)
-    - bash: |
-        ROOT=$(Build.SourcesDirectory)
-        DEPLOY_DIR=$ROOT/deploy_api
+    # 6. PREPARE DEPLOYMENT ARTIFACTS
+    - powershell: |
+        $rootSource = "$(Build.SourcesDirectory)"
+        $appDir = "$rootSource/apps/api"
+        $buildDist = "$appDir/dist" 
+        $deployDir = "$rootSource/deploy_api"
         
-        echo "Preparing deployment package at $DEPLOY_DIR..."
-        rm -rf $DEPLOY_DIR
-        mkdir -p $DEPLOY_DIR
+        Write-Host "Preparing deployment package at $deployDir..."
+        if (Test-Path $deployDir) { Remove-Item $deployDir -Recurse -Force }
+        New-Item -ItemType Directory -Force -Path $deployDir | Out-Null
 
         # A. Copy package.json
-        cp $ROOT/apps/api/package.json $DEPLOY_DIR/
+        Copy-Item -Path "$appDir/package.json" -Destination $deployDir -Force
 
-        # B. Find and copy compiled main.js
-        # We search for main.js in dist folders
-        MAIN_FILE=$(find $ROOT -type f -name "main.js" | grep "/dist/" | head -n 1)
+        # B. Find Compiled Code (main.js)
+        $mainFile = Get-ChildItem -Path "$rootSource" -Filter "main.js" -Recurse | Where-Object { $_.FullName -like "*dist*" } | Select-Object -First 1
         
-        if [ -z "$MAIN_FILE" ]; then
-            echo "##vso[task.logissue type=error]CRITICAL: Could not find 'main.js' build artifact."
+        if ($mainFile) {
+            Write-Host "Found compiled entry point at: $($mainFile.FullName)"
+            $sourceDistContent = $mainFile.Directory.FullName
+            $targetDist = "$deployDir/dist"
+            New-Item -ItemType Directory -Force -Path $targetDist | Out-Null
+            
+            Write-Host "Copying compiled code..."
+            Copy-Item -Path "$sourceDistContent/*" -Destination $targetDist -Recurse -Force
+        } else {
+            Write-Host "##vso[task.logissue type=error]CRITICAL: Could not find 'main.js' build artifact."
             exit 1
-        fi
+        }
 
-        echo "Found compiled entry point at: $MAIN_FILE"
-        # Copy the content of the folder containing main.js
-        SOURCE_DIR=$(dirname "$MAIN_FILE")
-        mkdir -p $DEPLOY_DIR/dist
-        cp -r $SOURCE_DIR/* $DEPLOY_DIR/dist/
-
-        # C. Copy node_modules (Dereference symlinks with -L)
-        echo "Copying node_modules..."
-        cp -r -L $ROOT/node_modules $DEPLOY_DIR/
+        # C. Copy node_modules (Now much smaller)
+        Write-Host "Copying dependencies from Root node_modules..."
+        $rootModules = "$rootSource/node_modules"
+        $targetModules = "$deployDir/node_modules"
         
-        echo "Artifact assembly complete."
+        # Robocopy with fast options
+        robocopy $rootModules $targetModules /E /MT:8 /R:0 /W:0 /XD .git .cache /NFL /NDL /XO
+        
+        # Handle Exit Codes (0-7 are success)
+        if ($LASTEXITCODE -ge 8) { 
+            Write-Host "##vso[task.logissue type=error]Robocopy failed with exit code $LASTEXITCODE"
+            exit 1
+        } else {
+            Write-Host "Dependencies copied successfully."
+            exit 0
+        }
       displayName: 'Assemble Deployment Package'
 
+    # 7. Archive (Will be fast now)
     - task: ArchiveFiles@2
       inputs:
         rootFolderOrFile: '$(Build.SourcesDirectory)/deploy_api'
@@ -152,6 +166,7 @@ stages:
         archiveFile: '$(Build.ArtifactStagingDirectory)/api.zip'
         replaceExistingArchive: true
 
+    # 8. Deploy (Will not timeout)
     - task: AzureWebApp@1
       inputs:
         azureSubscription: $(azureSubscription)
@@ -180,13 +195,17 @@ stages:
       workingDirectory: $(workingDir)
       displayName: 'Install Dependencies'
 
-    - pwsh: |
+    - powershell: |
         if ([string]::IsNullOrEmpty($env:NEXT_PUBLIC_API_URL)) {
-          Write-Host "##vso[task.logissue type=warning]NEXT_PUBLIC_API_URL is not set. Frontend might fail to fetch data."
+          Write-Host "##vso[task.logissue type=error]NEXT_PUBLIC_API_URL is not set! Please add it as a Pipeline Variable in Azure DevOps."
+          Write-Host "Go to: Pipelines > Edit > Variables > Add variable"
+          Write-Host "Name: NEXT_PUBLIC_API_URL"
+          Write-Host "Value: https://your-api-url.azurewebsites.net/api (or your production API URL)"
+          exit 1
         } else {
-          Write-Host "NEXT_PUBLIC_API_URL is set."
+          Write-Host "NEXT_PUBLIC_API_URL is set (value is masked for security)"
         }
-      displayName: 'Verify Environment Variables'
+      displayName: 'Verify NEXT_PUBLIC_API_URL is Set'
       env:
         NEXT_PUBLIC_API_URL: $(NEXT_PUBLIC_API_URL)
 
@@ -196,12 +215,10 @@ stages:
       env:
         NEXT_PUBLIC_API_URL: $(NEXT_PUBLIC_API_URL)
 
-    # Linux version of the copy script
-    - bash: |
-        echo "Copying static assets..."
-        cp -r public .next/standalone/apps/web/
-        mkdir -p .next/standalone/apps/web/.next
-        cp -r .next/static .next/standalone/apps/web/.next/
+    - powershell: |
+        Copy-Item -Path "public" -Destination ".next/standalone/apps/web" -Recurse -Force
+        New-Item -Path ".next/standalone/apps/web/.next" -ItemType Directory -Force
+        Copy-Item -Path ".next/static" -Destination ".next/standalone/apps/web/.next" -Recurse -Force
       workingDirectory: $(workingDir)
       displayName: 'Copy Static Assets to Standalone'
 
