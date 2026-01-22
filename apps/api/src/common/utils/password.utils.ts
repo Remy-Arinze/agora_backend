@@ -1,5 +1,5 @@
 import { randomBytes } from 'crypto';
-import * as bcrypt from 'bcrypt';
+import * as bcrypt from 'bcryptjs';
 
 /**
  * Generates a cryptographically secure random password.

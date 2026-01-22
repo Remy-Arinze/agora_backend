@@ -11,7 +11,7 @@ import { EmailService } from '../email/email.service';
 import { LoginDto, VerifyOtpDto, AuthTokensDto } from './dto/login.dto';
 import { RequestPasswordResetDto, ResetPasswordDto } from './dto/password-reset.dto';
 import { JwtPayload } from './types/user-with-context.type';
-import * as bcrypt from 'bcrypt';
+import * as bcrypt from 'bcryptjs';
 import { randomBytes } from 'crypto';
 import { generateSecurePasswordHash } from '../common/utils/password.utils';
 
