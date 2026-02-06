@@ -14,7 +14,7 @@ import { Throttle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
 import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
-import { LoginDto, VerifyOtpDto, AuthTokensDto } from './dto/login.dto';
+import { LoginDto, VerifyOtpDto, VerifyLoginOtpDto, AuthTokensDto, LoginResponseDto } from './dto/login.dto';
 import { RequestPasswordResetDto, ResetPasswordDto } from './dto/password-reset.dto';
 import { ResponseDto } from '../common/dto/response.dto';
 
@@ -63,39 +63,77 @@ export class AuthController {
   @Post('login')
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { ttl: 60000, limit: 5 } }) // 5 login attempts per minute
-  @ApiOperation({ summary: 'Login with email/phone and password' })
+  @ApiOperation({ summary: 'Login with email/publicId and password - requires OTP verification' })
   @ApiBody({ type: LoginDto })
   @ApiResponse({
     status: 200,
-    description: 'Login successful. Refresh token is set as httpOnly cookie.',
-    type: ResponseDto<AuthTokensDto>,
+    description: 'Credentials validated. OTP sent to email. Session ID returned for OTP verification.',
+    type: ResponseDto<LoginResponseDto>,
   })
   @ApiResponse({ status: 401, description: 'Invalid credentials' })
   @ApiResponse({ status: 429, description: 'Too many login attempts. Please try again later.' })
   async login(
     @Body() loginDto: LoginDto,
+  ): Promise<ResponseDto<LoginResponseDto>> {
+    this.logger.log(`[LOGIN] Received login request for: ${loginDto.emailOrPublicId}`);
+    
+    try {
+      const data = await this.authService.login(loginDto);
+      
+      // Verify that we're returning the correct response structure
+      if (!data.requiresOtp || !data.sessionId) {
+        this.logger.error(`[LOGIN] Invalid response structure: ${JSON.stringify(data)}`);
+        throw new Error('Invalid login response - OTP flow not initiated');
+      }
+      
+      this.logger.log(`[LOGIN] Login initiated for ${loginDto.emailOrPublicId}, OTP required: ${data.requiresOtp}, sessionId: ${data.sessionId?.substring(0, 8)}...`);
+      
+      return ResponseDto.ok(
+        data,
+        'OTP sent to your email. Please verify to complete login.',
+      );
+    } catch (error) {
+      this.logger.error('[LOGIN] Login error:', error instanceof Error ? error.stack : error);
+      // DO NOT fall back to legacy login - always throw the error
+      throw error;
+    }
+  }
+
+  @Post('verify-login-otp')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { ttl: 60000, limit: 5 } }) // 5 OTP attempts per minute
+  @ApiOperation({ summary: 'Verify login OTP and complete authentication' })
+  @ApiBody({ type: VerifyLoginOtpDto })
+  @ApiResponse({
+    status: 200,
+    description: 'OTP verified. Login successful. Refresh token is set as httpOnly cookie.',
+    type: ResponseDto<AuthTokensDto>,
+  })
+  @ApiResponse({ status: 400, description: 'Invalid or expired OTP' })
+  @ApiResponse({
+    status: 429,
+    description: 'Too many OTP verification attempts. Please try again later.',
+  })
+  async verifyLoginOtp(
+    @Body() verifyOtpDto: VerifyLoginOtpDto,
     @Res({ passthrough: true }) res: Response
   ): Promise<ResponseDto<Omit<AuthTokensDto, 'refreshToken'> & { refreshToken?: string }>> {
     try {
-      const data = await this.authService.login(loginDto);
+      const data = await this.authService.verifyLoginOtp(verifyOtpDto);
 
       // Set refresh token as httpOnly cookie
       this.setRefreshTokenCookie(res, data.refreshToken);
 
-      // Return response without refresh token in body (it's in the cookie)
-      // Keep refreshToken in response for backwards compatibility during migration
       return ResponseDto.ok(
         {
           accessToken: data.accessToken,
-          refreshToken: data.refreshToken, // TODO: Remove after frontend migration
+          refreshToken: data.refreshToken,
           user: data.user,
         },
         'Login successful'
       );
     } catch (error) {
-      // Log the error for debugging
-      this.logger.error('Login error:', error instanceof Error ? error.stack : error);
-      // Re-throw to let NestJS handle it with proper status codes
+      this.logger.error('Verify login OTP error:', error instanceof Error ? error.stack : error);
       throw error;
     }
   }

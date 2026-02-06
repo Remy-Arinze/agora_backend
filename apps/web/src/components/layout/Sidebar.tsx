@@ -17,7 +17,7 @@ const navItems: NavItem[] = [
   {
     label: 'Dashboard',
     href: '/dashboard',
-    roles: ['SCHOOL_ADMIN', 'TEACHER', 'PARENT', 'STUDENT'],
+    roles: ['SCHOOL_ADMIN', 'TEACHER', 'STUDENT'],
   },
   // Super Admin sections - Overview first
   {
@@ -52,11 +52,6 @@ const navItems: NavItem[] = [
     roles: ['SCHOOL_ADMIN'],
   },
   {
-    label: 'My Children',
-    href: '/dashboard/children',
-    roles: ['PARENT'],
-  },
-  {
     label: 'My Profile',
     href: '/dashboard/profile',
     roles: ['STUDENT'],
@@ -64,7 +59,7 @@ const navItems: NavItem[] = [
   {
     label: 'Transfers',
     href: '/dashboard/transfers',
-    roles: ['SCHOOL_ADMIN', 'PARENT'],
+    roles: ['SCHOOL_ADMIN'],
   },
 ];
 

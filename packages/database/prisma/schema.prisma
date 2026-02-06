@@ -23,7 +23,6 @@ enum UserRole {
   SUPER_ADMIN
   SCHOOL_ADMIN
   TEACHER
-  PARENT
   STUDENT
 }
 
@@ -98,6 +97,8 @@ model User {
   accountStatus AccountStatus @default(SHADOW)
   role          UserRole
   deviceId      String?
+  firstName     String?
+  lastName      String?
   lastLoginAt   DateTime?
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
@@ -110,6 +111,7 @@ model User {
   notifications       NotificationLog[]
   passwordResetTokens PasswordResetToken[]
   googleCalendarSyncs GoogleCalendarSync[]
+  loginSessions       LoginSession[]
 
   @@index([email])
   @@index([phone])
@@ -793,6 +795,26 @@ model OtpCode {
   @@index([parentId])
   @@index([code])
   @@index([expiresAt])
+}
+
+model LoginSession {
+  id        String    @id @default(cuid())
+  userId    String
+  sessionId String    @unique
+  otpCode   String
+  email     String
+  expiresAt DateTime
+  usedAt    DateTime?
+  attempts  Int       @default(0)
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([sessionId])
+  @@index([email])
+  @@index([expiresAt])
+  @@index([usedAt])
 }
 
 model NotificationLog {

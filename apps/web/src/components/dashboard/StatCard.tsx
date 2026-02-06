@@ -34,29 +34,34 @@ export function StatCard({
     >
       <Card className="hover:shadow-lg transition-shadow duration-200">
         <CardContent className="p-6">
-          <div className="flex items-center justify-between">
+          <div className="flex items-start justify-between">
             <div className="flex-1">
-              <p className="text-sm font-medium text-gray-600 dark:text-dark-text-secondary mb-1">
+              <p className="text-sm font-medium text-[#9ca3af] dark:text-[#9ca3af] mb-2">
                 {title}
               </p>
-              <p className="text-3xl font-bold text-gray-900 dark:text-dark-text-primary">
+              <p className="text-3xl font-bold text-white dark:text-white mb-2">
                 {value}
               </p>
               {change && (
-                <div className="flex items-center mt-2">
+                <div className="flex items-center gap-1">
+                  {changeType === 'positive' && (
+                    <svg className="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                    </svg>
+                  )}
+                  {changeType === 'negative' && (
+                    <svg className="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 17h8m0 0V9m0 8l-8-8-4 4-6-6" />
+                    </svg>
+                  )}
                   <span className={`text-sm font-medium ${changeColors[changeType]}`}>
                     {change}
                   </span>
-                  {trend !== undefined && (
-                    <span className="ml-2 text-xs text-gray-500 dark:text-dark-text-muted">
-                      vs last month
-                    </span>
-                  )}
                 </div>
               )}
             </div>
             {icon && (
-              <div className="ml-4 p-3 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
+              <div className="ml-4 flex-shrink-0">
                 {icon}
               </div>
             )}

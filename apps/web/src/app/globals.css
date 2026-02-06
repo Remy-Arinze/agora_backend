@@ -54,15 +54,15 @@
     --light-text-muted: #6b7280; /* gray-500 */
     --light-border: #1a3262; /* gray-100 - very light gray border */
     
-    /* Dark Mode Colors - using hex for better compatibility */
-    --dark-bg: #000000; /* Very dark, almost black */
-    --dark-surface: #080a10; /* Deep greyish blue for cards */
-    --dark-border: #05070b; /* Border color */
+    /* Dark Mode Colors - PRAX IQ inspired dark theme */
+    --dark-bg: #0f1419; /* Dark grey background (same for sidebar and main) */
+    --dark-surface: #151a23; /* Slightly lighter for cards */
+    --dark-border: #1a1f2e; /* Border color for demarcation */
     --dark-input: #1e2433; /* Dark bluish grey for inputs */
-    --dark-text-primary: #f1f5f9; /* Lighter text for better contrast */
-    --dark-text-secondary: #cbd5e1; /* Secondary text */
-    --dark-text-muted: #94a3b8; /* Muted text */
-    --dark-hover: #1e293b; /* Hover background - slate-800 for visibility */
+    --dark-text-primary: #ffffff; /* White text for better contrast */
+    --dark-text-secondary: #9ca3af; /* Secondary text - grey */
+    --dark-text-muted: #6b7280; /* Muted text */
+    --dark-hover: #1f2937; /* Hover background - subtle grey */
   }
 
   /* Border colors are applied via Tailwind classes, not globally */

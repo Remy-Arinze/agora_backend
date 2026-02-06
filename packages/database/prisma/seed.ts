@@ -88,18 +88,45 @@ async function main() {
   // ============================================
   // STEP 1: Create Super Admin
   // ============================================
-  const superAdmin = await prisma.user.upsert({
-    where: { email: 'superadmin@agora.com' },
-    update: {},
-    create: {
-      email: 'superadmin@agora.com',
-      phone: '+2348000000001',
-      passwordHash: hashedPassword,
-      accountStatus: 'ACTIVE',
-      role: 'SUPER_ADMIN',
+  // First, try to find existing user by email or phone
+  let superAdmin = await prisma.user.findFirst({
+    where: {
+      OR: [
+        { email: 'remyarinze@gmail.com' },
+        { phone: '+2348000000001' },
+      ],
     },
   });
-  console.log('✅ Created Super Admin:', superAdmin.email);
+
+  if (superAdmin) {
+    // Update existing user
+    superAdmin = await prisma.user.update({
+      where: { id: superAdmin.id },
+      data: {
+        email: 'remyarinze@gmail.com',
+        phone: '+2348000000001',
+        passwordHash: hashedPassword,
+        accountStatus: 'ACTIVE',
+        role: 'SUPER_ADMIN',
+        firstName: 'Jeremy',
+        lastName: 'Arinze',
+      },
+    });
+  } else {
+    // Create new user
+    superAdmin = await prisma.user.create({
+      data: {
+        email: 'remyarinze@gmail.com',
+        phone: '+2348000000001',
+        passwordHash: hashedPassword,
+        accountStatus: 'ACTIVE',
+        role: 'SUPER_ADMIN',
+        firstName: 'Jeremy',
+        lastName: 'Arinze',
+      },
+    });
+  }
+  console.log('✅ Created/Updated Super Admin:', superAdmin.email, '(Jeremy Arinze)');
 
   // ============================================
   // STEP 2: Super Admin creates school WITH principal
@@ -134,14 +161,20 @@ async function main() {
     });
 
     // Create principal user (like super admin service does)
-    let principalUser = await tx.user.findUnique({
-      where: { email: 'admin@school.com' },
+    // Using Gmail alias: remyarinze+admin@gmail.com
+    let principalUser = await tx.user.findFirst({
+      where: {
+        OR: [
+          { email: 'remyarinze+admin@gmail.com' },
+          { phone: '+2348000000002' },
+        ],
+      },
     });
 
     if (!principalUser) {
       principalUser = await tx.user.create({
         data: {
-          email: 'admin@school.com',
+          email: 'remyarinze+admin@gmail.com',
           phone: '+2348000000002',
           passwordHash: hashedPassword,
           accountStatus: 'ACTIVE', // ACTIVE for seed, normally SHADOW
@@ -152,6 +185,8 @@ async function main() {
       principalUser = await tx.user.update({
         where: { id: principalUser.id },
         data: {
+          email: 'remyarinze+admin@gmail.com',
+          phone: '+2348000000002',
           passwordHash: hashedPassword,
           accountStatus: 'ACTIVE',
           role: 'SCHOOL_ADMIN',
@@ -174,7 +209,7 @@ async function main() {
         firstName: 'School',
         lastName: 'Administrator',
         phone: '+2348000000002',
-        email: 'admin@school.com',
+        email: 'remyarinze+admin@gmail.com',
       },
       create: {
         adminId: principalId,
@@ -184,7 +219,7 @@ async function main() {
         firstName: 'School',
         lastName: 'Administrator',
         phone: '+2348000000002',
-        email: 'admin@school.com',
+        email: 'remyarinze+admin@gmail.com',
         role: 'Principal',
       },
     });
@@ -207,14 +242,20 @@ async function main() {
   // Create teacher (like teacher service does)
   const { teacher, teacherProfile } = await prisma.$transaction(async (tx) => {
     // Find or create teacher user
-    let teacherUser = await tx.user.findUnique({
-      where: { email: 'teacher@school.com' },
+    // Using Gmail alias: remyarinze+teacher@gmail.com
+    let teacherUser = await tx.user.findFirst({
+      where: {
+        OR: [
+          { email: 'remyarinze+teacher@gmail.com' },
+          { phone: '+2348000000003' },
+        ],
+      },
     });
 
     if (!teacherUser) {
       teacherUser = await tx.user.create({
         data: {
-          email: 'teacher@school.com',
+          email: 'remyarinze+teacher@gmail.com',
           phone: '+2348000000003',
           passwordHash: hashedPassword,
           accountStatus: 'ACTIVE', // ACTIVE for seed, normally SHADOW
@@ -225,6 +266,8 @@ async function main() {
       teacherUser = await tx.user.update({
         where: { id: teacherUser.id },
         data: {
+          email: 'remyarinze+teacher@gmail.com',
+          phone: '+2348000000003',
           passwordHash: hashedPassword,
           accountStatus: 'ACTIVE',
           role: 'TEACHER',
@@ -246,7 +289,7 @@ async function main() {
         firstName: 'John',
         lastName: 'Teacher',
         phone: '+2348000000003',
-        email: 'teacher@school.com',
+          email: 'remyarinze+teacher@gmail.com',
         employeeId: 'TCH-001',
       },
       create: {
@@ -257,7 +300,7 @@ async function main() {
         firstName: 'John',
         lastName: 'Teacher',
         phone: '+2348000000003',
-        email: 'teacher@school.com',
+          email: 'remyarinze+teacher@gmail.com',
         employeeId: 'TCH-001',
       },
     });
@@ -267,44 +310,39 @@ async function main() {
 
   console.log('✅ Created Teacher:', teacher.email);
 
-  // Create Parent
-  const parent = await prisma.user.upsert({
-    where: { email: 'parent@example.com' },
-    update: {},
-    create: {
-      email: 'parent@example.com',
-      phone: '+2348000000004',
-      passwordHash: hashedPassword,
-      accountStatus: 'ACTIVE',
-      role: 'PARENT',
-    },
-  });
-
-  await prisma.parent.upsert({
-    where: { userId: parent.id },
-    update: {},
-    create: {
-      userId: parent.id,
-      firstName: 'Jane',
-      lastName: 'Parent',
-      phone: '+2348000000004',
-      email: 'parent@example.com',
-    },
-  });
-  console.log('✅ Created Parent:', parent.email);
-
   // Create Student
-  const student = await prisma.user.upsert({
-    where: { email: 'student@example.com' },
-    update: {},
-    create: {
-      email: 'student@example.com',
-      phone: '+2348000000005',
-      passwordHash: hashedPassword,
-      accountStatus: 'ACTIVE',
-      role: 'STUDENT',
+  // Using Gmail alias: remyarinze+student@gmail.com
+  let student = await prisma.user.findFirst({
+    where: {
+      OR: [
+        { email: 'remyarinze+student@gmail.com' },
+        { phone: '+2348000000005' },
+      ],
     },
   });
+
+  if (student) {
+    student = await prisma.user.update({
+      where: { id: student.id },
+      data: {
+        email: 'remyarinze+student@gmail.com',
+        phone: '+2348000000005',
+        passwordHash: hashedPassword,
+        accountStatus: 'ACTIVE',
+        role: 'STUDENT',
+      },
+    });
+  } else {
+    student = await prisma.user.create({
+      data: {
+        email: 'remyarinze+student@gmail.com',
+        phone: '+2348000000005',
+        passwordHash: hashedPassword,
+        accountStatus: 'ACTIVE',
+        role: 'STUDENT',
+      },
+    });
+  }
 
   const studentProfile = await prisma.student.upsert({
     where: { userId: student.id },
@@ -319,28 +357,8 @@ async function main() {
     },
   });
 
-  // Link Parent to Student
-  const parentProfile = await prisma.parent.findUnique({ where: { userId: parent.id } });
-  if (parentProfile) {
-    // Check if relationship already exists
-    const existingGuardian = await prisma.studentGuardian.findFirst({
-      where: {
-        studentId: studentProfile.id,
-        parentId: parentProfile.id,
-      },
-    });
-
-    if (!existingGuardian) {
-      await prisma.studentGuardian.create({
-        data: {
-          studentId: studentProfile.id,
-          parentId: parentProfile.id,
-          relationship: 'Mother',
-          isPrimary: true,
-        },
-      });
-    }
-  }
+  // Note: Parent role has been removed from the system
+  // Student guardianship can be managed through the admin interface if needed
 
   // Create Enrollment
   const existingEnrollment = await prisma.enrollment.findFirst({
@@ -508,22 +526,21 @@ async function main() {
   console.log('\n🎉 Seeding completed!\n');
   console.log('📋 Test Login Credentials:\n');
   console.log('Super Admin:');
-  console.log('  Email: superadmin@agora.com');
+  console.log('  Email: remyarinze@gmail.com');
+  console.log('  Name: Jeremy Arinze');
   console.log('  Password: Test1234!\n');
   console.log('School Admin (Principal):');
-  console.log('  Email: admin@school.com (for email login - super admin only)');
+  console.log('  Email: remyarinze+admin@gmail.com');
   console.log(`  Public ID: ${principal.publicId} (for public ID login)`);
   console.log('  Password: Test1234!\n');
   console.log('Teacher:');
-  console.log('  Email: teacher@school.com (for email login - super admin only)');
+  console.log('  Email: remyarinze+teacher@gmail.com');
   console.log(`  Public ID: ${teacherProfile.publicId} (for public ID login)`);
   console.log('  Password: Test1234!\n');
-  console.log('Parent:');
-  console.log('  Email: parent@example.com');
-  console.log('  Password: Test1234!\n');
   console.log('Student:');
-  console.log('  Email: student@example.com');
+  console.log('  Email: remyarinze+student@gmail.com');
   console.log('  Password: Test1234!\n');
+  console.log('Note: All emails use Gmail aliases pointing to remyarinze@gmail.com');
 }
 
 main()

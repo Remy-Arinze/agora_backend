@@ -27,6 +27,7 @@ interface ChartData {
 
 interface AnalyticsChartProps {
   title: string;
+  description?: string;
   data: Array<Record<string, any> & { name: string }>;
   type?: 'line' | 'bar' | 'area' | 'pie' | 'donut' | 'horizontal';
   dataKeys: string[];
@@ -35,6 +36,7 @@ interface AnalyticsChartProps {
 
 export function AnalyticsChart({
   title,
+  description,
   data,
   type = 'line',
   dataKeys,
@@ -230,9 +232,14 @@ export function AnalyticsChart({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-lg font-semibold text-gray-900 dark:text-dark-text-primary">
+        <CardTitle className="text-lg font-semibold text-white dark:text-white mb-1">
           {title}
         </CardTitle>
+        {description && (
+          <p className="text-sm text-[#9ca3af] dark:text-[#9ca3af] mt-1">
+            {description}
+          </p>
+        )}
       </CardHeader>
       <CardContent>
         <ResponsiveContainer width="100%" height={300}>

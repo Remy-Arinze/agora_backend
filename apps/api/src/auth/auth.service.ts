@@ -8,7 +8,8 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../database/prisma.service';
 import { EmailService } from '../email/email.service';
-import { LoginDto, VerifyOtpDto, AuthTokensDto } from './dto/login.dto';
+import { OtpService } from './otp.service';
+import { LoginDto, VerifyOtpDto, VerifyLoginOtpDto, AuthTokensDto, LoginResponseDto } from './dto/login.dto';
 import { RequestPasswordResetDto, ResetPasswordDto } from './dto/password-reset.dto';
 import { JwtPayload } from './types/user-with-context.type';
 import * as bcrypt from 'bcryptjs';
@@ -22,10 +23,383 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
-    private readonly emailService: EmailService
+    private readonly emailService: EmailService,
+    private readonly otpService: OtpService,
   ) {}
 
-  async login(loginDto: LoginDto): Promise<AuthTokensDto> {
+  /**
+   * Validate user credentials and return user with school context
+   * This is used internally by login and verifyLoginOtp
+   */
+  private async validateCredentials(
+    emailOrPublicId: string,
+    password: string,
+  ): Promise<{
+    user: any;
+    currentSchoolId: string | null;
+    currentPublicId: string | null;
+    currentProfileId: string | null;
+  }> {
+    // Determine if it's an email or public ID
+    const isEmail = emailOrPublicId.includes('@');
+
+    let user;
+    let schoolAdmin: any = null;
+    let teacherProfile: any = null;
+
+    if (isEmail) {
+      // Super admin or user logging in with email
+      user = await this.prisma.user.findFirst({
+        where: {
+          email: emailOrPublicId,
+        },
+        include: {
+          studentProfile: {
+            include: {
+              enrollments: {
+                where: { isActive: true },
+                orderBy: { enrollmentDate: 'desc' },
+                take: 1,
+                include: { school: true },
+              },
+            },
+          },
+          parentProfile: true,
+          teacherProfiles: true,
+          schoolAdmins: true,
+        },
+      });
+    } else {
+      // Admin, principal, teacher, or student logging in with public ID
+      const [adminResult, teacherResult, studentResult] = await Promise.all([
+        this.prisma.schoolAdmin.findUnique({
+          where: { publicId: emailOrPublicId },
+          include: { user: true },
+        }),
+        this.prisma.teacher.findUnique({
+          where: { publicId: emailOrPublicId },
+          include: { user: true },
+        }),
+        this.prisma.student.findUnique({
+          where: { publicId: emailOrPublicId },
+          include: { user: true },
+        }),
+      ]);
+
+      schoolAdmin = adminResult;
+      teacherProfile = teacherResult;
+
+      if (studentResult) {
+        user = studentResult.user;
+      }
+
+      if (!schoolAdmin && !teacherProfile && !user) {
+        throw new UnauthorizedException('Invalid credentials');
+      }
+
+      if (!user) {
+        user = schoolAdmin?.user || teacherProfile?.user;
+      }
+
+      if (user) {
+        // Reload user with all relations
+        user = await this.prisma.user.findUnique({
+          where: { id: user.id },
+          include: {
+            studentProfile: {
+              include: {
+                enrollments: {
+                  where: { isActive: true },
+                  orderBy: { enrollmentDate: 'desc' },
+                  take: 1,
+                  include: { school: true },
+                },
+              },
+            },
+            parentProfile: true,
+            teacherProfiles: true,
+            schoolAdmins: true,
+          },
+        });
+      }
+    }
+
+    if (!user || !user.passwordHash) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    // Check if user is shadow (cannot login)
+    if (user.accountStatus === 'SHADOW') {
+      throw new UnauthorizedException(
+        'Account not activated. Please verify your OTP to claim your account.',
+      );
+    }
+
+    const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
+    if (!isPasswordValid) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    // Determine school context based on login method and role
+    let currentSchoolId: string | null = null;
+    let currentPublicId: string | null = null;
+    let currentProfileId: string | null = null;
+
+    if (isEmail) {
+      // Email login - determine school context based on role
+      if (user.role === 'STUDENT') {
+        if (user.studentProfile && user.studentProfile.enrollments.length > 0) {
+          const activeEnrollment = user.studentProfile.enrollments[0];
+          currentSchoolId = activeEnrollment.schoolId;
+          currentPublicId = user.studentProfile.publicId || null;
+        }
+      } else if (
+        user.role === 'SCHOOL_ADMIN' &&
+        user.schoolAdmins &&
+        user.schoolAdmins.length > 0
+      ) {
+        const adminProfile = user.schoolAdmins[0];
+        currentSchoolId = adminProfile.schoolId;
+        currentPublicId = adminProfile.publicId;
+        currentProfileId = adminProfile.id;
+      } else if (
+        user.role === 'TEACHER' &&
+        user.teacherProfiles &&
+        user.teacherProfiles.length > 0
+      ) {
+        const teacherProf = user.teacherProfiles[0];
+        currentSchoolId = teacherProf.schoolId;
+        currentPublicId = teacherProf.publicId;
+        currentProfileId = teacherProf.id;
+      }
+    } else {
+      // Public ID login - capture school context
+      if (schoolAdmin) {
+        currentSchoolId = schoolAdmin.schoolId;
+        currentPublicId = schoolAdmin.publicId;
+        currentProfileId = schoolAdmin.id;
+      } else if (teacherProfile) {
+        currentSchoolId = teacherProfile.schoolId;
+        currentPublicId = teacherProfile.publicId;
+        currentProfileId = teacherProfile.id;
+      } else if (user.role === 'STUDENT') {
+        if (user.studentProfile && user.studentProfile.enrollments.length > 0) {
+          const activeEnrollment = user.studentProfile.enrollments[0];
+          currentSchoolId = activeEnrollment.schoolId;
+          currentPublicId = user.studentProfile.publicId || null;
+        }
+      }
+    }
+
+    return {
+      user,
+      currentSchoolId,
+      currentPublicId,
+      currentProfileId,
+    };
+  }
+
+  /**
+   * Login - validates credentials and sends OTP
+   * This method ALWAYS requires OTP verification - no exceptions
+   */
+  async login(loginDto: LoginDto): Promise<LoginResponseDto> {
+    this.logger.log(`[AUTH] Login attempt for: ${loginDto.emailOrPublicId}`);
+    
+    try {
+      const { emailOrPublicId, password } = loginDto;
+
+      // Validate credentials
+      const { user } = await this.validateCredentials(emailOrPublicId, password);
+      this.logger.log(`[AUTH] Credentials validated for user: ${user.id}, role: ${user.role}`);
+
+      // Ensure user has an email (required for OTP)
+      if (!user.email) {
+        this.logger.error(`[AUTH] User ${user.id} has no email address`);
+        throw new BadRequestException(
+          'Email address is required for login. Please contact support.',
+        );
+      }
+
+      // Create OTP session and send email - THIS IS MANDATORY
+      this.logger.log(`[AUTH] Creating OTP session for user: ${user.id}, email: ${user.email}`);
+      try {
+        const sessionId = await this.otpService.createLoginSession(
+          user.id,
+          user.email,
+        );
+
+        this.logger.log(`[AUTH] OTP session created successfully. SessionId: ${sessionId.substring(0, 8)}...`);
+        
+        // ALWAYS return OTP response - never return tokens directly
+        return {
+          requiresOtp: true,
+          sessionId,
+          email: user.email,
+        };
+      } catch (otpError) {
+        this.logger.error(
+          '[AUTH] Failed to create OTP session:',
+          otpError instanceof Error ? otpError.stack : otpError,
+        );
+        // Re-throw with a clear message - DO NOT fall back to legacy login
+        if (otpError instanceof BadRequestException) {
+          throw otpError;
+        }
+        throw new BadRequestException(
+          `Failed to send OTP: ${otpError instanceof Error ? otpError.message : 'Unknown error'}. Please ensure the database is properly migrated and email service is configured.`,
+        );
+      }
+    } catch (error) {
+      // Log the full error for debugging
+      this.logger.error(
+        'AuthService.login error:',
+        error instanceof Error ? error.stack : error,
+      );
+      // If it's already a NestJS exception, re-throw it
+      if (
+        error instanceof UnauthorizedException ||
+        error instanceof BadRequestException
+      ) {
+        throw error;
+      }
+      // Handle Prisma errors with better messages
+      if (error instanceof Error) {
+        if (error.message.includes('Unknown field')) {
+          throw new BadRequestException(
+            'A system error occurred. Please contact support if this persists.',
+          );
+        }
+        throw new BadRequestException(
+          'Unable to complete login. Please check your credentials and try again.',
+        );
+      }
+      throw new BadRequestException('Login failed. Please try again later.');
+    }
+  }
+
+  /**
+   * Verify login OTP and complete authentication
+   */
+  async verifyLoginOtp(
+    verifyOtpDto: VerifyLoginOtpDto,
+  ): Promise<AuthTokensDto> {
+    try {
+      const { sessionId, code } = verifyOtpDto;
+
+      // Verify OTP
+      const userId = await this.otpService.verifyOtp(sessionId, code);
+
+      // Get user with all relations
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        include: {
+          studentProfile: {
+            include: {
+              enrollments: {
+                where: { isActive: true },
+                orderBy: { enrollmentDate: 'desc' },
+                take: 1,
+                include: { school: true },
+              },
+            },
+          },
+          parentProfile: true,
+          teacherProfiles: true,
+          schoolAdmins: true,
+        },
+      });
+
+      if (!user) {
+        throw new UnauthorizedException('User not found');
+      }
+
+      // Update last login
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { lastLoginAt: new Date() },
+      });
+
+      // Determine school context based on role
+      let currentSchoolId: string | null = null;
+      let currentPublicId: string | null = null;
+      let currentProfileId: string | null = null;
+
+      if (user.role === 'STUDENT') {
+        if (user.studentProfile && user.studentProfile.enrollments.length > 0) {
+          const activeEnrollment = user.studentProfile.enrollments[0];
+          currentSchoolId = activeEnrollment.schoolId;
+          currentPublicId = user.studentProfile.publicId || null;
+        }
+      } else if (
+        user.role === 'SCHOOL_ADMIN' &&
+        user.schoolAdmins &&
+        user.schoolAdmins.length > 0
+      ) {
+        const adminProfile = user.schoolAdmins[0];
+        currentSchoolId = adminProfile.schoolId;
+        currentPublicId = adminProfile.publicId;
+        currentProfileId = adminProfile.id;
+      } else if (
+        user.role === 'TEACHER' &&
+        user.teacherProfiles &&
+        user.teacherProfiles.length > 0
+      ) {
+        const teacherProf = user.teacherProfiles[0];
+        currentSchoolId = teacherProf.schoolId;
+        currentPublicId = teacherProf.publicId;
+        currentProfileId = teacherProf.id;
+      }
+
+      // Generate tokens with school context
+      const tokens = await this.generateTokens(
+        user.id,
+        user.role,
+        currentSchoolId,
+        currentPublicId,
+        currentProfileId,
+      );
+
+      return {
+        ...tokens,
+        user: {
+          id: user.id,
+          email: user.email,
+          phone: user.phone,
+          role: user.role,
+          accountStatus: user.accountStatus,
+          firstName: user.firstName || null,
+          lastName: user.lastName || null,
+          profileId: currentProfileId,
+          publicId: currentPublicId,
+          schoolId: currentSchoolId,
+        },
+      };
+    } catch (error) {
+      this.logger.error(
+        'AuthService.verifyLoginOtp error:',
+        error instanceof Error ? error.stack : error,
+      );
+      if (
+        error instanceof UnauthorizedException ||
+        error instanceof BadRequestException
+      ) {
+        throw error;
+      }
+      throw new BadRequestException('OTP verification failed');
+    }
+  }
+
+  /**
+   * Legacy login method - DEPRECATED and DISABLED
+   * @deprecated Use login() + verifyLoginOtp() instead
+   * This method is disabled to enforce OTP 2FA
+   */
+  async loginLegacy(loginDto: LoginDto): Promise<AuthTokensDto> {
+    this.logger.warn('loginLegacy called - this method is disabled. Use login() + verifyLoginOtp() instead.');
+    throw new BadRequestException(
+      'Legacy login is disabled. Please use the OTP login flow.',
+    );
     try {
       const { emailOrPublicId, password } = loginDto;
 
@@ -286,7 +660,7 @@ export class AuthService {
           phone: parent.phone,
           passwordHash: defaultPassword,
           accountStatus: 'ACTIVE',
-          role: 'PARENT',
+          role: 'STUDENT', // Changed from PARENT - PARENT role removed
         },
       });
 

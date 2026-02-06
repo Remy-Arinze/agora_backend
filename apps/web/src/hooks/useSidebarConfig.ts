@@ -145,17 +145,6 @@ export function useSidebarConfig(): {
       ];
     }
 
-    // Parent sidebar
-    if (role === 'PARENT') {
-      return [
-        {
-          items: [
-            { label: 'Transfers', href: '/dashboard/transfers', icon: ArrowRightLeft },
-          ],
-        },
-      ];
-    }
-
     return [];
   }, [user, currentType, terminology]);
 

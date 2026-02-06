@@ -11,7 +11,7 @@ function MainContent({ children }: { children: React.ReactNode }) {
   
   return (
     <main 
-      className={`flex-1 overflow-y-auto p-8 transition-all duration-300 ${
+      className={`flex-1 overflow-y-auto p-8 transition-all duration-300 bg-[#0f1419] dark:bg-[#0f1419] ${
         open ? 'md:ml-[250px]' : 'md:ml-[80px]'
       }`}
     >
@@ -22,7 +22,7 @@ function MainContent({ children }: { children: React.ReactNode }) {
 
 function DashboardContent({ children }: { children: React.ReactNode }) {
   return (
-    <div className="h-screen bg-[var(--light-bg)] dark:bg-dark-bg transition-colors duration-200 flex flex-col overflow-hidden">
+    <div className="h-screen bg-[#0f1419] dark:bg-[#0f1419] transition-colors duration-200 flex flex-col overflow-hidden">
       <Navbar />
       <div className="flex flex-1 overflow-hidden relative pt-16">
         <SidebarNew />

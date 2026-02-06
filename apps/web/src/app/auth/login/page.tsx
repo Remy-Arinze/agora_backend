@@ -12,6 +12,7 @@ import { Alert } from '@/components/ui/Alert';
 import Link from 'next/link';
 import Image from 'next/image';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
+import { OtpVerification } from '@/components/auth/OtpVerification';
 
 function LoginContent() {
   const router = useRouter();
@@ -20,6 +21,9 @@ function LoginContent() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
+  const [requiresOtp, setRequiresOtp] = useState(false);
+  const [otpSessionId, setOtpSessionId] = useState<string | null>(null);
+  const [otpEmail, setOtpEmail] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     emailOrPublicId: '',
     password: '',
@@ -56,6 +60,16 @@ function LoginContent() {
 
       const data = await response.json();
 
+      // Debug logging
+      console.log('Login response:', {
+        ok: response.ok,
+        status: response.status,
+        data,
+        requiresOtp: data?.data?.requiresOtp,
+        sessionId: data?.data?.sessionId,
+        email: data?.data?.email,
+      });
+
       if (!response.ok) {
         // Handle validation errors from backend
         const errorMessage = data.message || 
@@ -67,6 +81,87 @@ function LoginContent() {
 
       // Backend returns ResponseDto<T> structure: { success, message, data, timestamp }
       if (data.success && data.data) {
+        // Check if OTP is required
+        if (data.data.requiresOtp && data.data.sessionId) {
+          console.log('OTP required, showing OTP screen');
+          setRequiresOtp(true);
+          setOtpSessionId(data.data.sessionId);
+          setOtpEmail(data.data.email || formData.emailOrPublicId);
+          setError(null);
+          return;
+        }
+
+        // Legacy flow (should not happen with new implementation)
+        if (data.data.accessToken && data.data.user) {
+          console.warn('Legacy login flow detected - OTP was bypassed!', data.data);
+          dispatch(
+            setCredentials({
+              accessToken: data.data.accessToken,
+              refreshToken: data.data.refreshToken,
+              user: data.data.user,
+            })
+          );
+
+          if (data.data.user.schoolId) {
+            localStorage.setItem('currentSchoolId', data.data.user.schoolId);
+          }
+
+          const roleMap: Record<string, string> = {
+            SUPER_ADMIN: '/dashboard/super-admin',
+            SCHOOL_ADMIN: '/dashboard/school',
+            TEACHER: '/dashboard/teacher',
+            STUDENT: '/dashboard/student',
+          };
+
+          router.push(roleMap[data.data.user.role] || '/dashboard');
+        } else {
+          console.error('Unexpected login response structure:', data);
+          setError('Unexpected response from server. Please try again.');
+        }
+      } else {
+        console.error('Login response missing success or data:', data);
+        setError('Invalid response from server. Please try again.');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleOtpVerify = async (code: string) => {
+    if (!otpSessionId) return;
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/auth/verify-login-otp`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          credentials: 'include',
+          body: JSON.stringify({
+            sessionId: otpSessionId,
+            code,
+          }),
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        const errorMessage = data.message || 
+          (data.error && typeof data.error === 'string' ? data.error : null) ||
+          (data.error && Array.isArray(data.error) ? data.error.join(', ') : null) ||
+          'OTP verification failed';
+        throw new Error(errorMessage);
+      }
+
+      if (data.success && data.data) {
         dispatch(
           setCredentials({
             accessToken: data.data.accessToken,
@@ -75,12 +170,10 @@ function LoginContent() {
           })
         );
 
-        // Store schoolId in localStorage if available (for SCHOOL_ADMIN, TEACHER, STUDENT)
         if (data.data.user.schoolId) {
           localStorage.setItem('currentSchoolId', data.data.user.schoolId);
         }
 
-        // Redirect based on role
         const roleMap: Record<string, string> = {
           SUPER_ADMIN: '/dashboard/super-admin',
           SCHOOL_ADMIN: '/dashboard/school',
@@ -91,10 +184,58 @@ function LoginContent() {
         router.push(roleMap[data.data.user.role] || '/dashboard');
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
+      setError(err instanceof Error ? err.message : 'OTP verification failed');
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleResendOtp = async () => {
+    // Re-submit login to get new OTP
+    if (!formData.emailOrPublicId || !formData.password) return;
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/auth/login`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          credentials: 'include',
+          body: JSON.stringify({
+            emailOrPublicId: formData.emailOrPublicId,
+            password: formData.password,
+          }),
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to resend OTP');
+      }
+
+      if (data.success && data.data && data.data.sessionId) {
+        setOtpSessionId(data.data.sessionId);
+        setOtpEmail(data.data.email || formData.emailOrPublicId);
+        setError(null);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to resend OTP');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleBackToLogin = () => {
+    setRequiresOtp(false);
+    setOtpSessionId(null);
+    setOtpEmail(null);
+    setError(null);
   };
 
   return (
@@ -113,8 +254,28 @@ function LoginContent() {
             />
           </Link>
         </div>
-        
-        <Card>
+
+        {requiresOtp && otpSessionId && otpEmail ? (
+          <>
+            <OtpVerification
+              email={otpEmail}
+              sessionId={otpSessionId}
+              onVerify={handleOtpVerify}
+              onResend={handleResendOtp}
+              isLoading={isLoading}
+              error={error}
+            />
+            <div className="mt-4 text-center">
+              <button
+                onClick={handleBackToLogin}
+                className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+              >
+                ← Back to login
+              </button>
+            </div>
+          </>
+        ) : (
+          <Card>
           <CardHeader>
             <CardTitle className="text-2xl text-center">Sign in to your account</CardTitle>
           </CardHeader>
@@ -208,6 +369,7 @@ function LoginContent() {
           </form>
         </CardContent>
       </Card>
+        )}
       </div>
     </div>
   );

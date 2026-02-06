@@ -41,6 +41,49 @@ export class VerifyOtpDto {
   code: string;
 }
 
+export class VerifyLoginOtpDto {
+  @ApiProperty({
+    description: 'Session ID returned from login endpoint',
+    example: 'abc123def456...',
+  })
+  @IsString()
+  sessionId: string;
+
+  @ApiProperty({
+    description: 'OTP code sent via email (6 digits)',
+    example: '123456',
+    minLength: 6,
+    maxLength: 6,
+  })
+  @IsString()
+  @MinLength(6, { message: 'OTP code must be exactly 6 digits' })
+  @MaxLength(6, { message: 'OTP code must be exactly 6 digits' })
+  @Matches(/^\d{6}$/, { message: 'OTP code must contain only digits' })
+  code: string;
+}
+
+export class LoginResponseDto {
+  @ApiProperty({
+    description: 'Whether OTP verification is required',
+    example: true,
+  })
+  requiresOtp: boolean;
+
+  @ApiProperty({
+    description: 'Session ID for OTP verification (only if requiresOtp is true)',
+    example: 'abc123def456...',
+    required: false,
+  })
+  sessionId?: string;
+
+  @ApiProperty({
+    description: 'User email (for display purposes)',
+    example: 'user@example.com',
+    required: false,
+  })
+  email?: string;
+}
+
 export class AuthTokensDto {
   @ApiProperty({
     description: 'JWT access token',
@@ -63,6 +106,8 @@ export class AuthTokensDto {
     phone: string | null;
     role: string;
     accountStatus: string;
+    firstName?: string | null;
+    lastName?: string | null;
     profileId?: string | null;
     publicId?: string | null;
     schoolId?: string | null; // ✅ Current school context

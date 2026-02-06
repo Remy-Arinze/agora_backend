@@ -89,7 +89,7 @@ export const DesktopSidebar = ({
   return (
     <motion.div
       className={cn(
-        "h-screen px-4 py-4 hidden md:flex md:flex-col dark:bg-dark-surface border-r border-light-border dark:border-dark-border w-[250px] flex-shrink-0 fixed left-0 top-0 z-20",
+        "h-screen px-4 py-4 hidden md:flex md:flex-col bg-[#0f1419] dark:bg-[#0f1419] border-r border-[#1a1f2e] dark:border-[#1a1f2e] w-[250px] flex-shrink-0 fixed left-0 top-0 z-20",
         className
       )}
       animate={{
@@ -115,7 +115,7 @@ export const MobileSidebar = ({
     <>
       <div
         className={cn(
-          "h-10 px-4 py-4 flex flex-row md:hidden items-center justify-between bg-light-card dark:bg-dark-surface border-b border-light-border dark:border-dark-border w-full"
+          "h-10 px-4 py-4 flex flex-row md:hidden items-center justify-between bg-light-card dark:bg-[#151a23] border-b border-light-border dark:border-[#1a1f2e] w-full"
         )}
         {...props}
       >
@@ -136,7 +136,7 @@ export const MobileSidebar = ({
                 ease: "easeInOut",
               }}
               className={cn(
-                "fixed h-full w-full inset-0 bg-light-card dark:bg-dark-bg p-10 z-[100] flex flex-col justify-between",
+                "fixed h-full w-full inset-0 bg-light-card dark:bg-[#0f1419] p-10 z-[100] flex flex-col justify-between",
                 className
               )}
             >
@@ -184,8 +184,8 @@ export const SidebarLink = ({
       className={cn(
         "flex items-center justify-start gap-2 group/sidebar py-2 px-3 rounded-lg transition-colors",
         isActive
-          ? "bg-blue-600 dark:bg-blue-500 text-white dark:text-white"
-          : "text-light-text-secondary dark:text-dark-text-secondary hover:bg-gray-100 dark:hover:bg-[var(--dark-hover)]",
+          ? "bg-[#2490FD] dark:bg-[#2490FD] text-white dark:text-white"
+          : "text-[#9ca3af] dark:text-[#9ca3af] hover:bg-[#1f2937] dark:hover:bg-[#1f2937]",
         className
       )}
       {...props}

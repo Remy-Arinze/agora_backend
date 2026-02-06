@@ -106,7 +106,7 @@ export class PermissionGuard implements CanActivate {
       return true;
     }
 
-    // For other roles (e.g., PARENT), deny by default
+    // For other roles, deny by default
     throw new ForbiddenException('Permission denied');
   }
 }

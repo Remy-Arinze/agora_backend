@@ -1307,4 +1307,84 @@ export class EmailService {
       throw error;
     }
   }
+
+  /**
+   * Send login OTP email
+   */
+  async sendLoginOtpEmail(
+    email: string,
+    name: string,
+    otpCode: string,
+  ): Promise<void> {
+    const fromEmail =
+      this.configService.get<string>('MAIL_FROM') ||
+      this.configService.get<string>('SMTP_FROM') ||
+      this.configService.get<string>('MAIL_USER') ||
+      this.configService.get<string>('SMTP_USER');
+
+    if (!fromEmail) {
+      this.logger.error(
+        'No FROM email address configured. Check MAIL_FROM or SMTP_FROM environment variable.',
+      );
+      throw new Error('Email configuration error: No FROM address');
+    }
+
+    const mailOptions = {
+      from: fromEmail,
+      to: email,
+      subject: 'Your Agora Login Verification Code',
+      html: `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Login Verification Code</title>
+        </head>
+        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <div style="background-color: #3b82f6; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
+            <h1 style="color: white; margin: 0;">Agora Education Platform</h1>
+          </div>
+          <div style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px;">
+            <h2 style="color: #1f2937; margin-top: 0;">Login Verification Code</h2>
+            <p>Hello ${name},</p>
+            <p>You've requested to log in to your Agora account. Use the verification code below to complete your login:</p>
+            
+            <div style="background-color: #eff6ff; border: 2px solid #3b82f6; padding: 20px; margin: 30px 0; border-radius: 8px; text-align: center;">
+              <p style="margin: 0; color: #1e40af; font-size: 14px; font-weight: 600; letter-spacing: 2px; font-size: 32px; font-family: 'Courier New', monospace;">
+                ${otpCode}
+              </p>
+            </div>
+
+            <p style="color: #6b7280; font-size: 14px;">
+              <strong>Important:</strong> This code will expire in 10 minutes. Do not share this code with anyone.
+            </p>
+            
+            <div style="background-color: #fef3c7; border-left: 4px solid #f59e0b; padding: 15px; margin: 20px 0; border-radius: 4px;">
+              <p style="margin: 0; color: #92400e; font-size: 14px;">
+                <strong>⚠️ Security Notice:</strong> If you didn't request this code, please ignore this email or contact support immediately.
+              </p>
+            </div>
+            
+            <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
+            <p style="color: #9ca3af; font-size: 12px; text-align: center; margin: 0;">
+              © ${new Date().getFullYear()} Agora Education Platform. All rights reserved.
+            </p>
+          </div>
+        </body>
+        </html>
+      `,
+    };
+
+    try {
+      this.logger.log(`Attempting to send login OTP email to ${email}`);
+      const result = await this.transporter.sendMail(mailOptions);
+      this.logger.log(
+        `Login OTP email sent successfully to ${email}. MessageId: ${result.messageId}`,
+      );
+    } catch (error: any) {
+      this.logger.error(`Failed to send login OTP email to ${email}:`, error);
+      throw error;
+    }
+  }
 }

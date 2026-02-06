@@ -4,6 +4,7 @@ import { PassportModule } from '@nestjs/passport';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
+import { OtpService } from './otp.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { ShadowUserGuard } from './guards/shadow-user.guard';
 import { DatabaseModule } from '../database/database.module';
@@ -34,7 +35,7 @@ import { EmailModule } from '../email/email.module';
     EmailModule,
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, ShadowUserGuard],
-  exports: [AuthService, JwtStrategy, PassportModule, ShadowUserGuard],
+  providers: [AuthService, OtpService, JwtStrategy, ShadowUserGuard],
+  exports: [AuthService, OtpService, JwtStrategy, PassportModule, ShadowUserGuard],
 })
 export class AuthModule {}
