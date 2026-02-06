@@ -3,7 +3,6 @@
 import { useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/Button';
-import { ThemeToggle } from '@/components/ui/ThemeToggle';
 import { SchoolTypeSelector } from './SchoolTypeSelector';
 import { useSidebar } from '@/components/ui/sidebar';
 import Link from 'next/link';
@@ -98,7 +97,6 @@ export function Navbar() {
                 <User className="h-5 w-5" />
               </Link>
             )}
-            <ThemeToggle />
             {!user && (
               <div className="flex items-center space-x-2">
                 <Link href="/auth/login">

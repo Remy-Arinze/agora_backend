@@ -155,12 +155,40 @@ export interface ResponseDto<T> {
   timestamp?: string;
 }
 
+// Pagination types
+export interface PaginationParams {
+  page?: number;
+  limit?: number;
+  search?: string;
+  filter?: 'all' | 'active' | 'inactive';
+}
+
+export interface PaginatedResponse<T> {
+  data: T[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+  hasNext: boolean;
+  hasPrev: boolean;
+}
+
 // RTK Query endpoints for schools
 export const schoolsApi = apiSlice.injectEndpoints({
   endpoints: (builder) => ({
-    // Get all schools
-    getSchools: builder.query<ResponseDto<School[]>, void>({
-      query: () => '/schools',
+    // Get all schools with pagination
+    getSchools: builder.query<ResponseDto<PaginatedResponse<School>>, PaginationParams | void>({
+      query: (params) => {
+        const searchParams = new URLSearchParams();
+        if (params) {
+          if (params.page) searchParams.append('page', params.page.toString());
+          if (params.limit) searchParams.append('limit', params.limit.toString());
+          if (params.search) searchParams.append('search', params.search);
+          if (params.filter) searchParams.append('filter', params.filter);
+        }
+        const queryString = searchParams.toString();
+        return `/schools${queryString ? `?${queryString}` : ''}`;
+      },
       providesTags: ['School'],
     }),
 

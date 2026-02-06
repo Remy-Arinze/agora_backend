@@ -31,13 +31,28 @@ import {
 export type { School, SchoolAdmin, Teacher, CreateSchoolDto, AddAdminDto, AddTeacherDto, UpdateAdminDto, UpdateTeacherDto, UpdatePrincipalDto };
 
 /**
- * Hook for managing schools list
+ * Hook for managing schools list with pagination
  */
-export function useSchools() {
-  const { data, isLoading, error, refetch } = useGetSchoolsQuery();
+export function useSchools(params?: {
+  page?: number;
+  limit?: number;
+  search?: string;
+  filter?: 'all' | 'active' | 'inactive';
+}) {
+  const { data, isLoading, error, refetch } = useGetSchoolsQuery(params);
 
   return {
-    schools: data?.data || [],
+    schools: data?.data?.data || [],
+    pagination: data?.data
+      ? {
+          total: data.data.total,
+          page: data.data.page,
+          limit: data.data.limit,
+          totalPages: data.data.totalPages,
+          hasNext: data.data.hasNext,
+          hasPrev: data.data.hasPrev,
+        }
+      : null,
     isLoading,
     error,
     refetch,

@@ -1329,10 +1329,38 @@ export class EmailService {
       throw new Error('Email configuration error: No FROM address');
     }
 
+    // Get display name and reply-to from environment
+    const fromName = this.configService.get<string>('MAIL_FROM_NAME') || 'Agora Education Platform';
+    const replyTo = this.configService.get<string>('MAIL_REPLY_TO') || fromEmail;
+
+    // Generate unique Message-ID
+    const messageId = `<${Date.now()}-${Math.random().toString(36).substring(2, 15)}@agora-schools.com>`;
+
+    // Plain text version for better deliverability
+    const textVersion = `Hello ${name},
+
+You've requested to log in to your Agora account. Use the verification code below to complete your login:
+
+${otpCode}
+
+This code will expire in 10 minutes. Do not share this code with anyone.
+
+If you didn't request this code, please ignore this email or contact support immediately.
+
+© ${new Date().getFullYear()} Agora Education Platform. All rights reserved.`;
+
     const mailOptions = {
-      from: fromEmail,
+      from: `"${fromName}" <${fromEmail}>`, // Proper From format with display name
+      replyTo: replyTo, // Reply-To header
       to: email,
       subject: 'Your Agora Login Verification Code',
+      headers: {
+        'Message-ID': messageId,
+        'X-Mailer': 'Agora Education Platform',
+        'X-Priority': '1', // High priority for OTP emails
+        'List-Unsubscribe': `<mailto:${replyTo}?subject=unsubscribe>`, // Helps with spam filtering
+        'Precedence': 'bulk', // Indicates automated email
+      },
       html: `
         <!DOCTYPE html>
         <html>
@@ -1351,7 +1379,7 @@ export class EmailService {
             <p>You've requested to log in to your Agora account. Use the verification code below to complete your login:</p>
             
             <div style="background-color: #eff6ff; border: 2px solid #3b82f6; padding: 20px; margin: 30px 0; border-radius: 8px; text-align: center;">
-              <p style="margin: 0; color: #1e40af; font-size: 14px; font-weight: 600; letter-spacing: 2px; font-size: 32px; font-family: 'Courier New', monospace;">
+              <p style="margin: 0; color: #1e40af; font-size: 32px; font-weight: 600; letter-spacing: 4px; font-family: 'Courier New', monospace;">
                 ${otpCode}
               </p>
             </div>
@@ -1362,7 +1390,7 @@ export class EmailService {
             
             <div style="background-color: #fef3c7; border-left: 4px solid #f59e0b; padding: 15px; margin: 20px 0; border-radius: 4px;">
               <p style="margin: 0; color: #92400e; font-size: 14px;">
-                <strong>⚠️ Security Notice:</strong> If you didn't request this code, please ignore this email or contact support immediately.
+                <strong>Security Notice:</strong> If you didn't request this code, please ignore this email or contact support immediately.
               </p>
             </div>
             
@@ -1374,6 +1402,7 @@ export class EmailService {
         </body>
         </html>
       `,
+      text: textVersion, // Plain text version for better deliverability
     };
 
     try {

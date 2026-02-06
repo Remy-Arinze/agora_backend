@@ -2,38 +2,8 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Acumin Pro Font Family */
-@font-face {
-  font-family: 'Acumin Pro';
-  src: url('/assets/fonts/Acumin-RPro.otf') format('opentype');
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: 'Acumin Pro';
-  src: url('/assets/fonts/Acumin-ItPro.otf') format('opentype');
-  font-weight: 400;
-  font-style: italic;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: 'Acumin Pro';
-  src: url('/assets/fonts/Acumin-BdPro.otf') format('opentype');
-  font-weight: 700;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: 'Acumin Pro';
-  src: url('/assets/fonts/Acumin-BdItPro.otf') format('opentype');
-  font-weight: 700;
-  font-style: italic;
-  font-display: swap;
-}
+/* Montserrat Font Family - Loaded via Google Fonts in layout.tsx */
+/* Using Next.js font optimization, no need for @font-face declarations */
 
 @layer base {
   :root {
@@ -42,6 +12,22 @@
     --agora-success: #36FE96; /* Success/green color */
     --agora-text: #02173D; /* Primary text color */
     --agora-accent: #FF532A; /* High-impact orange accent */
+    
+    /* Typography Sizes - Consistent across app */
+    --text-page-title: 1.5rem; /* 32px - Page titles (h1) */
+    --text-page-subtitle: 1rem; /* 16px - Page subtitles */
+    --text-section-title: 1.25rem; /* 20px - Section titles (h2) */
+    --text-card-title: 1.125rem; /* 18px - Card titles */
+    --text-body: 0.875rem; /* 14px - Body text */
+    --text-small: 0.75rem; /* 12px - Small text */
+    --text-stat-value: 1.75rem; /* 28px - Stat card values */
+    --text-stat-label: 0.875rem; /* 14px - Stat card labels */
+    
+    /* Component Sizes */
+    --stat-card-padding: .375rem; /* 6px - Stat card padding */
+    --stat-icon-size: 1.25rem; /* 20px - Stat card icon size */
+    --card-padding: 1.25rem; /* 20px - Standard card padding */
+    --card-padding-large: 1.5rem; /* 24px - Large card padding */
     
     /* Light Mode Colors - using hex for better compatibility */
     --light-bg: #e4edff; /* gray-200 */
@@ -69,9 +55,9 @@
 
   body {
     /* Background is handled by layout.tsx div, not body */
-    color: var(--light-text-primary);
+    color: var(--dark-text-primary);
     transition: color 200ms;
-    font-family: var(--font-acumin-pro), system-ui, sans-serif;
+    font-family: var(--font-montserrat), system-ui, sans-serif;
   }
 
   .dark body {

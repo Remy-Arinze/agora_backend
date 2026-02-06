@@ -1,10 +1,11 @@
-import { Controller, Get, Post, Delete, Patch, Body, Param, UseGuards } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { Controller, Get, Post, Delete, Patch, Body, Param, UseGuards, Query } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { SuperAdminSchoolsService } from './super-admin-schools.service';
 import { CreateSchoolDto } from '../dto/create-school.dto';
 import { UpdateSchoolDto } from '../dto/update-school.dto';
 import { SchoolDto } from '../dto/school.dto';
 import { ResponseDto } from '../../common/dto/response.dto';
+import { PaginationDto, PaginatedResponseDto } from '../../common/dto/pagination.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -31,14 +32,18 @@ export class SuperAdminSchoolsController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'Get all schools (Super Admin only)' })
+  @ApiOperation({ summary: 'Get all schools with pagination (Super Admin only)' })
+  @ApiQuery({ name: 'page', required: false, type: Number, description: 'Page number (default: 1)' })
+  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Items per page (default: 10, max: 100)' })
+  @ApiQuery({ name: 'search', required: false, type: String, description: 'Search by name, subdomain, city, or state' })
+  @ApiQuery({ name: 'filter', required: false, enum: ['all', 'active', 'inactive'], description: 'Filter by status (default: all)' })
   @ApiResponse({
     status: 200,
-    description: 'List of schools',
-    type: ResponseDto<[SchoolDto]>,
+    description: 'Paginated list of schools',
+    type: ResponseDto<PaginatedResponseDto<SchoolDto>>,
   })
-  async findAll(): Promise<ResponseDto<SchoolDto[]>> {
-    const data = await this.superAdminSchoolsService.findAll();
+  async findAll(@Query() query: PaginationDto): Promise<ResponseDto<PaginatedResponseDto<SchoolDto>>> {
+    const data = await this.superAdminSchoolsService.findAll(query);
     return ResponseDto.ok(data, 'Schools retrieved successfully');
   }
 

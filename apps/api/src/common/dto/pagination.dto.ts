@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsOptional, IsInt, Min, Max } from 'class-validator';
 import { Type } from 'class-transformer';
+import { IsOptional, IsInt, Min, Max } from 'class-validator';
 
 export class PaginationDto {
   @ApiProperty({
@@ -17,9 +17,10 @@ export class PaginationDto {
 
   @ApiProperty({
     description: 'Number of items per page',
-    example: 20,
+    example: 10,
     required: false,
-    default: 20,
+    default: 10,
+    minimum: 1,
     maximum: 100,
   })
   @IsOptional()
@@ -27,12 +28,30 @@ export class PaginationDto {
   @IsInt()
   @Min(1)
   @Max(100)
-  limit?: number = 20;
+  limit?: number = 10;
+
+  @ApiProperty({
+    description: 'Search query (searches in name, subdomain, city, state)',
+    example: 'test',
+    required: false,
+  })
+  @IsOptional()
+  search?: string;
+
+  @ApiProperty({
+    description: 'Filter by status',
+    example: 'active',
+    enum: ['all', 'active', 'inactive'],
+    required: false,
+    default: 'all',
+  })
+  @IsOptional()
+  filter?: 'all' | 'active' | 'inactive' = 'all';
 }
 
 export class PaginatedResponseDto<T> {
   @ApiProperty({ description: 'Array of items' })
-  items: T[];
+  data: T[];
 
   @ApiProperty({ description: 'Total number of items' })
   total: number;
@@ -46,11 +65,9 @@ export class PaginatedResponseDto<T> {
   @ApiProperty({ description: 'Total number of pages' })
   totalPages: number;
 
-  constructor(items: T[], total: number, page: number, limit: number) {
-    this.items = items;
-    this.total = total;
-    this.page = page;
-    this.limit = limit;
-    this.totalPages = Math.ceil(total / limit);
-  }
+  @ApiProperty({ description: 'Whether there is a next page' })
+  hasNext: boolean;
+
+  @ApiProperty({ description: 'Whether there is a previous page' })
+  hasPrev: boolean;
 }

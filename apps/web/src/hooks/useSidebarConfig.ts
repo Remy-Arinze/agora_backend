@@ -22,6 +22,7 @@ import {
   FileText,
   CreditCard,
   Library,
+  User,
   LucideIcon,
 } from 'lucide-react';
 
@@ -68,6 +69,7 @@ export function useSidebarConfig(): {
             { label: 'Schools', href: '/dashboard/super-admin/schools', icon: Building2 },
             { label: 'Analytics', href: '/dashboard/super-admin/analytics', icon: BarChart3 },
             { label: 'Plugins', href: '/dashboard/super-admin/plugins', icon: Puzzle },
+            { label: 'Profile', href: '/dashboard/profile', icon: User },
           ],
         },
       ];
@@ -107,7 +109,8 @@ export function useSidebarConfig(): {
         { label: 'Calendar', href: '/dashboard/school/calendar', icon: Calendar, permission: PermissionResource.CALENDAR },
         { label: 'Admissions', href: '/dashboard/school/admissions', icon: UserPlus, permission: PermissionResource.ADMISSIONS },
         { label: 'Transfers', href: '/dashboard/school/transfers', icon: ArrowRightLeft, permission: PermissionResource.ADMISSIONS }, // Transfers use same permission as admissions
-        { label: 'Subscription', href: '/dashboard/school/subscription', icon: CreditCard, permission: PermissionResource.SUBSCRIPTIONS }
+        { label: 'Subscription', href: '/dashboard/school/subscription', icon: CreditCard, permission: PermissionResource.SUBSCRIPTIONS },
+        { label: 'Profile', href: '/dashboard/profile', icon: User }
       );
 
       return [{ items: baseItems }];

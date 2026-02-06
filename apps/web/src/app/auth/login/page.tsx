@@ -359,12 +359,6 @@ function LoginContent() {
                   Forgot your password?
                 </Link>
               </p>
-              <p className="text-light-text-secondary dark:text-dark-text-secondary">
-                Need to claim your account?{' '}
-                <Link href="/auth/verify-otp" className="text-blue-600 dark:text-blue-400 hover:underline">
-                  Verify with OTP
-                </Link>
-              </p>
             </div>
           </form>
         </CardContent>

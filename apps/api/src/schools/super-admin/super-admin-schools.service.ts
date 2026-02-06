@@ -229,10 +229,54 @@ export class SuperAdminSchoolsService {
   }
 
   /**
-   * Get all schools
+   * Get all schools with pagination, search, and filtering
    */
-  async findAll(): Promise<SchoolDto[]> {
+  async findAll(
+    pagination?: {
+      page?: number;
+      limit?: number;
+      search?: string;
+      filter?: 'all' | 'active' | 'inactive';
+    },
+  ): Promise<{
+    data: SchoolDto[];
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+    hasNext: boolean;
+    hasPrev: boolean;
+  }> {
+    const page = pagination?.page || 1;
+    const limit = pagination?.limit || 10;
+    const skip = (page - 1) * limit;
+    const search = pagination?.search?.trim();
+    const filter = pagination?.filter || 'all';
+
+    // Build where clause for search and filter
+    const where: any = {};
+
+    // Search filter
+    if (search) {
+      where.OR = [
+        { name: { contains: search, mode: 'insensitive' } },
+        { subdomain: { contains: search, mode: 'insensitive' } },
+        { city: { contains: search, mode: 'insensitive' } },
+        { state: { contains: search, mode: 'insensitive' } },
+      ];
+    }
+
+    // Status filter
+    if (filter !== 'all') {
+      where.isActive = filter === 'active';
+    }
+
+    // Get total count for pagination
+    const total = await this.prisma.school.count({ where });
+
+    // Get paginated schools
     const schools = await this.prisma.school.findMany({
+      where,
       include: {
         admins: {
           include: { user: true },
@@ -244,9 +288,21 @@ export class SuperAdminSchoolsService {
         },
       },
       orderBy: { createdAt: 'desc' },
+      skip,
+      take: limit,
     });
 
-    return this.schoolMapper.toDtoArray(schools);
+    const totalPages = Math.ceil(total / limit);
+
+    return {
+      data: this.schoolMapper.toDtoArray(schools),
+      total,
+      page,
+      limit,
+      totalPages,
+      hasNext: page < totalPages,
+      hasPrev: page > 1,
+    };
   }
 
   /**

@@ -1,34 +1,15 @@
 import type { Metadata } from 'next';
-import localFont from 'next/font/local';
+import { Montserrat } from 'next/font/google';
 import './globals.css';
 import StoreProvider from '@/lib/store/StoreProvider';
 import { ThemeProvider } from '@/contexts/ThemeContext';
 import { Toaster } from 'react-hot-toast';
 
-const acuminPro = localFont({
-  src: [
-    {
-      path: '../../public/assets/fonts/Acumin-RPro.otf',
-      weight: '400',
-      style: 'normal',
-    },
-    {
-      path: '../../public/assets/fonts/Acumin-ItPro.otf',
-      weight: '400',
-      style: 'italic',
-    },
-    {
-      path: '../../public/assets/fonts/Acumin-BdPro.otf',
-      weight: '700',
-      style: 'normal',
-    },
-    {
-      path: '../../public/assets/fonts/Acumin-BdItPro.otf',
-      weight: '700',
-      style: 'italic',
-    },
-  ],
-  variable: '--font-acumin-pro',
+const montserrat = Montserrat({
+  subsets: ['latin'],
+  weight: ['100', '200', '300', '400', '500', '600', '700', '800', '900'],
+  style: ['normal', 'italic'],
+  variable: '--font-montserrat',
   display: 'swap',
 });
 
@@ -97,7 +78,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning className="dark">
       <head>
         {/* Organization Schema */}
         <script
@@ -136,7 +117,7 @@ export default function RootLayout({
           }}
         />
       </head>
-      <body className={acuminPro.variable}>
+      <body className={montserrat.variable}>
         <ThemeProvider>
           <StoreProvider>
             {children}
@@ -145,8 +126,8 @@ export default function RootLayout({
               toastOptions={{
                 duration: 4000,
                 style: {
-                  background: 'var(--light-card)',
-                  color: 'var(--light-text-primary)',
+                  background: 'var(--dark-surface)',
+                  color: 'var(--dark-text-primary)',
                 },
                 success: {
                   iconTheme: {

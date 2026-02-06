@@ -168,41 +168,75 @@ export const SidebarLink = ({
 }) => {
   const { open, animate } = useSidebar();
 
-  // Clone icon and apply white color when active
+  // Clone icon and apply accent blue color when active, gray when inactive
   const iconWithColor = isActive
     ? React.cloneElement(link.icon as React.ReactElement, {
       className: cn(
         (link.icon as React.ReactElement)?.props?.className,
-        "text-white"
+        "text-[#2490FD]"
       ),
     })
-    : link.icon;
+    : React.cloneElement(link.icon as React.ReactElement, {
+      className: cn(
+        (link.icon as React.ReactElement)?.props?.className,
+        "text-[#9ca3af] group-hover/sidebar:text-white"
+      ),
+    });
 
   return (
     <Link
       href={link.href}
       className={cn(
-        "flex items-center justify-start gap-2 group/sidebar py-2 px-3 rounded-lg transition-colors",
+        "flex items-center justify-between gap-2 group/sidebar py-2 px-3 rounded-lg transition-colors relative",
+        // No background for active, just highlighted icon and white text
         isActive
-          ? "bg-[#2490FD] dark:bg-[#2490FD] text-white dark:text-white"
+          ? "text-white dark:text-white"
           : "text-[#9ca3af] dark:text-[#9ca3af] hover:bg-[#1f2937] dark:hover:bg-[#1f2937]",
         className
       )}
       {...props}
     >
-      {iconWithColor}
-      <motion.span
-        animate={{
-          display: animate ? (open ? "inline-block" : "none") : "inline-block",
-          opacity: animate ? (open ? 1 : 0) : 1,
-        }}
-        className={cn(
-          "text-sm group-hover/sidebar:translate-x-1 transition duration-150 whitespace-pre inline-block !p-0 !m-0",
-          isActive && "text-white"
-        )}
-      >
-        {link.label}
-      </motion.span>
+      <div className="flex items-center gap-2">
+        {iconWithColor}
+        <motion.span
+          animate={{
+            display: animate ? (open ? "inline-block" : "none") : "inline-block",
+            opacity: animate ? (open ? 1 : 0) : 1,
+          }}
+          className={cn(
+            "text-sm group-hover/sidebar:translate-x-1 transition duration-150 whitespace-pre inline-block !p-0 !m-0",
+            isActive ? "text-white" : "text-[#9ca3af] group-hover/sidebar:text-white"
+          )}
+        >
+          {link.label}
+        </motion.span>
+      </div>
+      {/* Right arrow indicator for active link */}
+      {isActive && (
+        <motion.div
+          animate={{
+            display: animate ? (open ? "inline-block" : "none") : "inline-block",
+            opacity: animate ? (open ? 1 : 0) : 1,
+          }}
+          className="text-white"
+        >
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 16 16"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="M6 12L10 8L6 4"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </motion.div>
+      )}
     </Link>
   );
 };

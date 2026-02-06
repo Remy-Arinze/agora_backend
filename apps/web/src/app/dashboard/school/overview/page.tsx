@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import Link from 'next/link';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
@@ -19,6 +19,7 @@ import { PermissionResource, PermissionType } from '@/hooks/usePermissions';
 import toast from 'react-hot-toast';
 import { useSchoolType } from '@/hooks/useSchoolType';
 import { getTerminology } from '@/lib/utils/terminology';
+import { useAuth } from '@/hooks/useAuth';
 
 // Helper function to format numbers with commas
 const formatNumber = (num: number): string => {
@@ -43,6 +44,7 @@ const getChangeType = (change: number): 'positive' | 'negative' | 'neutral' => {
 
 export default function AdminOverviewPage() {
   const router = useRouter();
+  const { user } = useAuth();
   
   // Get school type and terminology
   const { currentType } = useSchoolType();
@@ -51,10 +53,32 @@ export default function AdminOverviewPage() {
     currentType || undefined
   );
   const terminology = getTerminology(currentType);
-
+  
   // Get school and active session
   const { data: schoolResponse, refetch: refetchSchool } = useGetMySchoolQuery();
   const school = schoolResponse?.data;
+  
+  // Get user's name for welcome message
+  // If principal, use the principal's name from school admins
+  // Otherwise, use the logged-in user's first name
+  const userName = useMemo(() => {
+    // Check if current admin is a principal
+    const isPrincipal = school?.currentAdmin?.role?.toLowerCase() === 'principal';
+    
+    if (isPrincipal && school?.admins && school?.currentAdmin?.id) {
+      // Find the principal from the admins array (match by ID to ensure we get the correct one)
+      const principal = school.admins.find(
+        (admin) => admin.id === school.currentAdmin?.id
+      );
+      if (principal) {
+        // Construct name from firstName and lastName
+        const principalName = `${principal.firstName} ${principal.lastName}`.trim();
+        return principalName || principal.firstName || 'there';
+      }
+    }
+    // Fallback to user's first name
+    return user?.firstName || 'there';
+  }, [school?.currentAdmin?.role, school?.currentAdmin?.id, school?.admins, user?.firstName]);
   const schoolId = school?.id;
   const [uploadSchoolLogo, { isLoading: isUploadingLogo }] = useUploadSchoolLogoMutation();
   const [selectedLogoFile, setSelectedLogoFile] = useState<File | null>(null);
@@ -172,7 +196,6 @@ export default function AdminOverviewPage() {
   };
 
   const buttonConfig = getButtonConfig();
-  const ButtonIcon = buttonConfig.icon;
 
   // Extract dashboard data
   const dashboard = data?.data;
@@ -190,72 +213,87 @@ export default function AdminOverviewPage() {
           animate={{ opacity: 1, y: 0 }}
           className="mb-8"
         >
-          <div className="flex items-start justify-between">
+          <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
             <div>
-              <h1 className="text-4xl font-bold text-light-text-primary dark:text-dark-text-primary mb-2">
-                Overview
+              <h1 className="font-bold text-light-text-primary dark:text-white mb-2" style={{ fontSize: 'var(--text-page-title)' }}>
+                Welcome back, {userName}
               </h1>
-              
+              <p className="text-light-text-secondary dark:text-[#9ca3af]" style={{ fontSize: 'var(--text-page-subtitle)' }}>
+                Here&apos;s your school&apos;s performance
+              </p>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               {/* School Logo Upload - Passport Size */}
-              <div className="flex items-center gap-2">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/jpeg,image/png,image/gif,image/webp"
-                  className="hidden"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) {
-                      handleFileSelect(file);
-                    }
-                  }}
-                />
-                {/* Show preview if file is selected, otherwise show current logo or upload placeholder */}
-                {logoPreview ? (
-                  <div className="relative group">
-                    <img
-                      src={logoPreview}
-                      alt="Logo Preview"
-                      className="object-cover border-2 border-blue-500 dark:border-blue-400 rounded shadow-sm"
-                      style={{ width: '60px', height: '60px' }}
-                    />
-                    <div className="absolute -top-1 -right-1 bg-blue-500 text-white rounded-full w-4 h-4 flex items-center justify-center text-xs">
-                      !
-                    </div>
-                  </div>
-                ) : school?.logo ? (
-                  <div className="relative group">
-                    <img
-                      src={school.logo}
-                      alt="School Logo"
-                      className="object-cover border-2 border-light-border dark:border-dark-border rounded shadow-sm"
-                      style={{ width: '60px', height: '60px' }}
-                    />
-                    <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-50 rounded transition-opacity flex items-center justify-center opacity-0 group-hover:opacity-100">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          fileInputRef.current?.click();
-                        }}
-                        className="text-white text-xs"
-                      >
-                        Change
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
-                  <div
-                    className="border-2 border-dashed border-light-border dark:border-dark-border rounded cursor-pointer hover:border-blue-300 dark:hover:border-blue-700 transition-colors flex items-center justify-center bg-gray-50 dark:bg-gray-800"
-                    style={{ width: '60px', height: '60px' }}
-                    onClick={() => {
-                      fileInputRef.current?.click();
+              <div className="flex flex-col items-center gap-1">
+                <div className="flex items-center gap-2">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/gif,image/webp"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        handleFileSelect(file);
+                      }
                     }}
-                  >
-                    <Upload className="h-4 w-4 text-light-text-muted dark:text-dark-text-muted" />
-                  </div>
+                  />
+                  {/* Show preview if file is selected, otherwise show current logo or upload placeholder */}
+                  {logoPreview ? (
+                    <div className="relative group">
+                      <img
+                        src={logoPreview}
+                        alt="Logo Preview"
+                        className="object-cover border-2 border-blue-500 dark:border-blue-400 rounded shadow-sm"
+                        style={{ width: '60px', height: '60px' }}
+                      />
+                      <div className="absolute -top-1 -right-1 bg-blue-500 text-white rounded-full w-4 h-4 flex items-center justify-center text-xs">
+                        !
+                      </div>
+                    </div>
+                  ) : school?.logo ? (
+                    <div className="relative group">
+                      <img
+                        src={school.logo}
+                        alt="School Logo"
+                        className="object-cover border-2 border-light-border dark:border-dark-border rounded shadow-sm"
+                        style={{ width: '60px', height: '60px' }}
+                      />
+                      <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-50 rounded transition-opacity flex items-center justify-center opacity-0 group-hover:opacity-100">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            fileInputRef.current?.click();
+                          }}
+                          className="text-white text-xs"
+                        >
+                          Change
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div
+                      className="border-2 border-dashed border-light-border dark:border-dark-border rounded cursor-pointer hover:border-blue-300 dark:hover:border-blue-700 transition-colors flex flex-col items-center justify-center bg-gray-50 dark:bg-gray-800 group relative"
+                      style={{ width: '60px', height: '60px' }}
+                      onClick={() => {
+                        fileInputRef.current?.click();
+                      }}
+                      title="Click to upload school logo"
+                    >
+                      <Upload className="h-4 w-4 text-light-text-muted dark:text-dark-text-muted group-hover:text-blue-500 dark:group-hover:text-blue-400 transition-colors" />
+                      {/* Tooltip */}
+                      <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 bg-gray-900 dark:bg-gray-800 text-white text-xs px-2 py-1 rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
+                        Click to upload logo
+                        <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-gray-900 dark:bg-gray-800 rotate-45"></div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                {!school?.logo && !logoPreview && (
+                  <p className="text-xs text-light-text-muted dark:text-dark-text-muted text-center whitespace-nowrap">
+                    Upload logo
+                  </p>
                 )}
                 {selectedLogoFile && (
                   <div className="flex items-center gap-2">
@@ -314,7 +352,7 @@ export default function AdminOverviewPage() {
                   size="sm"
                   onClick={buttonConfig.onClick}
                   disabled={isEndingTerm}
-                  className="flex items-center gap-2"
+                  className="flex items-center gap-2 whitespace-nowrap flex-shrink-0 px-2 py-2 min-w-fit"
                 >
                   {isEndingTerm ? (
                     <>
@@ -323,7 +361,6 @@ export default function AdminOverviewPage() {
                     </>
                   ) : (
                     <>
-                      <ButtonIcon className="h-4 w-4" />
                       {buttonConfig.text}
                     </>
                   )}
@@ -346,7 +383,8 @@ export default function AdminOverviewPage() {
               <motion.div
                 initial={{ opacity: 0, y: -10 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="mt-4 flex items-center gap-2 text-sm"
+                className="flex items-center gap-x-2 text-sm"
+                style={{ marginTop: '50px' }}
               >
                 <Calendar className="h-4 w-4 text-light-text-secondary dark:text-dark-text-secondary flex-shrink-0" />
                 <span className="text-light-text-secondary dark:text-dark-text-secondary">
@@ -424,7 +462,7 @@ export default function AdminOverviewPage() {
                 change={formatChange(stats.studentsChange)}
                 changeType={getChangeType(stats.studentsChange)}
                 icon={
-                  <GraduationCap className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+                  <GraduationCap className="text-blue-600 dark:text-blue-400" style={{ width: 'var(--stat-icon-size)', height: 'var(--stat-icon-size)' }} />
                 }
               />
           <StatCard
@@ -433,7 +471,7 @@ export default function AdminOverviewPage() {
             change={formatChange(stats.teachersChange)}
             changeType={getChangeType(stats.teachersChange)}
             icon={
-              <Users className="w-6 h-6 text-green-600 dark:text-green-400" />
+              <Users className="text-green-600 dark:text-green-400" style={{ width: 'var(--stat-icon-size)', height: 'var(--stat-icon-size)' }} />
             }
           />
           <StatCard
@@ -442,7 +480,7 @@ export default function AdminOverviewPage() {
             change={formatChange(stats.coursesChange)}
             changeType={getChangeType(stats.coursesChange)}
             icon={
-              <BookOpen className="w-6 h-6 text-purple-600 dark:text-purple-400" />
+              <BookOpen className="text-purple-600 dark:text-purple-400" style={{ width: 'var(--stat-icon-size)', height: 'var(--stat-icon-size)' }} />
             }
           />
               <StatCard
@@ -451,7 +489,7 @@ export default function AdminOverviewPage() {
                 change={formatChange(stats.pendingAdmissionsChange, false)}
                 changeType={getChangeType(stats.pendingAdmissionsChange)}
                 icon={
-                  <UserPlus className="w-6 h-6 text-orange-600 dark:text-orange-400" />
+                  <UserPlus className="text-orange-600 dark:text-orange-400" style={{ width: 'var(--stat-icon-size)', height: 'var(--stat-icon-size)' }} />
                 }
               />
             </div>

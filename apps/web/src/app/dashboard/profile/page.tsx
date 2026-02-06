@@ -22,8 +22,12 @@ import {
   TrendingUp,
   Users,
   Edit,
+  Building2,
+  Globe,
 } from 'lucide-react';
 import { RootState } from '@/lib/store/store';
+import { useGetMySchoolQuery } from '@/lib/store/api/schoolAdminApi';
+import { cn } from '@/lib/utils';
 
 // Mock data - will be replaced with API calls later
 const teachingHistory = [
@@ -133,6 +137,13 @@ function ProfilePageContent() {
   const router = useRouter();
   const [expandedSchool, setExpandedSchool] = useState<string | null>(null);
   const [expandedYear, setExpandedYear] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'personal' | 'school'>('personal');
+  
+  // Fetch school data for school admins
+  const { data: schoolResponse } = useGetMySchoolQuery(undefined, {
+    skip: user?.role !== 'SCHOOL_ADMIN',
+  });
+  const school = schoolResponse?.data;
 
   // Mock teacher data - in real app, fetch based on user.id
   const teacherData = {
@@ -198,11 +209,50 @@ function ProfilePageContent() {
           </div>
         </motion.div>
 
+        {/* Tabs for School Admin */}
+        {user?.role === 'SCHOOL_ADMIN' && (
+          <div className="mb-6 border-b border-light-border dark:border-[#1a1f2e]">
+            <div className="flex gap-1">
+              <button
+                onClick={() => setActiveTab('personal')}
+                className={cn(
+                  'px-4 py-2 text-sm font-medium transition-colors border-b-2',
+                  activeTab === 'personal'
+                    ? 'border-[#2490FD] text-light-text-primary dark:text-white'
+                    : 'border-transparent text-light-text-secondary dark:text-[#9ca3af] hover:text-light-text-primary dark:hover:text-white'
+                )}
+              >
+                <div className="flex items-center gap-2">
+                  <User className="h-4 w-4" />
+                  Personal Information
+                </div>
+              </button>
+              <button
+                onClick={() => setActiveTab('school')}
+                className={cn(
+                  'px-4 py-2 text-sm font-medium transition-colors border-b-2',
+                  activeTab === 'school'
+                    ? 'border-[#2490FD] text-light-text-primary dark:text-white'
+                    : 'border-transparent text-light-text-secondary dark:text-[#9ca3af] hover:text-light-text-primary dark:hover:text-white'
+                )}
+              >
+                <div className="flex items-center gap-2">
+                  <Building2 className="h-4 w-4" />
+                  School Details
+                </div>
+              </button>
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Profile Information */}
           <div className="lg:col-span-2 space-y-6">
-            {/* Personal Information */}
-            <Card>
+            {/* Personal Information Tab */}
+            {(user?.role !== 'SCHOOL_ADMIN' || activeTab === 'personal') && (
+              <>
+                {/* Personal Information */}
+                <Card>
               <CardHeader>
                 <div className="flex items-center gap-3">
                   <User className="h-6 w-6 text-blue-600 dark:text-blue-400" />
@@ -536,6 +586,198 @@ function ProfilePageContent() {
                         </div>
                       );
                     })}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+              </>
+            )}
+
+            {/* School Details Tab - Only for School Admin */}
+            {user?.role === 'SCHOOL_ADMIN' && activeTab === 'school' && school && (
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center gap-3">
+                    <Building2 className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+                    <CardTitle className="text-xl font-bold text-light-text-primary dark:text-white">
+                      School Information
+                    </CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-sm font-medium text-light-text-secondary dark:text-[#9ca3af]">
+                        School Name
+                      </label>
+                      <p className="text-base text-light-text-primary dark:text-white mt-1">
+                        {school.name || 'N/A'}
+                      </p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-light-text-secondary dark:text-[#9ca3af] flex items-center gap-1">
+                        <Globe className="h-4 w-4" />
+                        Subdomain
+                      </label>
+                      <p className="text-base text-light-text-primary dark:text-white mt-1">
+                        {school.subdomain ? `${school.subdomain}.agora.com` : 'N/A'}
+                      </p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-light-text-secondary dark:text-[#9ca3af] flex items-center gap-1">
+                        <MapPin className="h-4 w-4" />
+                        State
+                      </label>
+                      <p className="text-base text-light-text-primary dark:text-white mt-1">
+                        {school.state || 'N/A'}
+                      </p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-light-text-secondary dark:text-[#9ca3af] flex items-center gap-1">
+                        <MapPin className="h-4 w-4" />
+                        City
+                      </label>
+                      <p className="text-base text-light-text-primary dark:text-white mt-1">
+                        {school.city || 'N/A'}
+                      </p>
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="text-sm font-medium text-light-text-secondary dark:text-[#9ca3af] flex items-center gap-1">
+                        <MapPin className="h-4 w-4" />
+                        Address
+                      </label>
+                      <p className="text-base text-light-text-primary dark:text-white mt-1">
+                        {school.address || 'N/A'}
+                      </p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-light-text-secondary dark:text-[#9ca3af] flex items-center gap-1">
+                        <Phone className="h-4 w-4" />
+                        Phone
+                      </label>
+                      <p className="text-base text-light-text-primary dark:text-white mt-1">
+                        {school.phone || 'N/A'}
+                      </p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-light-text-secondary dark:text-[#9ca3af] flex items-center gap-1">
+                        <Mail className="h-4 w-4" />
+                        Email
+                      </label>
+                      <p className="text-base text-light-text-primary dark:text-white mt-1">
+                        {school.email || 'N/A'}
+                      </p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-light-text-secondary dark:text-[#9ca3af]">
+                        Country
+                      </label>
+                      <p className="text-base text-light-text-primary dark:text-white mt-1">
+                        {school.country || 'N/A'}
+                      </p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-light-text-secondary dark:text-[#9ca3af]">
+                        Status
+                      </label>
+                      <p className="text-base mt-1">
+                        <span className={cn(
+                          'px-2.5 py-0.5 rounded-full text-xs font-medium',
+                          school.isActive
+                            ? 'bg-green-500/20 text-green-400'
+                            : 'bg-gray-500/20 text-gray-400'
+                        )}>
+                          {school.isActive ? 'Active' : 'Inactive'}
+                        </span>
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* School Levels */}
+                  <div className="mt-6 pt-6 border-t border-light-border dark:border-[#1a1f2e]">
+                    <h3 className="text-lg font-semibold text-light-text-primary dark:text-white mb-4 flex items-center gap-2">
+                      <GraduationCap className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                      School Levels
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="p-4 bg-light-surface dark:bg-[#1f2937] rounded-lg border border-light-border dark:border-[#1a1f2e]">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium text-light-text-secondary dark:text-[#9ca3af]">
+                            Primary
+                          </span>
+                          <span className={cn(
+                            'px-2 py-1 rounded text-xs font-medium',
+                            school.hasPrimary
+                              ? 'bg-green-500/20 text-green-400'
+                              : 'bg-gray-500/20 text-gray-400'
+                          )}>
+                            {school.hasPrimary ? 'Enabled' : 'Disabled'}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="p-4 bg-light-surface dark:bg-[#1f2937] rounded-lg border border-light-border dark:border-[#1a1f2e]">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium text-light-text-secondary dark:text-[#9ca3af]">
+                            Secondary
+                          </span>
+                          <span className={cn(
+                            'px-2 py-1 rounded text-xs font-medium',
+                            school.hasSecondary
+                              ? 'bg-green-500/20 text-green-400'
+                              : 'bg-gray-500/20 text-gray-400'
+                          )}>
+                            {school.hasSecondary ? 'Enabled' : 'Disabled'}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="p-4 bg-light-surface dark:bg-[#1f2937] rounded-lg border border-light-border dark:border-[#1a1f2e]">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium text-light-text-secondary dark:text-[#9ca3af]">
+                            Tertiary
+                          </span>
+                          <span className={cn(
+                            'px-2 py-1 rounded text-xs font-medium',
+                            school.hasTertiary
+                              ? 'bg-green-500/20 text-green-400'
+                              : 'bg-gray-500/20 text-gray-400'
+                          )}>
+                            {school.hasTertiary ? 'Enabled' : 'Disabled'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* School Statistics */}
+                  <div className="mt-6 pt-6 border-t border-light-border dark:border-[#1a1f2e]">
+                    <h3 className="text-lg font-semibold text-light-text-primary dark:text-white mb-4 flex items-center gap-2">
+                      <TrendingUp className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                      Statistics
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="p-4 bg-light-surface dark:bg-[#1f2937] rounded-lg border border-light-border dark:border-[#1a1f2e]">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Users className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                          <span className="text-sm font-medium text-light-text-secondary dark:text-[#9ca3af]">
+                            Teachers
+                          </span>
+                        </div>
+                        <p className="text-2xl font-bold text-light-text-primary dark:text-white">
+                          {school.teachersCount || 0}
+                        </p>
+                      </div>
+                      <div className="p-4 bg-light-surface dark:bg-[#1f2937] rounded-lg border border-light-border dark:border-[#1a1f2e]">
+                        <div className="flex items-center gap-2 mb-2">
+                          <GraduationCap className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                          <span className="text-sm font-medium text-light-text-secondary dark:text-[#9ca3af]">
+                            Students
+                          </span>
+                        </div>
+                        <p className="text-2xl font-bold text-light-text-primary dark:text-white">
+                          {school.studentsCount || 0}
+                        </p>
+                      </div>
+                    </div>
                   </div>
                 </CardContent>
               </Card>

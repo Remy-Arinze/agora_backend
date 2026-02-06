@@ -7,10 +7,18 @@ const config: Config = {
     './src/components/**/*.{js,ts,jsx,tsx,mdx}',
     './src/app/**/*.{js,ts,jsx,tsx,mdx}',
   ],
+  safelist: [
+    // Ensure column span classes are always generated
+    'lg:col-span-3',
+    'lg:col-span-4',
+    'lg:col-span-5',
+    'lg:col-span-6',
+    'lg:col-span-7',
+  ],
   theme: {
     extend: {
       fontFamily: {
-        sans: ['var(--font-acumin-pro)', 'system-ui', 'sans-serif'],
+        sans: ['var(--font-montserrat)', 'system-ui', 'sans-serif'],
       },
       colors: {
         // Agora Brand Colors
@@ -64,6 +72,14 @@ const config: Config = {
       },
     },
   },
+  safelist: [
+    // Ensure column span classes are always generated
+    'lg:col-span-3',
+    'lg:col-span-4',
+    'lg:col-span-5',
+    'lg:col-span-6',
+    'lg:col-span-7',
+  ],
   plugins: [],
 };
 export default config;

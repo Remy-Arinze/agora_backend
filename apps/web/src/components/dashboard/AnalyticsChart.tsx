@@ -242,7 +242,7 @@ export function AnalyticsChart({
         )}
       </CardHeader>
       <CardContent>
-        <ResponsiveContainer width="100%" height={300}>
+        <ResponsiveContainer width="100%" height={220}>
           {renderChart()}
         </ResponsiveContainer>
       </CardContent>

@@ -157,6 +157,8 @@ export default function HomeContent() {
           {/* Gradient Overlay - More sophisticated */}
           <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-black/80 to-black/100" />
           <div className="absolute inset-0 bg-gradient-to-r from-blue-900/30 to-indigo-900/30" />
+          {/* Bottom gradient blend to next section - longer and stronger */}
+          <div className="absolute bottom-0 left-0 right-0 h-96 bg-gradient-to-b from-transparent via-[var(--dark-bg)]/30 to-[var(--dark-bg)]" />
         </div>
         
         {/* Floating Particles/Shapes for Depth */}
@@ -232,7 +234,7 @@ export default function HomeContent() {
       </section>
 
       {/* What is Agora Section */}
-      <section id="how-it-works" data-navbar-light="true" className="py-24 bg-[var(--light-bg)] dark:bg-[var(--dark-bg)] relative overflow-hidden">
+      <section id="how-it-works" data-navbar-light="true" className="py-24 bg-[var(--dark-bg)] relative overflow-hidden">
         {/* Decorative gradient elements */}
         <div className="absolute top-0 left-0 w-full h-full">
           <div className="absolute top-0 right-0 w-96 h-96 bg-blue-100/30 dark:bg-blue-900/20 rounded-full blur-3xl" />
@@ -255,10 +257,10 @@ export default function HomeContent() {
             transition={{ duration: 0.6 }}
             className="text-center mb-20"
           >
-            <h2 className="text-4xl md:text-5xl font-bold text-gray-900 dark:text-white mb-6">
+            <h2 className="text-3xl md:text-4xl font-bold text-white mb-6">
               A Borderless Academic Identity for Every Student
             </h2>
-            <p className="text-xl text-gray-600 dark:text-gray-300 max-w-4xl mx-auto leading-relaxed">
+            <p className="text-base md:text-lg text-gray-300 max-w-4xl mx-auto leading-relaxed">
               Agora transforms traditional, fragmented transcripts into a lifelong asset that follows the learner from their first day of primary school to university graduation.
               We turn static paper trails into a living, portable digital profile, ensuring achievements and certifications are never lost to bureaucracy or geography.
             </p>
@@ -267,7 +269,7 @@ export default function HomeContent() {
       </section>
 
       {/* Key Features Section */}
-      <section data-navbar-light="true" className="py-24 bg-[var(--light-bg)] dark:bg-[var(--dark-bg)]">
+      <section data-navbar-light="true" className="py-24 bg-[var(--dark-bg)]">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <motion.div
             initial={{ opacity: 0, y: 30 }}
@@ -276,10 +278,10 @@ export default function HomeContent() {
             transition={{ duration: 0.6 }}
             className="text-center mb-20"
           >
-            <h2 className="text-4xl md:text-5xl font-bold text-gray-900 dark:text-white mb-4">
+            <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
               Powerful Unified Management System
             </h2>
-            <p className="text-xl text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
+            <p className="text-base md:text-lg text-gray-300 max-w-2xl mx-auto">
               Everything schools need to digitize legacy records and verify student identities.
             </p>
           </motion.div>
@@ -300,10 +302,10 @@ export default function HomeContent() {
                 </div>
               </div>
               <div>
-                <h3 className="text-2xl font-bold text-agora-text dark:text-white mb-3">
+                <h3 className="text-xl font-bold text-white mb-3">
                   Multi-Tenant Architecture
                 </h3>
-                <p className="text-gray-600 dark:text-gray-400 leading-relaxed">
+                <p className="text-sm text-gray-400 leading-relaxed">
                   Each school gets a white-label portal with total isolation. Perfect for districts, networks, and government systems.
                 </p>
               </div>
@@ -324,10 +326,10 @@ export default function HomeContent() {
                 </div>
               </div>
               <div>
-                <h3 className="text-2xl font-bold text-agora-text dark:text-white mb-3">
+                <h3 className="text-xl font-bold text-white mb-3">
                   Secure & Immutable
                 </h3>
-                <p className="text-gray-600 dark:text-gray-400 leading-relaxed">
+                <p className="text-sm text-gray-400 leading-relaxed">
                   Once a parent claims a profile, it becomes locked. We prevent identity fraud and ensure academic trust.
                 </p>
               </div>
@@ -348,10 +350,10 @@ export default function HomeContent() {
                 </div>
               </div>
               <div>
-                <h3 className="text-2xl font-bold text-agora-text dark:text-white mb-3">
+                <h3 className="text-xl font-bold text-white mb-3">
                   Seamless Transfers
                 </h3>
-                <p className="text-gray-600 dark:text-gray-400 leading-relaxed">
+                <p className="text-sm text-gray-400 leading-relaxed">
                   Move between schools with complete academic history. Debt checking ensures clean transfers for institutions.
                 </p>
               </div>
@@ -372,10 +374,10 @@ export default function HomeContent() {
                 </div>
               </div>
               <div>
-                <h3 className="text-2xl font-bold text-agora-text dark:text-white mb-3">
+                <h3 className="text-xl font-bold text-white mb-3">
                   Offline-First
                 </h3>
-                <p className="text-gray-600 dark:text-gray-400 leading-relaxed">
+                <p className="text-sm text-gray-400 leading-relaxed">
                   Works offline with local persistence. Perfect for areas with unreliable internet connectivity.
                 </p>
               </div>
@@ -385,7 +387,7 @@ export default function HomeContent() {
       </section>
 
       {/* Schools Using Agora Section */}
-      <section data-navbar-light="true" className="py-24 bg-[var(--light-bg)] dark:bg-dark-surface relative overflow-hidden">
+      <section data-navbar-light="true" className="py-24 bg-[var(--dark-bg)] relative overflow-hidden">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <motion.div
             initial={{ opacity: 0, y: 30 }}
@@ -394,13 +396,13 @@ export default function HomeContent() {
             transition={{ duration: 0.6 }}
             className="text-center mb-16"
           >
-            <span className="inline-block px-4 py-2 bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 rounded-full text-sm font-semibold mb-4">
+            <span className="inline-block px-4 py-2 bg-blue-900/50 text-blue-400 rounded-full text-xs font-semibold mb-4">
               Trusted Partners
             </span>
-            <h2 className="text-4xl md:text-5xl font-bold text-gray-900 dark:text-white mb-4">
+            <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
               Schools Using Agora
             </h2>
-            <p className="text-xl text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
+            <p className="text-base md:text-lg text-gray-300 max-w-2xl mx-auto">
               Join the growing network of forward-thinking institutions
             </p>
           </motion.div>
@@ -418,25 +420,13 @@ export default function HomeContent() {
               <div 
                 className="absolute left-0 top-0 bottom-0 w-32 z-10 pointer-events-none"
                 style={{
-                  background: 'linear-gradient(to right, var(--light-bg), transparent)',
+                  background: 'linear-gradient(to right, var(--dark-bg), transparent)',
                 }}
               />
               <div 
-                className="absolute right-0 top-0 bottom-0 w-32 z-10 pointer-events-none dark:hidden"
+                className="absolute right-0 top-0 bottom-0 w-32 z-10 pointer-events-none"
                 style={{
-                  background: 'linear-gradient(to left, var(--light-bg), transparent)',
-                }}
-              />
-              <div 
-                className="absolute right-0 top-0 bottom-0 w-32 z-10 pointer-events-none hidden dark:block"
-                style={{
-                  background: 'linear-gradient(to left, var(--dark-surface), transparent)',
-                }}
-              />
-              <div 
-                className="absolute left-0 top-0 bottom-0 w-32 z-10 pointer-events-none hidden dark:block"
-                style={{
-                  background: 'linear-gradient(to right, var(--dark-surface), transparent)',
+                  background: 'linear-gradient(to left, var(--dark-bg), transparent)',
                 }}
               />
               
@@ -512,25 +502,13 @@ export default function HomeContent() {
               <div 
                 className="absolute left-0 top-0 bottom-0 w-32 z-10 pointer-events-none"
                 style={{
-                  background: 'linear-gradient(to right, var(--light-bg), transparent)',
+                  background: 'linear-gradient(to right, var(--dark-bg), transparent)',
                 }}
               />
               <div 
-                className="absolute right-0 top-0 bottom-0 w-32 z-10 pointer-events-none dark:hidden"
+                className="absolute right-0 top-0 bottom-0 w-32 z-10 pointer-events-none"
                 style={{
-                  background: 'linear-gradient(to left, var(--light-bg), transparent)',
-                }}
-              />
-              <div 
-                className="absolute right-0 top-0 bottom-0 w-32 z-10 pointer-events-none hidden dark:block"
-                style={{
-                  background: 'linear-gradient(to left, var(--dark-surface), transparent)',
-                }}
-              />
-              <div 
-                className="absolute left-0 top-0 bottom-0 w-32 z-10 pointer-events-none hidden dark:block"
-                style={{
-                  background: 'linear-gradient(to right, var(--dark-surface), transparent)',
+                  background: 'linear-gradient(to left, var(--dark-bg), transparent)',
                 }}
               />
               
@@ -604,7 +582,7 @@ export default function HomeContent() {
       </section>
 
       {/* CTA Section */}
-      <section className="py-24 bg-agora-text relative overflow-hidden">
+      <section className="py-24 bg-[var(--dark-bg)] relative overflow-hidden">
         {/* Animated background elements */}
         <div className="absolute inset-0">
           <div className="absolute top-0 left-0 w-full h-full opacity-10">
@@ -620,10 +598,10 @@ export default function HomeContent() {
             viewport={{ once: true, margin: "-100px" }}
             transition={{ duration: 0.8 }}
           >
-            <h2 className="text-4xl md:text-5xl lg:text-6xl font-bold text-agora-blue mb-6 leading-tight">
+            <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold text-agora-blue mb-6 leading-tight">
               Ready to Transform Education in Africa?
             </h2>
-            <p className="text-xl text-agora-blue/80 mb-12 max-w-3xl mx-auto leading-relaxed">
+            <p className="text-base md:text-lg text-agora-blue/80 mb-12 max-w-3xl mx-auto leading-relaxed">
               Join schools, parents, and students building the future of
               digital education identity.
             </p>
@@ -632,7 +610,7 @@ export default function HomeContent() {
       </section>
 
       {/* Footer */}
-      <footer className="bg-agora-text text-gray-400 py-16 border-t border-white/5">
+      <footer className="bg-[var(--dark-bg)] text-gray-400 py-16 border-t border-white/5">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-12">
             <div className="col-span-1 md:col-span-1">
@@ -643,34 +621,34 @@ export default function HomeContent() {
                 height={38}
                 className="h-8 w-auto mb-6 opacity-90"
               />
-              <p className="text-sm leading-relaxed text-gray-500">
+              <p className="text-xs leading-relaxed text-gray-500">
                 The Chain-of-Trust Registry for the African education ecosystem. Securing academic identities forever.
               </p>
             </div>
             <div>
-              <h4 className="text-agora-blue font-semibold mb-4">Product</h4>
-              <ul className="space-y-2 text-gray-400">
+              <h4 className="text-agora-blue font-semibold mb-4 text-sm">Product</h4>
+              <ul className="space-y-2 text-gray-400 text-sm">
                 <li><Link href="#how-it-works" className="hover:text-white">Features</Link></li>
                 <li><Link href="/dashboard" className="hover:text-white">Dashboard</Link></li>
               </ul>
             </div>
             <div>
-              <h4 className="text-agora-blue font-semibold mb-4">Resources</h4>
-              <ul className="space-y-2 text-gray-400">
+              <h4 className="text-agora-blue font-semibold mb-4 text-sm">Resources</h4>
+              <ul className="space-y-2 text-gray-400 text-sm">
                 <li><Link href="/auth/login" className="hover:text-white">Documentation</Link></li>
                 <li><Link href="/auth/login" className="hover:text-white">Support</Link></li>
               </ul>
             </div>
             <div>
-              <h4 className="text-agora-blue font-semibold mb-4">Legal</h4>
-              <ul className="space-y-2 text-gray-400">
+              <h4 className="text-agora-blue font-semibold mb-4 text-sm">Legal</h4>
+              <ul className="space-y-2 text-gray-400 text-sm">
                 <li><Link href="#" className="hover:text-white">Privacy</Link></li>
                 <li><Link href="#" className="hover:text-white">Terms</Link></li>
               </ul>
             </div>
           </div>
           <div className="mt-8 pt-8 border-t border-gray-800 text-center text-gray-400">
-            <p>&copy; 2025 Agora. All rights reserved.</p>
+            <p className="text-sm">&copy; 2025 Agora. All rights reserved.</p>
           </div>
         </div>
       </footer>
