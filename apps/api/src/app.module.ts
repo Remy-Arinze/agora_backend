@@ -1,4 +1,4 @@
-import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
+import { Module, NestModule, MiddlewareConsumer, RequestMethod } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
@@ -73,6 +73,19 @@ import { PaymentsModule } from './payments/payments.module';
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer.apply(TenantMiddleware).forRoutes('*');
+    consumer
+      .apply(TenantMiddleware)
+      .exclude(
+        { path: '/', method: RequestMethod.ALL },
+        { path: '/api', method: RequestMethod.ALL },
+        { path: '/public', method: RequestMethod.ALL },
+        { path: '/public/(.*)', method: RequestMethod.ALL },
+        { path: '/auth', method: RequestMethod.ALL },
+        { path: '/auth/(.*)', method: RequestMethod.ALL },
+        { path: '/swagger', method: RequestMethod.ALL },
+        { path: '/swagger/(.*)', method: RequestMethod.ALL },
+        { path: '/swagger-json', method: RequestMethod.ALL },
+      )
+      .forRoutes('*');
   }
 }

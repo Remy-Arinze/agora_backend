@@ -57,13 +57,14 @@ export class TenantMiddleware implements NestMiddleware {
 
     if (!tenantId) {
       // Try to resolve tenant from subdomain
-      // Skip tenant validation for localhost, 127.0.0.1, and common development hosts
+      // Skip tenant validation for localhost, 127.0.0.1, Azure domains, and common development hosts
       const isLocalhost =
         subdomain === 'localhost' ||
         subdomain === '127.0.0.1' ||
         host.includes('localhost') ||
         host.includes('127.0.0.1') ||
-        subdomain === 'api';
+        subdomain === 'api' ||
+        host.includes('azurewebsites.net'); // Skip Azure deployment domains
 
       if (isLocalhost) {
         // For localhost, allow requests without tenant (useful for development and super admin)

@@ -39,7 +39,7 @@ function LoginContent() {
 
     try {
       const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api'}/auth/login`,
+        `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/auth/login`,
         {
           method: 'POST',
           headers: {
