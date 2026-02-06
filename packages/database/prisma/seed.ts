@@ -85,7 +85,9 @@ async function main() {
   // Hash password for all test users
   const hashedPassword = await bcrypt.hash('Test1234!', 10);
 
-  // Create Super Admin
+  // ============================================
+  // STEP 1: Create Super Admin
+  // ============================================
   const superAdmin = await prisma.user.upsert({
     where: { email: 'superadmin@agora.com' },
     update: {},
@@ -99,107 +101,170 @@ async function main() {
   });
   console.log('✅ Created Super Admin:', superAdmin.email);
 
-  // Create School Admin
-  const schoolAdmin = await prisma.user.upsert({
-    where: { email: 'admin@school.com' },
-    update: {},
-    create: {
-      email: 'admin@school.com',
-      phone: '+2348000000002',
-      passwordHash: hashedPassword,
-      accountStatus: 'ACTIVE',
-      role: 'SCHOOL_ADMIN',
-    },
-  });
-
-  // Create a School
+  // ============================================
+  // STEP 2: Super Admin creates school WITH principal
+  // This simulates the super admin school creation flow
+  // ============================================
+  console.log('\n🏫 Creating school with principal (Super Admin flow)...');
+  
   const schoolId = generateSchoolId();
-  const school = await prisma.school.upsert({
-    where: { id: 'test-school-1' },
-    update: {
-      schoolId: schoolId,
-    },
-    create: {
-      id: 'test-school-1',
-      schoolId: schoolId,
-      name: 'Test Academy',
-      subdomain: 'testacademy',
-      address: '123 Education Street',
-      city: 'Lagos',
-      state: 'Lagos',
-      country: 'Nigeria',
-      phone: '+2348000000100',
-      email: 'info@testacademy.com',
-    },
-  });
-
-  // Link School Admin to School (as Principal)
   const principalId = generatePrincipalId();
-  const principalPublicId = generatePublicId(school.name);
-  await prisma.schoolAdmin.upsert({
-    where: {
-      userId_schoolId: {
-        userId: schoolAdmin.id,
-        schoolId: school.id,
-      },
-    },
-    update: {
-      adminId: principalId,
-      publicId: principalPublicId,
-      role: 'Principal',
-    },
-    create: {
-      adminId: principalId,
-      publicId: principalPublicId,
-      userId: schoolAdmin.id,
-      schoolId: school.id,
-      firstName: 'School',
-      lastName: 'Administrator',
-      phone: '+2348000000002',
-      email: 'admin@school.com',
-      role: 'Principal',
-    },
-  });
-  console.log('✅ Created School Admin:', schoolAdmin.email);
+  const principalPublicId = generatePublicId('Test Academy');
 
-  // Create Teacher
-  const teacher = await prisma.user.upsert({
-    where: { email: 'teacher@school.com' },
-    update: {},
-    create: {
-      email: 'teacher@school.com',
-      phone: '+2348000000003',
-      passwordHash: hashedPassword,
-      accountStatus: 'ACTIVE',
-      role: 'TEACHER',
-    },
+  // Create school and principal in transaction (like super admin service does)
+  const { school, principal } = await prisma.$transaction(async (tx) => {
+    // Create school
+    const newSchool = await tx.school.upsert({
+      where: { id: 'test-school-1' },
+      update: {
+        schoolId: schoolId,
+      },
+      create: {
+        id: 'test-school-1',
+        schoolId: schoolId,
+        name: 'Test Academy',
+        subdomain: 'testacademy',
+        address: '123 Education Street',
+        city: 'Lagos',
+        state: 'Lagos',
+        country: 'Nigeria',
+        phone: '+2348000000100',
+        email: 'info@testacademy.com',
+      },
+    });
+
+    // Create principal user (like super admin service does)
+    let principalUser = await tx.user.findUnique({
+      where: { email: 'admin@school.com' },
+    });
+
+    if (!principalUser) {
+      principalUser = await tx.user.create({
+        data: {
+          email: 'admin@school.com',
+          phone: '+2348000000002',
+          passwordHash: hashedPassword,
+          accountStatus: 'ACTIVE', // ACTIVE for seed, normally SHADOW
+          role: 'SCHOOL_ADMIN',
+        },
+      });
+    } else {
+      principalUser = await tx.user.update({
+        where: { id: principalUser.id },
+        data: {
+          passwordHash: hashedPassword,
+          accountStatus: 'ACTIVE',
+          role: 'SCHOOL_ADMIN',
+        },
+      });
+    }
+
+    // Create principal admin record
+    const principalAdmin = await tx.schoolAdmin.upsert({
+      where: {
+        userId_schoolId: {
+          userId: principalUser.id,
+          schoolId: newSchool.id,
+        },
+      },
+      update: {
+        adminId: principalId,
+        publicId: principalPublicId,
+        role: 'Principal',
+        firstName: 'School',
+        lastName: 'Administrator',
+        phone: '+2348000000002',
+        email: 'admin@school.com',
+      },
+      create: {
+        adminId: principalId,
+        publicId: principalPublicId,
+        userId: principalUser.id,
+        schoolId: newSchool.id,
+        firstName: 'School',
+        lastName: 'Administrator',
+        phone: '+2348000000002',
+        email: 'admin@school.com',
+        role: 'Principal',
+      },
+    });
+
+    return { school: newSchool, principal: principalAdmin };
   });
+
+  console.log('✅ Created School:', school.name);
+  console.log('✅ Created Principal:', principal.email);
+
+  // ============================================
+  // STEP 3: Principal adds teacher to school
+  // This simulates the principal adding teacher flow
+  // ============================================
+  console.log('\n👨‍🏫 Adding teacher to school (Principal flow)...');
 
   const teacherId = generateTeacherId();
   const teacherPublicId = generatePublicId(school.name);
-  await prisma.teacher.upsert({
-    where: {
-      userId_schoolId: {
-        userId: teacher.id,
-        schoolId: school.id,
+
+  // Create teacher (like teacher service does)
+  const { teacher, teacherProfile } = await prisma.$transaction(async (tx) => {
+    // Find or create teacher user
+    let teacherUser = await tx.user.findUnique({
+      where: { email: 'teacher@school.com' },
+    });
+
+    if (!teacherUser) {
+      teacherUser = await tx.user.create({
+        data: {
+          email: 'teacher@school.com',
+          phone: '+2348000000003',
+          passwordHash: hashedPassword,
+          accountStatus: 'ACTIVE', // ACTIVE for seed, normally SHADOW
+          role: 'TEACHER',
+        },
+      });
+    } else {
+      teacherUser = await tx.user.update({
+        where: { id: teacherUser.id },
+        data: {
+          passwordHash: hashedPassword,
+          accountStatus: 'ACTIVE',
+          role: 'TEACHER',
+        },
+      });
+    }
+
+    // Create teacher record
+    const newTeacher = await tx.teacher.upsert({
+      where: {
+        userId_schoolId: {
+          userId: teacherUser.id,
+          schoolId: school.id,
+        },
       },
-    },
-    update: {
-      teacherId: teacherId,
-      publicId: teacherPublicId,
-    },
-    create: {
-      teacherId: teacherId,
-      publicId: teacherPublicId,
-      userId: teacher.id,
-      schoolId: school.id,
-      firstName: 'John',
-      lastName: 'Teacher',
-      phone: '+2348000000003',
-      email: 'teacher@school.com',
-      employeeId: 'TCH-001',
-    },
+      update: {
+        teacherId: teacherId,
+        publicId: teacherPublicId,
+        firstName: 'John',
+        lastName: 'Teacher',
+        phone: '+2348000000003',
+        email: 'teacher@school.com',
+        employeeId: 'TCH-001',
+      },
+      create: {
+        teacherId: teacherId,
+        publicId: teacherPublicId,
+        userId: teacherUser.id,
+        schoolId: school.id,
+        firstName: 'John',
+        lastName: 'Teacher',
+        phone: '+2348000000003',
+        email: 'teacher@school.com',
+        employeeId: 'TCH-001',
+      },
+    });
+
+    return { teacher: teacherUser, teacherProfile: newTeacher };
   });
+
   console.log('✅ Created Teacher:', teacher.email);
 
   // Create Parent
@@ -278,40 +343,29 @@ async function main() {
   }
 
   // Create Enrollment
-  await prisma.enrollment.upsert({
+  const existingEnrollment = await prisma.enrollment.findFirst({
     where: {
-      studentId_schoolId_academicYear: {
-        studentId: studentProfile.id,
-        schoolId: school.id,
-        academicYear: '2024-2025',
-      },
-    },
-    update: {},
-    create: {
       studentId: studentProfile.id,
       schoolId: school.id,
-      classLevel: 'Grade 5',
-      academicYear: '2024-2025',
-      enrollmentDate: new Date(),
-      isActive: true,
+      termId: null,
     },
   });
+
+  if (!existingEnrollment) {
+    await prisma.enrollment.create({
+      data: {
+        studentId: studentProfile.id,
+        schoolId: school.id,
+        classLevel: 'Grade 5',
+        academicYear: '2024-2025',
+        enrollmentDate: new Date(),
+        isActive: true,
+      },
+    });
+  }
   console.log('✅ Created Student:', student.email);
 
-  // Fetch the created records to get public IDs for display
-  const createdPrincipal = await prisma.schoolAdmin.findFirst({
-    where: {
-      userId: schoolAdmin.id,
-      schoolId: school.id,
-    },
-  });
-  
-  const createdTeacher = await prisma.teacher.findFirst({
-    where: {
-      userId: teacher.id,
-      schoolId: school.id,
-    },
-  });
+  // Fetch the created records to get public IDs for display (already have them from transactions)
 
   // ============================================
   // SEED TOOLS
@@ -458,11 +512,11 @@ async function main() {
   console.log('  Password: Test1234!\n');
   console.log('School Admin (Principal):');
   console.log('  Email: admin@school.com (for email login - super admin only)');
-  console.log(`  Public ID: ${createdPrincipal?.publicId || 'N/A'} (for public ID login)`);
+  console.log(`  Public ID: ${principal.publicId} (for public ID login)`);
   console.log('  Password: Test1234!\n');
   console.log('Teacher:');
   console.log('  Email: teacher@school.com (for email login - super admin only)');
-  console.log(`  Public ID: ${createdTeacher?.publicId || 'N/A'} (for public ID login)`);
+  console.log(`  Public ID: ${teacherProfile.publicId} (for public ID login)`);
   console.log('  Password: Test1234!\n');
   console.log('Parent:');
   console.log('  Email: parent@example.com');

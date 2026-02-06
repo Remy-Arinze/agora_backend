@@ -5,6 +5,12 @@ import { LandingNavbar } from '@/components/layout/LandingNavbar';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import Link from 'next/link';
+import type { Metadata } from 'next';
+
+export const metadata: Metadata = {
+  title: 'Our Products | AI-Powered School Management Tools',
+  description: 'Explore Agora’s suite of products: Socrates AI, PrepMaster, GradeForge, RollCall, and Bursary Pro. Transforming every aspect of African school management.',
+};
 
 const fadeInUp = {
   initial: { opacity: 0, y: 40 },

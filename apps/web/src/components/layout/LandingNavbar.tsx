@@ -126,7 +126,7 @@ export function LandingNavbar() {
                         <Link href="/" className="flex items-center">
                             <Image
                                 src="/assets/logos/agora_main.png"
-                                alt="Agora"
+                                alt="Agora - Digital Education Identity Logo"
                                 width={120}
                                 height={32}
                                 className="h-8 w-auto flex-shrink-0 transition-opacity duration-300"

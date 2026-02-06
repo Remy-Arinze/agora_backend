@@ -4,6 +4,12 @@ import { motion } from 'framer-motion';
 import { LandingNavbar } from '@/components/layout/LandingNavbar';
 import { Card, CardContent } from '@/components/ui/Card';
 import Link from 'next/link';
+import type { Metadata } from 'next';
+
+export const metadata: Metadata = {
+  title: 'About Our Mission',
+  description: 'Learn about Agora’s mission to build the digital infrastructure for African education. We are creating a lifelong Chain-of-Trust for student records.',
+};
 
 const fadeInUp = {
   initial: { opacity: 0, y: 40 },
