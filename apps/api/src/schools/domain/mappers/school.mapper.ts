@@ -48,6 +48,8 @@ export class SchoolMapper {
           email: admin.email,
           phone: admin.phone,
           role: admin.role,
+          accountStatus: admin.user?.accountStatus || 'SHADOW',
+          userId: admin.userId,
           createdAt: admin.createdAt,
         })) || [],
       teachers:

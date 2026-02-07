@@ -11,6 +11,7 @@ import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { motion } from 'framer-motion';
 import { ArrowLeft, Building2, UserPlus, X, User, GraduationCap } from 'lucide-react';
 import { useCreateSchool, useUpdateSchool, useSchool } from '@/hooks/useSchools';
+import { createSchoolFormSchema } from '@/lib/validations/school-forms';
 
 type AdminRole = 'PRINCIPAL' | 'BURSAR' | 'GUIDANCE_COUNSELOR' | 'VICE_PRINCIPAL' | 'ADMINISTRATOR';
 
@@ -83,6 +84,7 @@ export default function AddSchoolPage() {
     role: 'ADMINISTRATOR',
   });
 
+  // Simple handlers - Zod will handle sanitization on submit
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
@@ -152,34 +154,26 @@ export default function AddSchoolPage() {
     e.preventDefault();
 
     try {
-      // Validate required fields
-      if (!formData.name || !formData.subdomain || !formData.address || !formData.city || !formData.state) {
-        toast.error('Please fill in all required school fields');
-        return;
-      }
-
-      // Validate school levels
-      if (!schoolLevels.primary && !schoolLevels.secondary && !schoolLevels.tertiary) {
-        toast.error('Please select at least one school level');
-        return;
-      }
-
-      // Prepare request body
-      const requestBody: any = {
-        name: formData.name,
-        subdomain: formData.subdomain.toLowerCase().replace(/\s+/g, '-'),
-        address: formData.address,
-        city: formData.city,
-        state: formData.state,
-        country: formData.country || 'Nigeria',
-        phone: formData.phone || undefined,
-        email: formData.email || undefined,
-        levels: {
-          primary: schoolLevels.primary,
-          secondary: schoolLevels.secondary,
-          tertiary: schoolLevels.tertiary,
-        },
+      // Prepare data for Zod validation
+      const formDataForValidation = {
+        ...formData,
+        levels: schoolLevels,
+        principal: principal.firstName && principal.lastName && principal.email && principal.phone ? principal : undefined,
+        admins: admins.length > 0 ? admins : undefined,
       };
+
+      // Validate and sanitize with Zod
+      const validationResult = createSchoolFormSchema.safeParse(formDataForValidation);
+
+      if (!validationResult.success) {
+        const issues = validationResult.error.issues;
+        const firstError = issues[0];
+        toast.error(firstError?.message || 'Please fill in all required fields correctly');
+        return;
+      }
+
+      // Get sanitized data from Zod
+      const requestBody = validationResult.data;
 
       if (isEditMode) {
         // Update school - don't include principal/admins in update
@@ -190,30 +184,10 @@ export default function AddSchoolPage() {
           return;
         }
         console.log('Updating school with ID:', school.id, 'URL param was:', schoolId);
-        await updateSchool(school.id, requestBody);
+        // Remove principal and admins for update
+        const { principal: _, admins: __, ...updateData } = requestBody;
+        await updateSchool(school.id, updateData);
       } else {
-        // Create school - include principal/admins
-        // Add principal if provided
-        if (principal.firstName && principal.lastName && principal.email && principal.phone) {
-          requestBody.principal = {
-            firstName: principal.firstName,
-            lastName: principal.lastName,
-            email: principal.email,
-            phone: principal.phone,
-          };
-        }
-
-        // Add admins if provided
-        if (admins.length > 0) {
-          requestBody.admins = admins.map(admin => ({
-            firstName: admin.firstName,
-            lastName: admin.lastName,
-            email: admin.email,
-            phone: admin.phone,
-            role: admin.role,
-          }));
-        }
-
         // Use the hook - it handles navigation and toast notifications
         await createSchool(requestBody);
       }
@@ -316,17 +290,17 @@ export default function AddSchoolPage() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-light-text-secondary dark:text-dark-text-secondary mb-2">
-                      Subdomain *
+                      Subdomain
+                      <span className="text-xs text-light-text-muted dark:text-dark-text-muted ml-1">(Optional - will be auto-generated if not provided)</span>
                     </label>
                     <Input
                       name="subdomain"
                       value={formData.subdomain}
                       onChange={handleChange}
-                      required
                       placeholder="schoolname"
                     />
                     <p className="text-xs text-light-text-muted dark:text-dark-text-muted mt-1">
-                      {formData.subdomain || 'schoolname'}.agora.com
+                      {formData.subdomain ? `${formData.subdomain}.agora.com` : 'Will be auto-generated from school name'}
                     </p>
                   </div>
                   <div className="md:col-span-2">
@@ -399,6 +373,9 @@ export default function AddSchoolPage() {
                       onChange={handleChange}
                       placeholder="info@school.com"
                     />
+                    <p className="text-xs text-light-text-muted dark:text-dark-text-muted mt-1.5">
+                      The school contact email will receive a &quot;School Owner&quot; account with full administrative access and a password setup email
+                    </p>
                   </div>
                 </div>
 
@@ -556,7 +533,7 @@ export default function AddSchoolPage() {
                     <Button
                       type="button"
                       size="sm"
-                      variant="outline"
+                      variant="primary"
                       onClick={() => setShowAddAdmin(true)}
                     >
                       <UserPlus className="h-4 w-4 mr-2" />

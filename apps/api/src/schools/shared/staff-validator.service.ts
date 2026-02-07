@@ -1,5 +1,6 @@
 import { Injectable, ConflictException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
+import { isPrincipalRole } from '../dto/permission.dto';
 
 /**
  * Service for validating staff-related operations
@@ -119,38 +120,32 @@ export class StaffValidatorService {
   }
 
   /**
-   * Check if a role is exactly "Principal" (case-insensitive)
-   * This distinguishes between "Principal" and roles like "Vice Principal", "Assistant Principal", etc.
-   */
-  private isPrincipalRole(role: string): boolean {
-    const roleLower = role?.trim().toLowerCase() || '';
-    // Only exact match for "principal" - not roles containing "principal"
-    return roleLower === 'principal';
-  }
-
-  /**
    * Validate that a principal role is not being assigned if one already exists
-   * Only blocks if the role is exactly "Principal", not roles containing "principal"
+   * Uses centralized isPrincipalRole() function to check all principal role types
    */
   async validatePrincipalRole(schoolId: string, role: string): Promise<void> {
-    // Only validate if the role is exactly "Principal"
-    if (!this.isPrincipalRole(role)) {
+    // Only validate if the role is a principal role (using centralized function)
+    if (!isPrincipalRole(role)) {
       return; // Not a principal role, no validation needed
     }
 
-    // Check for existing principal (exact match only)
+    // Check for existing principal roles (case-insensitive match)
+    // This checks for any role that matches the principal roles array
+    const normalizedRole = role.toLowerCase().trim();
     const existingPrincipal = await this.prisma.schoolAdmin.findFirst({
       where: {
         schoolId,
         role: {
-          equals: 'Principal',
+          equals: normalizedRole,
           mode: 'insensitive',
         },
       },
     });
 
     if (existingPrincipal) {
-      throw new ConflictException('School already has a principal');
+      throw new ConflictException(
+        `School already has a ${role} role. Only one principal-level role is allowed per school.`
+      );
     }
   }
 

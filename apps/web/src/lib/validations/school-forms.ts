@@ -95,3 +95,149 @@ export const studentAdmissionFormSchema = z.object({
   medicalNotes: z.string().optional(),
 });
 
+// Helper functions for sanitization transforms
+const sanitizeString = (str: string, maxLength: number = 1000): string => {
+  return str
+    .replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]/g, '') // Remove control characters
+    .replace(/<[^>]*>/g, '') // Remove HTML tags
+    .trim()
+    .substring(0, maxLength);
+};
+
+const sanitizeEmail = (email: string): string => {
+  return email.trim().toLowerCase();
+};
+
+const sanitizePhone = (phone: string): string => {
+  return phone.replace(/[^\d+]/g, '');
+};
+
+const sanitizeSubdomain = (subdomain: string): string => {
+  return subdomain
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9-]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '');
+};
+
+// Create School Form Schema with sanitization
+export const createSchoolFormSchema = z.object({
+  name: z
+    .string()
+    .min(1, 'School name is required')
+    .min(2, 'School name must be at least 2 characters')
+    .max(200, 'School name must be at most 200 characters')
+    .transform((val) => sanitizeString(val, 200)),
+  subdomain: z
+    .string()
+    .optional()
+    .transform((val) => (val ? sanitizeSubdomain(val) : undefined))
+    .refine(
+      (val) => !val || (val.length >= 3 && val.length <= 50),
+      { message: 'Subdomain must be between 3 and 50 characters' }
+    ),
+  domain: z
+    .string()
+    .optional()
+    .transform((val) => (val ? sanitizeString(val, 255) : undefined)),
+  address: z
+    .string()
+    .min(1, 'Address is required')
+    .max(500, 'Address must be at most 500 characters')
+    .transform((val) => sanitizeString(val, 500)),
+  city: z
+    .string()
+    .min(1, 'City is required')
+    .max(100, 'City must be at most 100 characters')
+    .transform((val) => sanitizeString(val, 100)),
+  state: z
+    .string()
+    .min(1, 'State is required')
+    .max(100, 'State must be at most 100 characters')
+    .transform((val) => sanitizeString(val, 100)),
+  country: z
+    .string()
+    .optional()
+    .default('Nigeria')
+    .transform((val) => sanitizeString(val || 'Nigeria', 100)),
+  phone: z
+    .string()
+    .optional()
+    .transform((val) => (val ? sanitizePhone(val) : undefined))
+    .refine(
+      (val) => !val || /^\+?[1-9]\d{1,14}$/.test(val),
+      { message: 'Invalid phone format' }
+    ),
+  email: z
+    .string()
+    .optional()
+    .transform((val) => (val ? sanitizeEmail(val) : undefined))
+    .refine(
+      (val) => !val || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val),
+      { message: 'Invalid email format' }
+    ),
+  levels: z.object({
+    primary: z.boolean().optional().default(false),
+    secondary: z.boolean().optional().default(false),
+    tertiary: z.boolean().optional().default(false),
+  }).refine(
+    (data) => data.primary || data.secondary || data.tertiary,
+    { message: 'At least one school level must be selected' }
+  ),
+  principal: z.object({
+    firstName: z
+      .string()
+      .min(2, 'First name must be at least 2 characters')
+      .max(50, 'First name must be at most 50 characters')
+      .transform((val) => sanitizeString(val, 50)),
+    lastName: z
+      .string()
+      .min(2, 'Last name must be at least 2 characters')
+      .max(50, 'Last name must be at most 50 characters')
+      .transform((val) => sanitizeString(val, 50)),
+    email: z
+      .string()
+      .email('Invalid email address')
+      .transform((val) => sanitizeEmail(val)),
+    phone: z
+      .string()
+      .min(10, 'Phone number must be at least 10 characters')
+      .transform((val) => sanitizePhone(val))
+      .refine(
+        (val) => /^\+?[1-9]\d{1,14}$/.test(val),
+        { message: 'Invalid phone format' }
+      ),
+  }).optional(),
+  admins: z.array(
+    z.object({
+      firstName: z
+        .string()
+        .min(2, 'First name must be at least 2 characters')
+        .max(50, 'First name must be at most 50 characters')
+        .transform((val) => sanitizeString(val, 50)),
+      lastName: z
+        .string()
+        .min(2, 'Last name must be at least 2 characters')
+        .max(50, 'Last name must be at most 50 characters')
+        .transform((val) => sanitizeString(val, 50)),
+      email: z
+        .string()
+        .email('Invalid email address')
+        .transform((val) => sanitizeEmail(val)),
+      phone: z
+        .string()
+        .min(10, 'Phone number must be at least 10 characters')
+        .transform((val) => sanitizePhone(val))
+        .refine(
+          (val) => /^\+?[1-9]\d{1,14}$/.test(val),
+          { message: 'Invalid phone format' }
+        ),
+      role: z
+        .string()
+        .min(2, 'Role must be at least 2 characters')
+        .max(50, 'Role must be at most 50 characters')
+        .transform((val) => sanitizeString(val, 50)),
+    })
+  ).optional(),
+});

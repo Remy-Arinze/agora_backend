@@ -24,10 +24,18 @@ import {
   Edit,
   Building2,
   Globe,
+  Lock,
+  Eye,
+  EyeOff,
+  CheckCircle2,
+  XCircle,
 } from 'lucide-react';
 import { RootState } from '@/lib/store/store';
 import { useGetMySchoolQuery } from '@/lib/store/api/schoolAdminApi';
+import { useChangePasswordMutation } from '@/lib/store/api/apiSlice';
 import { cn } from '@/lib/utils';
+import { Input } from '@/components/ui/Input';
+import toast from 'react-hot-toast';
 
 // Mock data - will be replaced with API calls later
 const teachingHistory = [
@@ -139,6 +147,24 @@ function ProfilePageContent() {
   const [expandedYear, setExpandedYear] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'personal' | 'school'>('personal');
   
+  // Password change state
+  const [showPasswordChange, setShowPasswordChange] = useState(false);
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [passwordForm, setPasswordForm] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: '',
+  });
+  const [passwordErrors, setPasswordErrors] = useState<{
+    currentPassword?: string;
+    newPassword?: string;
+    confirmPassword?: string;
+  }>({});
+  
+  const [changePassword, { isLoading: isChangingPassword }] = useChangePasswordMutation();
+  
   // Fetch school data for school admins
   const { data: schoolResponse } = useGetMySchoolQuery(undefined, {
     skip: user?.role !== 'SCHOOL_ADMIN',
@@ -169,6 +195,166 @@ function ProfilePageContent() {
 
   const toggleYear = (yearKey: string) => {
     setExpandedYear(expandedYear === yearKey ? null : yearKey);
+  };
+
+  // Password validation
+  const validatePassword = (password: string): string | undefined => {
+    if (password.length < 8) {
+      return 'Password must be at least 8 characters long';
+    }
+    if (!/(?=.*[a-z])/.test(password)) {
+      return 'Password must contain at least one lowercase letter';
+    }
+    if (!/(?=.*[A-Z])/.test(password)) {
+      return 'Password must contain at least one uppercase letter';
+    }
+    if (!/(?=.*\d)/.test(password)) {
+      return 'Password must contain at least one number';
+    }
+    if (!/(?=.*[@$!%*?&])/.test(password)) {
+      return 'Password must contain at least one special character (@$!%*?&)';
+    }
+    // Sanitize: prevent injection attacks
+    const dangerousChars = ['<', '>', '&', '"', "'", ';', '--', '/*', '*/'];
+    for (const char of dangerousChars) {
+      if (password.includes(char)) {
+        return 'Password contains invalid characters';
+      }
+    }
+    return undefined;
+  };
+
+  const handlePasswordChange = (field: string, value: string) => {
+    // Sanitize input: trim and remove dangerous characters
+    const sanitized = value.trim();
+    
+    setPasswordForm((prev) => ({
+      ...prev,
+      [field]: sanitized,
+    }));
+
+    // Clear error for this field
+    setPasswordErrors((prev) => ({
+      ...prev,
+      [field]: undefined,
+    }));
+
+    // Validate new password in real-time
+    if (field === 'newPassword' && sanitized) {
+      const error = validatePassword(sanitized);
+      if (error) {
+        setPasswordErrors((prev) => ({
+          ...prev,
+          newPassword: error,
+        }));
+      }
+    }
+
+    // Validate confirm password
+    if (field === 'confirmPassword' && sanitized) {
+      if (sanitized !== passwordForm.newPassword) {
+        setPasswordErrors((prev) => ({
+          ...prev,
+          confirmPassword: 'Passwords do not match',
+        }));
+      } else {
+        setPasswordErrors((prev) => ({
+          ...prev,
+          confirmPassword: undefined,
+        }));
+      }
+    }
+  };
+
+  const handlePasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    // Reset errors
+    setPasswordErrors({});
+
+    // Validate all fields
+    let hasErrors = false;
+
+    if (!passwordForm.currentPassword) {
+      setPasswordErrors((prev) => ({
+        ...prev,
+        currentPassword: 'Current password is required',
+      }));
+      hasErrors = true;
+    }
+
+    if (!passwordForm.newPassword) {
+      setPasswordErrors((prev) => ({
+        ...prev,
+        newPassword: 'New password is required',
+      }));
+      hasErrors = true;
+    } else {
+      const newPasswordError = validatePassword(passwordForm.newPassword);
+      if (newPasswordError) {
+        setPasswordErrors((prev) => ({
+          ...prev,
+          newPassword: newPasswordError,
+        }));
+        hasErrors = true;
+      }
+    }
+
+    if (!passwordForm.confirmPassword) {
+      setPasswordErrors((prev) => ({
+        ...prev,
+        confirmPassword: 'Please confirm your new password',
+      }));
+      hasErrors = true;
+    } else if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      setPasswordErrors((prev) => ({
+        ...prev,
+        confirmPassword: 'Passwords do not match',
+      }));
+      hasErrors = true;
+    }
+
+    if (hasErrors) {
+      return;
+    }
+
+    // Check if new password is same as current
+    if (passwordForm.currentPassword === passwordForm.newPassword) {
+      setPasswordErrors((prev) => ({
+        ...prev,
+        newPassword: 'New password must be different from current password',
+      }));
+      return;
+    }
+
+    try {
+      await changePassword({
+        currentPassword: passwordForm.currentPassword,
+        newPassword: passwordForm.newPassword,
+      }).unwrap();
+
+      toast.success('Password changed successfully!');
+      
+      // Reset form
+      setPasswordForm({
+        currentPassword: '',
+        newPassword: '',
+        confirmPassword: '',
+      });
+      setShowPasswordChange(false);
+      setPasswordErrors({});
+    } catch (error: any) {
+      const errorMessage = error?.data?.message || error?.message || 'Failed to change password';
+      
+      if (errorMessage.toLowerCase().includes('current password') || errorMessage.toLowerCase().includes('incorrect')) {
+        setPasswordErrors((prev) => ({
+          ...prev,
+          currentPassword: 'Current password is incorrect',
+        }));
+      } else {
+        toast.error(errorMessage);
+      }
+    }
   };
 
   // Only show history for teachers
@@ -324,6 +510,167 @@ function ProfilePageContent() {
                     </p>
                   </div>
                 </div>
+              </CardContent>
+            </Card>
+
+            {/* Password Change Section */}
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <Lock className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+                    <CardTitle className="text-xl font-bold text-light-text-primary dark:text-dark-text-primary">
+                      Security
+                    </CardTitle>
+                  </div>
+                  {!showPasswordChange && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setShowPasswordChange(true)}
+                    >
+                      <Edit className="h-4 w-4 mr-2" />
+                      Change Password
+                    </Button>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent>
+                {!showPasswordChange ? (
+                  <div className="flex items-center justify-between p-4 bg-light-surface dark:bg-[#1f2937] rounded-lg border border-light-border dark:border-[#1a1f2e]">
+                    <div>
+                      <p className="text-sm font-medium text-light-text-primary dark:text-dark-text-primary">
+                        Password
+                      </p>
+                      <p className="text-xs text-light-text-secondary dark:text-dark-text-secondary mt-1">
+                        Last changed: Recently
+                      </p>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setShowPasswordChange(true)}
+                    >
+                      Change
+                    </Button>
+                  </div>
+                ) : (
+                  <form onSubmit={handlePasswordSubmit} className="space-y-4">
+                    <div>
+                      <Input
+                        label="Current Password"
+                        type={showCurrentPassword ? 'text' : 'password'}
+                        value={passwordForm.currentPassword}
+                        onChange={(e) => handlePasswordChange('currentPassword', e.target.value)}
+                        error={passwordErrors.currentPassword}
+                        required
+                        rightAddon={
+                          <button
+                            type="button"
+                            onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                            className="text-light-text-muted dark:text-dark-text-muted hover:text-light-text-primary dark:hover:text-dark-text-primary"
+                          >
+                            {showCurrentPassword ? (
+                              <EyeOff className="h-5 w-5" />
+                            ) : (
+                              <Eye className="h-5 w-5" />
+                            )}
+                          </button>
+                        }
+                      />
+                    </div>
+
+                    <div>
+                      <Input
+                        label="New Password"
+                        type={showNewPassword ? 'text' : 'password'}
+                        value={passwordForm.newPassword}
+                        onChange={(e) => handlePasswordChange('newPassword', e.target.value)}
+                        error={passwordErrors.newPassword}
+                        required
+                        helperText="Must be at least 8 characters with uppercase, lowercase, number, and special character"
+                        rightAddon={
+                          <button
+                            type="button"
+                            onClick={() => setShowNewPassword(!showNewPassword)}
+                            className="text-light-text-muted dark:text-dark-text-muted hover:text-light-text-primary dark:hover:text-dark-text-primary"
+                          >
+                            {showNewPassword ? (
+                              <EyeOff className="h-5 w-5" />
+                            ) : (
+                              <Eye className="h-5 w-5" />
+                            )}
+                          </button>
+                        }
+                      />
+                      {passwordForm.newPassword && !passwordErrors.newPassword && (
+                        <div className="mt-2 flex items-center gap-1 text-xs text-green-500">
+                          <CheckCircle2 className="h-3 w-3" />
+                          <span>Password meets requirements</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div>
+                      <Input
+                        label="Confirm New Password"
+                        type={showConfirmPassword ? 'text' : 'password'}
+                        value={passwordForm.confirmPassword}
+                        onChange={(e) => handlePasswordChange('confirmPassword', e.target.value)}
+                        error={passwordErrors.confirmPassword}
+                        required
+                        rightAddon={
+                          <button
+                            type="button"
+                            onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                            className="text-light-text-muted dark:text-dark-text-muted hover:text-light-text-primary dark:hover:text-dark-text-primary"
+                          >
+                            {showConfirmPassword ? (
+                              <EyeOff className="h-5 w-5" />
+                            ) : (
+                              <Eye className="h-5 w-5" />
+                            )}
+                          </button>
+                        }
+                      />
+                      {passwordForm.confirmPassword && 
+                       passwordForm.newPassword === passwordForm.confirmPassword && 
+                       !passwordErrors.confirmPassword && (
+                        <div className="mt-2 flex items-center gap-1 text-xs text-green-500">
+                          <CheckCircle2 className="h-3 w-3" />
+                          <span>Passwords match</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-3 pt-2">
+                      <Button
+                        type="submit"
+                        variant="primary"
+                        isLoading={isChangingPassword}
+                        disabled={isChangingPassword || !!passwordErrors.currentPassword || !!passwordErrors.newPassword || !!passwordErrors.confirmPassword}
+                      >
+                        {isChangingPassword ? 'Changing...' : 'Change Password'}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={() => {
+                          setShowPasswordChange(false);
+                          setPasswordForm({
+                            currentPassword: '',
+                            newPassword: '',
+                            confirmPassword: '',
+                          });
+                          setPasswordErrors({});
+                        }}
+                        disabled={isChangingPassword}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </form>
+                )}
               </CardContent>
             </Card>
 

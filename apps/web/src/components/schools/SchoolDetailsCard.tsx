@@ -4,13 +4,39 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { CopyToClipboard } from './CopyToClipboard';
 import { SchoolStatsCard } from './SchoolStatsCard';
 import { School } from '@/hooks/useSchools';
-import { Building2, MapPin, GraduationCap, BookOpen } from 'lucide-react';
+import { Building2, MapPin, GraduationCap, BookOpen, User, Mail } from 'lucide-react';
+import { Button } from '@/components/ui/Button';
+import { useResendPasswordResetForStaffMutation } from '@/lib/store/api/schoolAdminApi';
+import toast from 'react-hot-toast';
 
 interface SchoolDetailsCardProps {
   school: School;
+  schoolId?: string;
 }
 
-export function SchoolDetailsCard({ school }: SchoolDetailsCardProps) {
+export function SchoolDetailsCard({ school, schoolId }: SchoolDetailsCardProps) {
+  const [resendEmail, { isLoading: isResending }] = useResendPasswordResetForStaffMutation();
+
+  // Find school owner (admin with 'school_owner' role)
+  const schoolOwner = school.admins?.find((admin) => {
+    const roleLower = admin.role?.trim().toLowerCase() || '';
+    return roleLower === 'school_owner';
+  });
+
+  const handleResendEmail = async () => {
+    if (!schoolId || !schoolOwner || !schoolOwner.email) {
+      toast.error('Unable to resend email');
+      return;
+    }
+
+    try {
+      await resendEmail({ schoolId, staffId: schoolOwner.id }).unwrap();
+      toast.success(`Password setup email resent to ${schoolOwner.email}`);
+    } catch (error: any) {
+      toast.error(error?.data?.message || 'Failed to resend email. Please try again.');
+    }
+  };
+
   return (
     <Card className="mb-6">
       <CardHeader>
@@ -73,6 +99,60 @@ export function SchoolDetailsCard({ school }: SchoolDetailsCardProps) {
                 <span className="font-medium">Country:</span>
                 <span>{school.country}</span>
               </div>
+
+              {/* School Owner Account */}
+              {schoolOwner && (
+                <div className="mt-4 pt-4 border-t border-light-border dark:border-dark-border">
+                  <div className="flex items-center gap-2 mb-3">
+                    <User className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                    <span className="font-medium text-light-text-primary dark:text-dark-text-primary">
+                      School Owner Account
+                    </span>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 text-sm text-light-text-secondary dark:text-dark-text-secondary">
+                      <span className="font-medium">Name:</span>
+                      <span>
+                        {schoolOwner.firstName} {schoolOwner.lastName}
+                      </span>
+                    </div>
+                    {schoolOwner.email && (
+                      <div className="flex items-center gap-2 text-sm text-light-text-secondary dark:text-dark-text-secondary">
+                        <span className="font-medium">Email:</span>
+                        <span>{schoolOwner.email}</span>
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {schoolOwner.accountStatus === 'SHADOW' ? (
+                        <>
+                          <span className="px-2 py-1 bg-orange-500/20 text-orange-400 rounded text-xs font-medium">
+                            Inactive - Password Not Set
+                          </span>
+                          {schoolId && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={handleResendEmail}
+                              disabled={isResending}
+                              className="text-xs h-6 px-2"
+                            >
+                              <Mail className="h-3 w-3 mr-1" />
+                              {isResending ? 'Sending...' : 'Resend Email'}
+                            </Button>
+                          )}
+                        </>
+                      ) : schoolOwner.accountStatus === 'ACTIVE' ? (
+                        <span className="px-2 py-1 bg-green-500/20 text-green-400 rounded text-xs font-medium">
+                          Active
+                        </span>
+                      ) : null}
+                    </div>
+                    <p className="text-xs text-light-text-muted dark:text-dark-text-muted mt-2">
+                      The school contact email ({school.email}) has been set up as a School Owner account with full administrative access.
+                    </p>
+                  </div>
+                </div>
+              )}
 
               {/* Institution Type */}
               <div className="mt-4 pt-4 border-t border-light-border dark:border-dark-border">

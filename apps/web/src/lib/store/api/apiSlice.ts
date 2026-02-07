@@ -122,6 +122,18 @@ export const apiSlice = createApi({
   reducerPath: 'api',
   baseQuery: baseQueryWithReauth,
   tagTypes: ['Student', 'School', 'User', 'Timetable', 'Event', 'Session', 'ClassLevel', 'ClassArm', 'Subject', 'Room', 'Class', 'ClassResource', 'StudentResource', 'Permission', 'Curriculum', 'Grade', 'Transfer', 'Subscription', 'TeacherSubject', 'Faculty', 'Department'],
-  endpoints: () => ({}),
+  endpoints: (builder) => ({
+    changePassword: builder.mutation<
+      { success: boolean; message: string },
+      { currentPassword: string; newPassword: string }
+    >({
+      query: (credentials) => ({
+        url: '/auth/change-password',
+        method: 'POST',
+        body: credentials,
+      }),
+    }),
+  }),
 });
 
+export const { useChangePasswordMutation } = apiSlice;

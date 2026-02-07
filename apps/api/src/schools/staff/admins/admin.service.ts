@@ -63,15 +63,18 @@ export class AdminService {
     await this.staffValidator.validateEmailUniqueInSchool(adminData.email, school.id);
     await this.staffValidator.validatePhoneUniqueInSchool(adminData.phone, school.id);
 
-    // Validate role - use strict principal role check
-    const roleLower = adminData.role.trim().toLowerCase();
-    const isPrincipal = isPrincipalRole(adminData.role);
+    // Sanitize role
+    const sanitizedRole = adminData.role.trim();
+    const roleLower = sanitizedRole.toLowerCase();
+    
+    // Validate role - use centralized isPrincipalRole function
+    const isPrincipal = isPrincipalRole(sanitizedRole);
     this.logger.log(
-      `[addAdmin] Role: "${adminData.role}", isPrincipal: ${isPrincipal}, permissions: ${adminData.permissions?.length || 0}`
+      `[addAdmin] Role: "${sanitizedRole}", isPrincipal: ${isPrincipal}, permissions: ${adminData.permissions?.length || 0}`
     );
 
     if (isPrincipal) {
-      await this.staffValidator.validatePrincipalRole(school.id, adminData.role);
+      await this.staffValidator.validatePrincipalRole(school.id, sanitizedRole);
     }
 
     // Validate that the role is not teaching-related
@@ -136,16 +139,19 @@ export class AdminService {
           });
         }
 
+        // Normalize role name (use underscores for multi-word roles, lowercase)
+        const normalizedRole = this.normalizeRoleName(sanitizedRole);
+
         // Create admin - use transaction client directly
         const newAdmin = await tx.schoolAdmin.create({
           data: {
             adminId: adminId,
             publicId: publicId,
-            firstName: adminData.firstName,
-            lastName: adminData.lastName,
-            email: adminData.email,
-            phone: adminData.phone,
-            role: adminData.role.trim(),
+            firstName: adminData.firstName.trim(),
+            lastName: adminData.lastName.trim(),
+            email: adminData.email.trim().toLowerCase(),
+            phone: adminData.phone.trim().replace(/\s+/g, ''),
+            role: normalizedRole,
             profileImage: adminData.profileImage || null,
             userId: adminUser.id,
             schoolId: school.id,
@@ -239,35 +245,45 @@ export class AdminService {
       });
     }
 
-    // Validate role if being updated - only check for exact "Principal" role
+    // Validate role if being updated - use centralized isPrincipalRole function
     if (updateData.role) {
-      const roleLower = updateData.role.trim().toLowerCase();
-      const isPrincipal = roleLower === 'principal'; // Only exact match, not contains
+      const sanitizedRole = updateData.role.trim();
+      const isPrincipal = isPrincipalRole(sanitizedRole);
 
       if (isPrincipal) {
-        // Check if another principal exists (excluding current admin) - exact match only
+        // Check if another principal role exists (excluding current admin)
+        const normalizedRole = sanitizedRole.toLowerCase();
         const existingPrincipal = await this.prisma.schoolAdmin.findFirst({
           where: {
             schoolId: school.id,
             id: { not: adminId },
-            role: { equals: 'Principal', mode: 'insensitive' },
+            role: { equals: normalizedRole, mode: 'insensitive' },
           },
         });
 
         if (existingPrincipal) {
-          throw new BadRequestException('School already has a principal');
+          throw new BadRequestException(
+            `School already has a ${sanitizedRole} role. Only one principal-level role is allowed per school.`
+          );
         }
       }
     }
 
-    // Update admin
-    const updatedAdmin = await this.staffRepository.updateAdmin(adminId, {
-      firstName: updateData.firstName,
-      lastName: updateData.lastName,
-      phone: updateData.phone,
-      role: updateData.role,
+    // Sanitize and normalize update data
+    const sanitizedUpdateData: any = {
+      firstName: updateData.firstName?.trim(),
+      lastName: updateData.lastName?.trim(),
+      phone: updateData.phone?.trim().replace(/\s+/g, ''),
       profileImage: updateData.profileImage,
-    });
+    };
+
+    // Normalize role if provided
+    if (updateData.role) {
+      sanitizedUpdateData.role = this.normalizeRoleName(updateData.role.trim());
+    }
+
+    // Update admin
+    const updatedAdmin = await this.staffRepository.updateAdmin(adminId, sanitizedUpdateData);
 
     return this.staffMapper.toAdminDto(updatedAdmin);
   }
@@ -288,20 +304,19 @@ export class AdminService {
       throw new BadRequestException('Administrator not found in this school');
     }
 
-    // Check if it's a principal - only exact match
-    const roleLower = admin.role?.trim().toLowerCase() || '';
-    const isPrincipal = roleLower === 'principal'; // Only exact match, not contains
+    // Check if it's a principal role - use centralized function
+    const isPrincipal = isPrincipalRole(admin.role);
 
     if (isPrincipal) {
       // Check if there are other admins to take over
       const otherAdmins = await this.staffRepository.findAdminsBySchool(school.id);
       const nonPrincipalAdmins = otherAdmins.filter(
-        (a) => a.id !== adminId && a.role?.trim().toLowerCase() !== 'principal'
+        (a) => a.id !== adminId && !isPrincipalRole(a.role)
       );
 
       if (nonPrincipalAdmins.length === 0) {
         throw new BadRequestException(
-          'Cannot delete principal without another administrator to assign the role to'
+          'Cannot delete principal-level role without another administrator to assign the role to'
         );
       }
     }
@@ -325,34 +340,36 @@ export class AdminService {
       throw new BadRequestException('Administrator not found in this school');
     }
 
-    // Check if already principal - only exact match
-    const roleLower = adminToPromote.role?.trim().toLowerCase() || '';
-    const isAlreadyPrincipal = roleLower === 'principal'; // Only exact match, not contains
+    // Check if already a principal role - use centralized function
+    const isAlreadyPrincipal = isPrincipalRole(adminToPromote.role);
 
     if (isAlreadyPrincipal) {
-      throw new BadRequestException('This administrator is already the principal');
+      throw new BadRequestException('This administrator already has a principal-level role');
     }
 
     await this.prisma.$transaction(async (tx) => {
-      // Find and demote current principal - exact match only
-      const currentPrincipal = await tx.schoolAdmin.findFirst({
+      // Find and demote current principal roles (any principal-level role)
+      const currentPrincipals = await tx.schoolAdmin.findMany({
         where: {
           schoolId: school.id,
-          role: { equals: 'Principal', mode: 'insensitive' },
         },
       });
 
-      if (currentPrincipal) {
+      // Filter to find principal roles using centralized function
+      const principalAdmins = currentPrincipals.filter(admin => isPrincipalRole(admin.role));
+
+      // Demote all principal roles to Administrator
+      for (const principalAdmin of principalAdmins) {
         await tx.schoolAdmin.update({
-          where: { id: currentPrincipal.id },
-          data: { role: 'Administrator' },
+          where: { id: principalAdmin.id },
+          data: { role: 'administrator' },
         });
       }
 
-      // Promote selected admin to Principal
+      // Promote selected admin to principal
       await tx.schoolAdmin.update({
         where: { id: adminId },
-        data: { role: 'Principal' },
+        data: { role: 'principal' },
       });
     });
   }
@@ -371,16 +388,15 @@ export class AdminService {
       throw new BadRequestException('School not found');
     }
 
-    // Find principal - exact match only
+    // Find principal - use centralized function to check role
     const principal = await this.prisma.schoolAdmin.findFirst({
       where: {
         id: principalId,
         schoolId: school.id,
-        role: { equals: 'Principal', mode: 'insensitive' },
       },
     });
 
-    if (!principal) {
+    if (!principal || !isPrincipalRole(principal.role)) {
       throw new BadRequestException('Principal not found in this school');
     }
 
@@ -404,17 +420,16 @@ export class AdminService {
       throw new BadRequestException('School not found');
     }
 
-    // Find principal - exact match only
+    // Find principal - use centralized function to check role
     const principal = await this.prisma.schoolAdmin.findFirst({
       where: {
         id: principalId,
         schoolId: school.id,
-        role: { equals: 'Principal', mode: 'insensitive' },
       },
       include: { user: true },
     });
 
-    if (!principal) {
+    if (!principal || !isPrincipalRole(principal.role)) {
       throw new BadRequestException('Principal not found in this school');
     }
 
@@ -430,7 +445,7 @@ export class AdminService {
     // Check for other admins
     const otherAdmins = await this.staffRepository.findAdminsBySchool(school.id);
     const nonPrincipalAdmins = otherAdmins.filter(
-      (a) => a.id !== principalId && a.role?.trim().toLowerCase() !== 'principal'
+      (a) => a.id !== principalId && !isPrincipalRole(a.role)
     );
 
     if (nonPrincipalAdmins.length === 0) {
@@ -478,9 +493,9 @@ export class AdminService {
       throw new BadRequestException('This teacher is already an administrator in this school');
     }
 
-    // Validate role - only check for exact "Principal" role
-    const roleLower = role?.trim().toLowerCase() || '';
-    const isPrincipal = roleLower === 'principal'; // Only exact match, not contains
+    // Validate role - use centralized isPrincipalRole function
+    const sanitizedRole = role?.trim() || '';
+    const isPrincipal = isPrincipalRole(sanitizedRole);
 
     if (isPrincipal) {
       await this.staffValidator.validatePrincipalRole(school.id, role);
@@ -767,5 +782,28 @@ export class AdminService {
     }
 
     this.logger.log(`[initializePermissions] Done`);
+  }
+
+  /**
+   * Helper: Normalize role name to use underscores for multi-word roles
+   * This ensures consistency with PRINCIPAL_ROLES array
+   */
+  private normalizeRoleName(role: string): string {
+    if (!role) return 'administrator';
+    
+    // Trim and normalize
+    const normalized = role.trim();
+    
+    // If it's already a principal role (case-insensitive), return the canonical form
+    if (isPrincipalRole(normalized)) {
+      // Find the matching canonical form from PRINCIPAL_ROLES
+      const lowerNormalized = normalized.toLowerCase();
+      const principalRoles = ['principal', 'school_principal', 'head_teacher', 'headmaster', 'headmistress', 'school_owner'];
+      const match = principalRoles.find(r => r.toLowerCase() === lowerNormalized);
+      return match || normalized.toLowerCase();
+    }
+    
+    // For non-principal roles, replace spaces with underscores and lowercase
+    return normalized.toLowerCase().replace(/\s+/g, '_');
   }
 }

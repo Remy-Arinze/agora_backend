@@ -5,6 +5,10 @@ import { Trash2 } from 'lucide-react';
 import { CopyToClipboard } from './CopyToClipboard';
 import { formatRoleDisplayName } from '@/lib/utils/school-utils';
 import { SchoolAdmin, Teacher } from '@/hooks/useSchools';
+import { useResendPasswordResetForStaffMutation } from '@/lib/store/api/schoolAdminApi';
+import { Button } from '@/components/ui/Button';
+import { Mail } from 'lucide-react';
+import toast from 'react-hot-toast';
 
 interface PersonCardProps {
   person: SchoolAdmin | Teacher;
@@ -12,13 +16,30 @@ interface PersonCardProps {
   onClick: () => void;
   onDelete: (e: React.MouseEvent) => void;
   index?: number;
+  schoolId?: string;
 }
 
-export function PersonCard({ person, type, onClick, onDelete, index = 0 }: PersonCardProps) {
+export function PersonCard({ person, type, onClick, onDelete, index = 0, schoolId }: PersonCardProps) {
+  const [resendEmail, { isLoading: isResending }] = useResendPasswordResetForStaffMutation();
   const isTeacher = type === 'teacher';
   const teacher = isTeacher ? (person as Teacher) : null;
   const admin = !isTeacher ? (person as SchoolAdmin) : null;
   const uniqueId = isTeacher ? teacher?.teacherId : admin?.adminId;
+
+  const handleResendEmail = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!schoolId || !admin || !admin.email) {
+      toast.error('Unable to resend email');
+      return;
+    }
+
+    try {
+      await resendEmail({ schoolId, staffId: admin.id }).unwrap();
+      toast.success(`Password setup email resent to ${admin.email}`);
+    } catch (error: any) {
+      toast.error(error?.data?.message || 'Failed to resend email. Please try again.');
+    }
+  };
 
   return (
     <motion.div
@@ -68,6 +89,33 @@ export function PersonCard({ person, type, onClick, onDelete, index = 0 }: Perso
       <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary">
         {person.phone}
       </p>
+      {!isTeacher && admin && (
+        <div className="mt-2 flex items-center gap-2 flex-wrap">
+          {admin.accountStatus === 'SHADOW' ? (
+            <>
+              <span className="px-2 py-0.5 bg-orange-500/20 text-orange-400 rounded text-xs font-medium">
+                Inactive
+              </span>
+              {schoolId && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleResendEmail}
+                  disabled={isResending}
+                  className="text-xs h-5 px-2"
+                >
+                  <Mail className="h-3 w-3 mr-1" />
+                  {isResending ? 'Sending...' : 'Resend'}
+                </Button>
+              )}
+            </>
+          ) : admin.accountStatus === 'ACTIVE' ? (
+            <span className="px-2 py-0.5 bg-green-500/20 text-green-400 rounded text-xs font-medium">
+              Active
+            </span>
+          ) : null}
+        </div>
+      )}
       {isTeacher && teacher?.subject && (
         <p className="text-xs text-light-text-muted dark:text-dark-text-muted mt-1">
           Subject: {teacher.subject}

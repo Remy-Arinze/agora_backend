@@ -10,6 +10,8 @@ import {
   Query,
   UseGuards,
   NotFoundException,
+  ServiceUnavailableException,
+  HttpException,
   UseInterceptors,
   UploadedFile,
   Post as PostDecorator,
@@ -618,6 +620,10 @@ export class StaffController {
   })
   @ApiResponse({ status: 404, description: 'Staff member not found' })
   @ApiResponse({ status: 400, description: 'Staff member does not have an email address' })
+  @ApiResponse({
+    status: 503,
+    description: 'Email service is temporarily unavailable',
+  })
   async resendPasswordResetForStaff(
     @Param('schoolId') schoolId: string,
     @Param('staffId') staffId: string
@@ -641,7 +647,56 @@ export class StaffController {
       throw new NotFoundException('User ID not found for staff member');
     }
 
-    await this.authService.resendPasswordResetEmail(userId, schoolId);
-    return ResponseDto.ok(undefined, 'Password reset email resent successfully');
+    try {
+      await this.authService.resendPasswordResetEmail(userId, schoolId);
+      return ResponseDto.ok(undefined, 'Password setup email resent successfully');
+    } catch (error: any) {
+      // Handle SMTP/email connection errors with user-friendly messages
+      if (this.isEmailServiceError(error)) {
+        throw new ServiceUnavailableException(
+          'Unable to send email at this time. The email service is temporarily unavailable. Please try again later or contact support if the issue persists.'
+        );
+      }
+
+      // Re-throw HTTP exceptions (like NotFoundException, BadRequestException) as-is
+      if (error instanceof NotFoundException || error instanceof HttpException) {
+        throw error;
+      }
+
+      // For any other unexpected errors, throw a generic service unavailable error
+      throw new ServiceUnavailableException(
+        'Failed to send email. Please try again later or contact support if the issue persists.'
+      );
+    }
+  }
+
+  /**
+   * Check if an error is related to email service (SMTP connection issues)
+   */
+  private isEmailServiceError(error: any): boolean {
+    // Check for network connection errors
+    if (
+      error.code === 'ETIMEDOUT' ||
+      error.code === 'ECONNREFUSED' ||
+      error.code === 'ENOTFOUND' ||
+      error.code === 'EHOSTUNREACH'
+    ) {
+      return true;
+    }
+
+    // Check for SMTP-specific errors
+    if (
+      error.message &&
+      (error.message.includes('SMTP') ||
+        error.message.includes('email service') ||
+        error.message.includes('mail server') ||
+        error.message.includes('connection timeout') ||
+        error.message.includes('ECONNREFUSED') ||
+        error.message.includes('ETIMEDOUT'))
+    ) {
+      return true;
+    }
+
+    return false;
   }
 }

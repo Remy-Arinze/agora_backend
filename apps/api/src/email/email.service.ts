@@ -134,11 +134,13 @@ export class EmailService {
     const isNewAccount = !isPasswordReset && (schoolName || publicId); // legacy params = new account
 
     const mailOptions = {
-      from: fromEmail,
+      from: this.getFormattedFrom(),
+      replyTo: this.getReplyTo(),
       to: email,
       subject: isPasswordReset
         ? 'Reset Your Password - Agora Education Platform'
         : 'Set Your Password - Agora Education Platform',
+      headers: this.getEmailHeaders(),
       html: `
         <!DOCTYPE html>
         <html>
@@ -243,9 +245,11 @@ export class EmailService {
     const loginUrl = `${frontendUrl}/auth/login`;
 
     const mailOptions = {
-      from: fromEmail,
+      from: this.getFormattedFrom(),
+      replyTo: this.getReplyTo(),
       to: email,
       subject: 'Password Successfully Changed - Agora Education Platform',
+      headers: this.getEmailHeaders(),
       html: `
         <!DOCTYPE html>
         <html>
@@ -255,8 +259,8 @@ export class EmailService {
           <title>Password Changed</title>
         </head>
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="background-color: #10b981; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
-            <h1 style="color: white; margin: 0;">Agora Education Platform</h1>
+          <div style="background-color: #f9fafb; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; border-bottom: 2px solid #e5e7eb;">
+            <h1 style="color: #1f2937; margin: 0; font-size: 24px;">Agora Education Platform</h1>
           </div>
           <div style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px;">
             <h2 style="color: #1f2937; margin-top: 0;">Password Successfully Changed</h2>
@@ -335,9 +339,11 @@ export class EmailService {
     const loginUrl = `${frontendUrl}/auth/login`;
 
     const mailOptions = {
-      from: fromEmail,
+      from: this.getFormattedFrom(),
+      replyTo: this.getReplyTo(),
       to: email,
       subject: `Role Change Notification - ${newRole} - Agora Education Platform`,
+      headers: this.getEmailHeaders(),
       html: `
         <!DOCTYPE html>
         <html>
@@ -347,8 +353,8 @@ export class EmailService {
           <title>Role Change Notification</title>
         </head>
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="background-color: #8b5cf6; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
-            <h1 style="color: white; margin: 0;">Agora Education Platform</h1>
+          <div style="background-color: #f9fafb; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; border-bottom: 2px solid #e5e7eb;">
+            <h1 style="color: #1f2937; margin: 0; font-size: 24px;">Agora Education Platform</h1>
           </div>
           <div style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px;">
             <h2 style="color: #1f2937; margin-top: 0;">Role Change Notification</h2>
@@ -426,9 +432,11 @@ export class EmailService {
     }
 
     const mailOptions = {
-      from: fromEmail,
+      from: this.getFormattedFrom(),
+      replyTo: this.getReplyTo(),
       to: email,
       subject: `Transfer Access Code (TAC) Generated - ${schoolName}`,
+      headers: this.getEmailHeaders(),
       html: `
         <!DOCTYPE html>
         <html>
@@ -438,8 +446,8 @@ export class EmailService {
           <title>Transfer Access Code Generated</title>
         </head>
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="background-color: #3b82f6; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
-            <h1 style="color: white; margin: 0;">Agora Education Platform</h1>
+          <div style="background-color: #f9fafb; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; border-bottom: 2px solid #e5e7eb;">
+            <h1 style="color: #1f2937; margin: 0; font-size: 24px;">Agora Education Platform</h1>
           </div>
           <div style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px;">
             <h2 style="color: #1f2937; margin-top: 0;">Transfer Access Code Generated</h2>
@@ -520,9 +528,11 @@ export class EmailService {
     }
 
     const mailOptions = {
-      from: fromEmail,
+      from: this.getFormattedFrom(),
+      replyTo: this.getReplyTo(),
       to: email,
       subject: `Transfer Access Code Revoked - ${schoolName}`,
+      headers: this.getEmailHeaders(),
       html: `
         <!DOCTYPE html>
         <html>
@@ -532,8 +542,8 @@ export class EmailService {
           <title>Transfer Access Code Revoked</title>
         </head>
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="background-color: #ef4444; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
-            <h1 style="color: white; margin: 0;">Agora Education Platform</h1>
+          <div style="background-color: #f9fafb; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; border-bottom: 2px solid #e5e7eb;">
+            <h1 style="color: #1f2937; margin: 0; font-size: 24px;">Agora Education Platform</h1>
           </div>
           <div style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px;">
             <h2 style="color: #1f2937; margin-top: 0;">Transfer Access Code Revoked</h2>
@@ -609,9 +619,11 @@ export class EmailService {
     const loginUrl = `${frontendUrl}/auth/login`;
 
     const mailOptions = {
-      from: fromEmail,
+      from: this.getFormattedFrom(),
+      replyTo: this.getReplyTo(),
       to: email,
       subject: `Class Assignment - ${schoolName}`,
+      headers: this.getEmailHeaders(),
       html: `
         <!DOCTYPE html>
         <html>
@@ -621,8 +633,8 @@ export class EmailService {
           <title>Class Assignment</title>
         </head>
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="background-color: #3b82f6; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
-            <h1 style="color: white; margin: 0;">Agora Education Platform</h1>
+          <div style="background-color: #f9fafb; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; border-bottom: 2px solid #e5e7eb;">
+            <h1 style="color: #1f2937; margin: 0; font-size: 24px;">Agora Education Platform</h1>
           </div>
           <div style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px;">
             <h2 style="color: #1f2937; margin-top: 0;">Class Assignment Notification</h2>
@@ -700,9 +712,11 @@ export class EmailService {
     }
 
     const mailOptions = {
-      from: fromEmail,
+      from: this.getFormattedFrom(),
+      replyTo: this.getReplyTo(),
       to: email,
       subject: `Class Assignment Removed - ${schoolName}`,
+      headers: this.getEmailHeaders(),
       html: `
         <!DOCTYPE html>
         <html>
@@ -712,8 +726,8 @@ export class EmailService {
           <title>Class Assignment Removed</title>
         </head>
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="background-color: #ef4444; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
-            <h1 style="color: white; margin: 0;">Agora Education Platform</h1>
+          <div style="background-color: #f9fafb; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; border-bottom: 2px solid #e5e7eb;">
+            <h1 style="color: #1f2937; margin: 0; font-size: 24px;">Agora Education Platform</h1>
           </div>
           <div style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px;">
             <h2 style="color: #1f2937; margin-top: 0;">Class Assignment Removed</h2>
@@ -803,9 +817,11 @@ export class EmailService {
       .join('');
 
     const mailOptions = {
-      from: fromEmail,
+      from: this.getFormattedFrom(),
+      replyTo: this.getReplyTo(),
       to: email,
       subject: `Permissions Updated - ${schoolName}`,
+      headers: this.getEmailHeaders(),
       html: `
         <!DOCTYPE html>
         <html>
@@ -815,8 +831,8 @@ export class EmailService {
           <title>Permissions Updated</title>
         </head>
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="background-color: #8b5cf6; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
-            <h1 style="color: white; margin: 0;">Agora Education Platform</h1>
+          <div style="background-color: #f9fafb; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; border-bottom: 2px solid #e5e7eb;">
+            <h1 style="color: #1f2937; margin: 0; font-size: 24px;">Agora Education Platform</h1>
           </div>
           <div style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px;">
             <h2 style="color: #1f2937; margin-top: 0;">Permissions Updated</h2>
@@ -868,6 +884,52 @@ export class EmailService {
     }
   }
 
+  /**
+   * Get common email headers for better deliverability
+   */
+  private getEmailHeaders(replyTo?: string): Record<string, string> {
+    const fromEmail =
+      this.configService.get<string>('MAIL_FROM') ||
+      this.configService.get<string>('SMTP_FROM') ||
+      this.configService.get<string>('MAIL_USER') ||
+      this.configService.get<string>('SMTP_USER');
+    const replyToEmail = replyTo || this.configService.get<string>('MAIL_REPLY_TO') || fromEmail;
+    const messageId = `<${Date.now()}-${Math.random().toString(36).substring(2, 15)}@agora-schools.com>`;
+
+    return {
+      'Message-ID': messageId,
+      'X-Mailer': 'Agora Education Platform',
+      'List-Unsubscribe': `<mailto:${replyToEmail}?subject=unsubscribe>`,
+      'Precedence': 'bulk',
+      'X-Auto-Response-Suppress': 'All', // Prevents auto-replies
+    };
+  }
+
+  /**
+   * Get formatted From address with display name
+   */
+  private getFormattedFrom(): string {
+    const fromEmail =
+      this.configService.get<string>('MAIL_FROM') ||
+      this.configService.get<string>('SMTP_FROM') ||
+      this.configService.get<string>('MAIL_USER') ||
+      this.configService.get<string>('SMTP_USER');
+    const fromName = this.configService.get<string>('MAIL_FROM_NAME') || 'Agora Education Platform';
+    return `"${fromName}" <${fromEmail}>`;
+  }
+
+  /**
+   * Get Reply-To address
+   */
+  private getReplyTo(): string {
+    const fromEmail =
+      this.configService.get<string>('MAIL_FROM') ||
+      this.configService.get<string>('SMTP_FROM') ||
+      this.configService.get<string>('MAIL_USER') ||
+      this.configService.get<string>('SMTP_USER');
+    return this.configService.get<string>('MAIL_REPLY_TO') || fromEmail;
+  }
+
   async verifyConnection(): Promise<boolean> {
     try {
       await this.transporter.verify();
@@ -907,9 +969,11 @@ export class EmailService {
     const loginUrl = `${frontendUrl}/auth/login`;
 
     const mailOptions = {
-      from: fromEmail,
+      from: this.getFormattedFrom(),
+      replyTo: this.getReplyTo(),
       to: email,
       subject: `New Academic Session Started - ${sessionName} - ${schoolName}`,
+      headers: this.getEmailHeaders(),
       html: `
         <!DOCTYPE html>
         <html>
@@ -919,8 +983,8 @@ export class EmailService {
           <title>New Academic Session Started</title>
         </head>
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="background-color: #10b981; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
-            <h1 style="color: white; margin: 0;">🎓 New Session Started!</h1>
+          <div style="background-color: #f9fafb; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; border-bottom: 2px solid #e5e7eb;">
+            <h1 style="color: #1f2937; margin: 0; font-size: 24px;">🎓 New Session Started!</h1>
           </div>
           <div style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px;">
             <h2 style="color: #1f2937; margin-top: 0;">Welcome to ${sessionName}</h2>
@@ -989,9 +1053,11 @@ export class EmailService {
     const loginUrl = `${frontendUrl}/auth/login`;
 
     const mailOptions = {
-      from: fromEmail,
+      from: this.getFormattedFrom(),
+      replyTo: this.getReplyTo(),
       to: email,
       subject: `${termName} Has Started - ${sessionName} - ${schoolName}`,
+      headers: this.getEmailHeaders(),
       html: `
         <!DOCTYPE html>
         <html>
@@ -1001,8 +1067,8 @@ export class EmailService {
           <title>New Term Started</title>
         </head>
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="background-color: #3b82f6; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
-            <h1 style="color: white; margin: 0;">📚 ${termName} Has Started!</h1>
+          <div style="background-color: #f9fafb; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; border-bottom: 2px solid #e5e7eb;">
+            <h1 style="color: #1f2937; margin: 0; font-size: 24px;">📚 ${termName} Has Started!</h1>
           </div>
           <div style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px;">
             <h2 style="color: #1f2937; margin-top: 0;">Welcome Back!</h2>
@@ -1069,9 +1135,11 @@ export class EmailService {
     const loginUrl = `${frontendUrl}/auth/login`;
 
     const mailOptions = {
-      from: fromEmail,
+      from: this.getFormattedFrom(),
+      replyTo: this.getReplyTo(),
       to: email,
       subject: `🎉 Congratulations! You've Been Promoted - ${schoolName}`,
+      headers: this.getEmailHeaders(),
       html: `
         <!DOCTYPE html>
         <html>
@@ -1081,8 +1149,8 @@ export class EmailService {
           <title>Class Promotion</title>
         </head>
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="background-color: #8b5cf6; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
-            <h1 style="color: white; margin: 0;">🎉 Congratulations!</h1>
+          <div style="background-color: #f9fafb; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; border-bottom: 2px solid #e5e7eb;">
+            <h1 style="color: #1f2937; margin: 0; font-size: 24px;">🎉 Congratulations!</h1>
           </div>
           <div style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px;">
             <h2 style="color: #1f2937; margin-top: 0;">You've Been Promoted!</h2>
@@ -1240,9 +1308,11 @@ export class EmailService {
     if (changes.email) changesList.push(`Email: ${changes.email}`);
 
     const mailOptions = {
-      from: fromEmail,
+      from: this.getFormattedFrom(),
+      replyTo: this.getReplyTo(),
       to: email,
       subject: `Verify School Profile Changes - ${schoolName}`,
+      headers: this.getEmailHeaders(),
       html: `
         <!DOCTYPE html>
         <html>
@@ -1252,8 +1322,8 @@ export class EmailService {
           <title>Verify School Profile Changes</title>
         </head>
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="background-color: #3b82f6; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
-            <h1 style="color: white; margin: 0;">Agora Education Platform</h1>
+          <div style="background-color: #f9fafb; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; border-bottom: 2px solid #e5e7eb;">
+            <h1 style="color: #1f2937; margin: 0; font-size: 24px;">Agora Education Platform</h1>
           </div>
           <div style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px;">
             <h2 style="color: #1f2937; margin-top: 0;">Verify School Profile Changes</h2>
@@ -1350,16 +1420,13 @@ If you didn't request this code, please ignore this email or contact support imm
 © ${new Date().getFullYear()} Agora Education Platform. All rights reserved.`;
 
     const mailOptions = {
-      from: `"${fromName}" <${fromEmail}>`, // Proper From format with display name
-      replyTo: replyTo, // Reply-To header
+      from: this.getFormattedFrom(),
+      replyTo: this.getReplyTo(),
       to: email,
       subject: 'Your Agora Login Verification Code',
       headers: {
-        'Message-ID': messageId,
-        'X-Mailer': 'Agora Education Platform',
+        ...this.getEmailHeaders(),
         'X-Priority': '1', // High priority for OTP emails
-        'List-Unsubscribe': `<mailto:${replyTo}?subject=unsubscribe>`, // Helps with spam filtering
-        'Precedence': 'bulk', // Indicates automated email
       },
       html: `
         <!DOCTYPE html>
@@ -1370,8 +1437,8 @@ If you didn't request this code, please ignore this email or contact support imm
           <title>Login Verification Code</title>
         </head>
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="background-color: #3b82f6; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
-            <h1 style="color: white; margin: 0;">Agora Education Platform</h1>
+          <div style="background-color: #f9fafb; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; border-bottom: 2px solid #e5e7eb;">
+            <h1 style="color: #1f2937; margin: 0; font-size: 24px;">Agora Education Platform</h1>
           </div>
           <div style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px;">
             <h2 style="color: #1f2937; margin-top: 0;">Login Verification Code</h2>

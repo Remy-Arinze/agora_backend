@@ -5,8 +5,9 @@ import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { StatCard } from '@/components/dashboard/StatCard';
 import { AnalyticsChart } from '@/components/dashboard/AnalyticsChart';
-import { Button } from '@/components/ui/Button';
+import { ActivityLog } from '@/components/dashboard/ActivityLog';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
+import { EntityAvatar } from '@/components/ui/EntityAvatar';
 import { motion } from 'framer-motion';
 import { useSchools } from '@/hooks/useSchools';
 import { useAnalytics } from '@/hooks/useAnalytics';
@@ -105,68 +106,26 @@ export default function OverviewPage() {
               title="Platform Growth Trends"
               description="Overall enhancement in platform adoption and user engagement across various metrics over the past 6 months."
               data={analytics?.growthTrends ?? []}
-              type="line"
-              dataKeys={['schools', 'students', 'teachers', 'admins']}
-              colors={['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6']}
+              type="area"
+              dataKeys={['schools']}
+              colors={['#10b981']}
             />
           </div>
-          {/* User Distribution - Takes 35% (3.5/10 columns, rounded to 3) */}
+          {/* Activity Log - Takes 35% (3.5/10 columns, rounded to 3) */}
           <div className="lg:col-span-3">
-            <AnalyticsChart
-              title="User Distribution"
-              description="Breakdown of user types across the platform showing the distribution of students, teachers, and administrators."
-              data={analytics?.userDistribution ? [{
-                name: 'Users',
-                students: analytics.userDistribution.students,
-                teachers: analytics.userDistribution.teachers,
-                admins: analytics.userDistribution.admins || 0,
-              }] : []}
-              type="donut"
-              dataKeys={['students', 'teachers', 'admins']}
-              colors={['#3b82f6', '#10b981', '#8b5cf6']}
+            <ActivityLog
+              activities={analytics?.recentActivity ?? []}
+              onViewAll={() => {
+                // TODO: Navigate to detailed activity log page
+                console.log('View all activities');
+              }}
             />
           </div>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-10 gap-6 mb-6">
-          {/* Weekly Activity - Takes 60% (6/10 columns) */}
-          <div className="lg:col-span-6">
-            <AnalyticsChart
-              title="Weekly Activity Trends"
-              description="Tracking user logins and new registrations to monitor platform engagement and growth patterns."
-              data={analytics?.weeklyActivity ?? []}
-              type="line"
-              dataKeys={['logins', 'registrations']}
-              colors={['#3b82f6', '#10b981']}
-            />
-          </div>
-          {/* State Distribution - Takes 40% (4/10 columns) */}
-          <div className="lg:col-span-4">
-            <AnalyticsChart
-              title="School Distribution by State"
-              description="Geographic distribution of schools across different states, providing insights into regional coverage."
-              data={analytics?.schoolDistribution ?? []}
-              type="pie"
-              dataKeys={['value']}
-              colors={['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6']}
-            />
-          </div>
-        </div>
-
-        {/* School Distribution by Level - Full width */}
-        <div className="mb-6">
-          <AnalyticsChart
-            title="School Distribution by Level"
-            description="Categorization of schools by educational level, showing the diversity of institutions on the platform."
-            data={analytics?.schoolDistributionByLevel ?? []}
-            type="donut"
-            dataKeys={['value']}
-            colors={['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6']}
-          />
         </div>
 
         {/* Recent Schools */}
-        <Card>
+        <div className="mb-6">
+          <Card>
           <CardHeader>
             <CardTitle className="text-xl font-bold text-light-text-primary dark:text-white">
               Recent Schools
@@ -184,23 +143,57 @@ export default function OverviewPage() {
               </div>
             ) : (
               <div className="space-y-3">
-                {schools.slice(0, 3).map((school) => (
-                  <Link
-                    key={school.id}
-                    href={`/dashboard/super-admin/schools/${school.id}`}
-                    className="block"
-                  >
-                    <div className="flex items-center justify-between p-4 border border-light-border dark:border-[#1a1f2e] rounded-lg hover:bg-light-hover dark:hover:bg-[#1f2937] transition-colors cursor-pointer">
-                      <div>
-                        <p className="font-medium text-light-text-primary dark:text-white">
-                          {school.name}
-                        </p>
-                        <p className="text-sm text-light-text-secondary dark:text-[#9ca3af]">
-                          {school.city || 'N/A'}, {school.state || 'N/A'}
-                        </p>
-                      </div>
-                      <div className="flex items-center space-x-4">
-                        <div className="text-right">
+                {schools.slice(0, 3).map((school) => {
+                  // Get school levels
+                  const levels = [];
+                  if (school.hasPrimary) levels.push('Primary');
+                  if (school.hasSecondary) levels.push('Secondary');
+                  if (school.hasTertiary) levels.push('Tertiary');
+
+                  return (
+                    <Link
+                      key={school.id}
+                      href={`/dashboard/super-admin/schools/${school.id}`}
+                      className="block"
+                    >
+                      <motion.div
+                        className="flex items-center gap-4 p-4 border border-light-border dark:border-[#1a1f2e] rounded-lg hover:bg-light-hover dark:hover:bg-[#1f2937] transition-all duration-200 cursor-pointer"
+                        whileHover={{ x: 4 }}
+                        transition={{ duration: 0.2, ease: 'easeOut' }}
+                      >
+                        {/* School Avatar */}
+                        <EntityAvatar
+                          name={school.name}
+                          imageUrl={school.logo || undefined}
+                          size="md"
+                          variant="rounded"
+                        />
+                        
+                        {/* School Info */}
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-light-text-primary dark:text-white truncate mb-1">
+                            {school.name}
+                          </p>
+                          <p className="text-sm text-light-text-secondary dark:text-[#9ca3af] mb-2">
+                            {school.city || 'N/A'}, {school.state || 'N/A'}
+                          </p>
+                          {/* School Levels */}
+                          {levels.length > 0 && (
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {levels.map((level) => (
+                                <span
+                                  key={level}
+                                  className="px-2 py-0.5 rounded text-xs font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20"
+                                >
+                                  {level}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        
+                        {/* School Stats */}
+                        <div className="text-right flex-shrink-0">
                           <p className="text-sm font-medium text-light-text-primary dark:text-white">
                             {school.teachersCount || 0} teachers
                           </p>
@@ -208,17 +201,52 @@ export default function OverviewPage() {
                             {school.subdomain}.agora.com
                           </p>
                         </div>
-                        <span className="text-sm text-blue-600 dark:text-blue-400 font-medium">
-                          View →
-                        </span>
-                      </div>
-                    </div>
-                  </Link>
-                ))}
+                      </motion.div>
+                    </Link>
+                  );
+                })}
               </div>
             )}
           </CardContent>
         </Card>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+          {/* School Distribution by Level - 50% width */}
+          <div>
+            <AnalyticsChart
+              title="School Distribution by Level"
+              description="Categorization of schools by educational level, showing the diversity of institutions on the platform."
+              data={analytics?.schoolDistributionByLevel ?? []}
+              type="donut"
+              dataKeys={['value']}
+              colors={['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6']}
+            />
+          </div>
+          {/* State Distribution - 50% width */}
+          <div>
+            <AnalyticsChart
+              title="School Distribution by State"
+              description="Geographic distribution of schools across different states, providing insights into regional coverage."
+              data={analytics?.schoolDistribution ?? []}
+              type="pie"
+              dataKeys={['value']}
+              colors={['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6']}
+            />
+          </div>
+        </div>
+
+        {/* Weekly Activity Trends - Full width under the row above */}
+        <div className="mb-6">
+          <AnalyticsChart
+            title="Weekly Activity Trends"
+            description="Tracking user logins and new registrations to monitor platform engagement and growth patterns."
+            data={analytics?.weeklyActivity ?? []}
+            type="area"
+            dataKeys={['logins']}
+            colors={['#3b82f6']}
+          />
+        </div>
       </div>
     </ProtectedRoute>
   );

@@ -107,10 +107,10 @@ export function AnalyticsChart({
         };
         
         return (
-          <PieChart margin={{ top: 10, right: 10, bottom: 10, left: 10 }}>
+          <PieChart margin={{ top: 10, right: 120, bottom: 10, left: 10 }}>
             <Pie
               data={pieData}
-              cx="50%"
+              cx="40%"
               cy="50%"
               labelLine={false}
               label={renderCustomLabel}
@@ -137,11 +137,22 @@ export function AnalyticsChart({
               }}
             />
             <Legend 
-              wrapperStyle={{ paddingTop: '5px', fontSize: '9px' }}
-              iconSize={8}
+              layout="vertical"
+              verticalAlign="middle"
+              align="right"
+              wrapperStyle={{ 
+                paddingLeft: '20px',
+                fontSize: '12px',
+                lineHeight: '1.8'
+              }}
+              iconSize={12}
               formatter={(value, entry: any) => {
-                const displayName = value.length > 10 ? `${value.substring(0, 10)}...` : value;
-                return <span style={{ fontSize: '12px', color: '#94a3b8' }}>{displayName}</span>;
+                const percent = pieTotal > 0 ? ((entry.payload.value / pieTotal) * 100).toFixed(1) : '0';
+                return (
+                  <span style={{ fontSize: '12px', color: '#e5e7eb' }}>
+                    {value} <span style={{ color: '#9ca3af', marginLeft: '4px' }}>({percent}%)</span>
+                  </span>
+                );
               }}
             />
           </PieChart>
@@ -176,26 +187,55 @@ export function AnalyticsChart({
         );
       case 'area':
         return (
-          <AreaChart data={data}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#1a2f5c" />
-            <XAxis dataKey="name" {...chartConfig} />
-            <YAxis {...chartConfig} />
+          <AreaChart data={data} margin={{ top: 5, right: 5, left: -10, bottom: 0 }}>
+            <defs>
+              {dataKeys.map((key, index) => {
+                const color = colors[index % colors.length];
+                return (
+                  <linearGradient key={key} id={`gradient-${key}`} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={color} stopOpacity={0.5} />
+                    <stop offset="100%" stopColor={color} stopOpacity={0.05} />
+                  </linearGradient>
+                );
+              })}
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke="#1a1f2e" opacity={0.2} vertical={false} />
+            <XAxis 
+              dataKey="name" 
+              tick={{ fill: '#6b7280', fontSize: 11 }}
+              axisLine={false}
+              tickLine={false}
+              tickMargin={8}
+            />
+            <YAxis 
+              tick={{ fill: '#6b7280', fontSize: 11 }}
+              axisLine={false}
+              tickLine={false}
+              tickMargin={8}
+              width={40}
+            />
             <Tooltip
               contentStyle={{
-                backgroundColor: '#0f1b3d',
-                border: '1px solid #1a2f5c',
+                backgroundColor: '#151a23',
+                border: 'none',
                 borderRadius: '8px',
+                padding: '8px 12px',
+                color: '#e5e7eb',
+                boxShadow: '0 4px 6px rgba(0, 0, 0, 0.3)',
               }}
+              labelStyle={{ color: '#9ca3af', fontSize: 11, marginBottom: '4px' }}
+              cursor={{ stroke: colors[0], strokeWidth: 1, strokeDasharray: '5 5' }}
             />
-            <Legend />
             {dataKeys.map((key, index) => (
               <Area
                 key={key}
                 type="monotone"
                 dataKey={key}
                 stroke={colors[index % colors.length]}
-                fill={colors[index % colors.length]}
-                fillOpacity={0.3}
+                strokeWidth={2.5}
+                fill={`url(#gradient-${key})`}
+                dot={false}
+                activeDot={{ r: 5, fill: colors[index % colors.length], strokeWidth: 2, stroke: '#151a23' }}
               />
             ))}
           </AreaChart>

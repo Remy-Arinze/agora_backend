@@ -19,6 +19,7 @@ export class StaffMapper {
       role: admin.role,
       profileImage: admin.profileImage,
       publicId: admin.publicId,
+      userId: admin.userId, // Include userId for resend email functionality
       createdAt: admin.createdAt,
       user: admin.user
         ? {
@@ -55,6 +56,7 @@ export class StaffMapper {
       isTemporary: teacher.isTemporary,
       profileImage: teacher.profileImage,
       publicId: teacher.publicId,
+      userId: teacher.userId, // Include userId for resend email functionality
       createdAt: teacher.createdAt,
       user: teacher.user
         ? {

@@ -26,6 +26,7 @@ import { UserWithContext } from '../../auth/types/user-with-context.type';
 import { CloudinaryService } from '../../storage/cloudinary/cloudinary.service';
 import { EmailService } from '../../email/email.service';
 import { randomBytes } from 'crypto';
+import { isPrincipalRole } from '../dto/permission.dto';
 
 /**
  * Service for school admin operations on their own school
@@ -1011,18 +1012,20 @@ export class SchoolAdminSchoolsService {
       );
     }
 
-    // Get principal email for verification
-    const principal = await this.prisma.schoolAdmin.findFirst({
+    // Get principal-level admin email for verification (any principal role)
+    const allAdmins = await this.prisma.schoolAdmin.findMany({
       where: {
         schoolId: school.id,
-        role: { equals: 'Principal', mode: 'insensitive' },
       },
       include: { user: true },
     });
 
+    // Find any principal-level role using centralized function
+    const principal = allAdmins.find(admin => isPrincipalRole(admin.role));
+
     if (!principal || !principal.user?.email) {
       throw new BadRequestException(
-        'Principal email not found. Please ensure your school has a principal with an email address.'
+        'Principal-level admin email not found. Please ensure your school has a principal or school owner with an email address.'
       );
     }
 

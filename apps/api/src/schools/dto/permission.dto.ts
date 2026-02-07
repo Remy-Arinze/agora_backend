@@ -31,21 +31,41 @@ export enum PermissionType {
 /**
  * Roles that have permanent full access (cannot be edited)
  * Using exact match for security - prevents "Vice Principal" from getting full access
+ * 
+ * IMPORTANT: This is the single source of truth for principal roles.
+ * Always use isPrincipalRole() function instead of direct string comparison.
+ * 
+ * Role naming convention: Use underscores for multi-word roles (e.g., 'school_owner', 'head_teacher')
  */
 export const PRINCIPAL_ROLES = [
   'principal',
-  'school principal',
-  'head teacher',
+  'school_principal',
+  'head_teacher',
   'headmaster',
   'headmistress',
+  'school_owner',
 ] as const;
+
+export type PrincipalRole = typeof PRINCIPAL_ROLES[number];
 
 /**
  * Check if a role is a Principal role (has permanent full access)
+ * This is the ONLY function that should be used to check principal roles.
+ * 
+ * @param role - The role string to check (can be null/undefined)
+ * @returns true if the role is a principal role (case-insensitive, exact match)
+ * 
+ * @example
+ * isPrincipalRole('Principal') // true
+ * isPrincipalRole('school_owner') // true
+ * isPrincipalRole('Vice Principal') // false (not exact match)
  */
-export function isPrincipalRole(role: string): boolean {
+export function isPrincipalRole(role: string | null | undefined): boolean {
+  if (!role) return false;
   const normalizedRole = role.toLowerCase().trim();
-  return PRINCIPAL_ROLES.includes(normalizedRole as (typeof PRINCIPAL_ROLES)[number]);
+  return PRINCIPAL_ROLES.some(principalRole => 
+    normalizedRole === principalRole.toLowerCase()
+  );
 }
 
 export class PermissionDto {

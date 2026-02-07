@@ -5,7 +5,10 @@ import { Button } from '@/components/ui/Button';
 import { CopyToClipboard } from './CopyToClipboard';
 import { formatRoleDisplayName } from '@/lib/utils/school-utils';
 import { SchoolAdmin, Teacher } from '@/hooks/useSchools';
-import { UserCog, Users, GraduationCap, Trash2, Pencil } from 'lucide-react';
+import { UserCog, Users, GraduationCap, Trash2, Pencil, Mail } from 'lucide-react';
+import { useResendPasswordResetForStaffMutation } from '@/lib/store/api/schoolAdminApi';
+import { useState } from 'react';
+import toast from 'react-hot-toast';
 
 interface PersonDetailModalProps {
   isOpen: boolean;
@@ -16,6 +19,7 @@ interface PersonDetailModalProps {
   onDelete?: () => void;
   onMakePrincipal?: () => void;
   showMakePrincipal?: boolean;
+  schoolId?: string;
 }
 
 export function PersonDetailModal({
@@ -27,7 +31,30 @@ export function PersonDetailModal({
   onDelete,
   onMakePrincipal,
   showMakePrincipal = false,
+  schoolId,
 }: PersonDetailModalProps) {
+  const [resendEmail, { isLoading: isResending }] = useResendPasswordResetForStaffMutation();
+
+  const handleResendEmail = async () => {
+    if (!schoolId || !person || type === 'teacher') {
+      toast.error('Unable to resend email');
+      return;
+    }
+
+    const admin = person as SchoolAdmin;
+    if (!admin.email) {
+      toast.error('No email address available for this admin');
+      return;
+    }
+
+    try {
+      await resendEmail({ schoolId, staffId: admin.id }).unwrap();
+      toast.success(`Password setup email resent to ${admin.firstName} ${admin.lastName} (${admin.email})`);
+    } catch (error: any) {
+      toast.error(error?.data?.message || 'Failed to resend email. Please try again.');
+    }
+  };
+
   if (!person) return null;
 
   const isTeacher = type === 'teacher';
@@ -130,6 +157,42 @@ export function PersonDetailModal({
                   id={`${type}-${person.id}`}
                   size="md"
                 />
+              </div>
+            </div>
+          )}
+          {!isTeacher && admin && (
+            <div>
+              <p className="text-sm font-medium text-gray-700 dark:text-dark-text-secondary mb-1">
+                Account Status
+              </p>
+              <div className="flex items-center gap-2 flex-wrap">
+                {admin.accountStatus === 'SHADOW' ? (
+                  <>
+                    <span className="px-2 py-1 bg-orange-500/20 text-orange-400 rounded text-xs font-medium">
+                      Inactive - Password Not Set
+                    </span>
+                    {schoolId && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleResendEmail}
+                        disabled={isResending}
+                        className="text-xs h-6 px-2"
+                      >
+                        <Mail className="h-3 w-3 mr-1" />
+                        {isResending ? 'Sending...' : 'Resend Email'}
+                      </Button>
+                    )}
+                  </>
+                ) : admin.accountStatus === 'ACTIVE' ? (
+                  <span className="px-2 py-1 bg-green-500/20 text-green-400 rounded text-xs font-medium">
+                    Active
+                  </span>
+                ) : admin.accountStatus ? (
+                  <span className="px-2 py-1 bg-gray-500/20 text-gray-400 rounded text-xs font-medium">
+                    {admin.accountStatus}
+                  </span>
+                ) : null}
               </div>
             </div>
           )}

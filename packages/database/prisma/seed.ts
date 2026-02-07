@@ -88,20 +88,50 @@ async function main() {
   // ============================================
   // STEP 1: Create Super Admin
   // ============================================
-  // First, try to find existing user by email or phone
-  let superAdmin = await prisma.user.findFirst({
-    where: {
-      OR: [
-        { email: 'remyarinze@gmail.com' },
-        { phone: '+2348000000001' },
-      ],
+  // Check if user with email exists
+  const existingByEmail = await prisma.user.findUnique({
+    where: { email: 'remyarinze@gmail.com' },
+  });
+
+  // Check if user with phone exists (and it's not the same user)
+  const existingByPhone = await prisma.user.findFirst({
+    where: { 
+      phone: '+2348000000001',
+      ...(existingByEmail ? { id: { not: existingByEmail.id } } : {}),
     },
   });
 
-  if (superAdmin) {
-    // Update existing user
+  let superAdmin;
+
+  if (existingByEmail) {
+    // If phone is taken by another user, clear it first
+    if (existingByPhone) {
+      await prisma.user.update({
+        where: { id: existingByPhone.id },
+        data: { phone: null },
+      });
+    }
+    // User exists with this email, update it
     superAdmin = await prisma.user.update({
-      where: { id: superAdmin.id },
+      where: { id: existingByEmail.id },
+      data: {
+        phone: '+2348000000001',
+        passwordHash: hashedPassword,
+        accountStatus: 'ACTIVE',
+        role: 'SUPER_ADMIN',
+        firstName: 'Jeremy',
+        lastName: 'Arinze',
+      },
+    });
+  } else if (existingByPhone) {
+    // User exists with this phone but different email
+    // First, clear the phone from this user to avoid conflict
+    await prisma.user.update({
+      where: { id: existingByPhone.id },
+      data: { phone: null },
+    });
+    // Now create the super admin
+    superAdmin = await prisma.user.create({
       data: {
         email: 'remyarinze@gmail.com',
         phone: '+2348000000001',
@@ -113,7 +143,7 @@ async function main() {
       },
     });
   } else {
-    // Create new user
+    // No existing user, create new
     superAdmin = await prisma.user.create({
       data: {
         email: 'remyarinze@gmail.com',

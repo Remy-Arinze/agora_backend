@@ -23,6 +23,19 @@ export class SchoolAdminDto {
   @ApiProperty({ description: 'Admin role (stored as string to support custom roles)' })
   role: string;
 
+  @ApiProperty({ 
+    description: 'Account status - SHADOW means password not set, ACTIVE means password set',
+    enum: ['SHADOW', 'ACTIVE', 'SUSPENDED', 'ARCHIVED'],
+    required: false
+  })
+  accountStatus?: 'SHADOW' | 'ACTIVE' | 'SUSPENDED' | 'ARCHIVED';
+
+  @ApiProperty({ 
+    description: 'User ID for resending password emails',
+    required: false
+  })
+  userId?: string;
+
   @ApiProperty()
   createdAt: Date;
 }

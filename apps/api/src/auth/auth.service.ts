@@ -11,6 +11,7 @@ import { EmailService } from '../email/email.service';
 import { OtpService } from './otp.service';
 import { LoginDto, VerifyOtpDto, VerifyLoginOtpDto, AuthTokensDto, LoginResponseDto } from './dto/login.dto';
 import { RequestPasswordResetDto, ResetPasswordDto } from './dto/password-reset.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { JwtPayload } from './types/user-with-context.type';
 import * as bcrypt from 'bcryptjs';
 import { randomBytes } from 'crypto';
@@ -1224,5 +1225,82 @@ export class AuthService {
       );
       throw error; // Re-throw so admin knows it failed
     }
+  }
+
+  /**
+   * Change password for authenticated user
+   * Requires current password verification for security
+   */
+  async changePassword(
+    userId: string,
+    changePasswordDto: ChangePasswordDto,
+  ): Promise<void> {
+    const { currentPassword, newPassword } = changePasswordDto;
+
+    // Sanitize inputs to prevent injection attacks
+    const sanitizedCurrentPassword = currentPassword.trim();
+    const sanitizedNewPassword = newPassword.trim();
+
+    // Validate that new password is different from current password
+    if (sanitizedCurrentPassword === sanitizedNewPassword) {
+      throw new BadRequestException('New password must be different from current password');
+    }
+
+    // Get user with password hash
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        passwordHash: true,
+        firstName: true,
+        lastName: true,
+      },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    if (!user.passwordHash) {
+      throw new BadRequestException('User does not have a password set. Please use password reset instead.');
+    }
+
+    // Verify current password
+    const isCurrentPasswordValid = await bcrypt.compare(
+      sanitizedCurrentPassword,
+      user.passwordHash,
+    );
+
+    if (!isCurrentPasswordValid) {
+      throw new UnauthorizedException('Current password is incorrect');
+    }
+
+    // Hash new password
+    const newPasswordHash = await bcrypt.hash(sanitizedNewPassword, 10);
+
+    // Update password
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        passwordHash: newPasswordHash,
+      },
+    });
+
+    // Log password change for security audit
+    this.logger.log(
+      `[PASSWORD_CHANGE] User ${user.email} (${userId}) successfully changed password`,
+    );
+
+    // Optionally send confirmation email (commented out to avoid email spam)
+    // You can uncomment this if you want to notify users of password changes
+    // try {
+    //   const userName = user.firstName && user.lastName 
+    //     ? `${user.firstName} ${user.lastName}` 
+    //     : user.email || 'User';
+    //   await this.emailService.sendPasswordChangeConfirmationEmail(user.email, userName);
+    // } catch (error) {
+    //   this.logger.error('Failed to send password change confirmation email:', error);
+    // }
   }
 }

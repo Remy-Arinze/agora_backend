@@ -9,6 +9,8 @@ export interface SchoolAdmin {
   email: string | null;
   phone: string;
   role: string;
+  accountStatus?: 'SHADOW' | 'ACTIVE' | 'SUSPENDED' | 'ARCHIVED';
+  userId?: string;
   createdAt: string;
 }
 
@@ -66,7 +68,7 @@ export interface School {
 
 export interface CreateSchoolDto {
   name: string;
-  subdomain: string;
+  subdomain?: string; // Optional - will be auto-generated from school name if not provided
   domain?: string;
   address?: string;
   city?: string;

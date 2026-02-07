@@ -57,9 +57,10 @@ export class CreateSchoolDto {
   @IsString()
   name: string;
 
-  @ApiProperty({ description: 'School subdomain (unique identifier)' })
+  @ApiPropertyOptional({ description: 'School subdomain (unique identifier). If not provided, will be auto-generated from school name.' })
+  @IsOptional()
   @IsString()
-  subdomain: string;
+  subdomain?: string;
 
   @ApiPropertyOptional({ description: 'School domain' })
   @IsOptional()

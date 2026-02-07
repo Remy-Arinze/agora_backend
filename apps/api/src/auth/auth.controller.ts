@@ -8,6 +8,7 @@ import {
   Res,
   Req,
   UnauthorizedException,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBody } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
@@ -16,6 +17,9 @@ import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
 import { LoginDto, VerifyOtpDto, VerifyLoginOtpDto, AuthTokensDto, LoginResponseDto } from './dto/login.dto';
 import { RequestPasswordResetDto, ResetPasswordDto } from './dto/password-reset.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
+import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { UseGuards } from '@nestjs/common';
 import { ResponseDto } from '../common/dto/response.dto';
 
 // Cookie configuration constants
@@ -212,6 +216,36 @@ export class AuthController {
   async resetPassword(@Body() resetPasswordDto: ResetPasswordDto): Promise<ResponseDto<void>> {
     await this.authService.resetPassword(resetPasswordDto);
     return ResponseDto.ok(undefined, 'Password reset successfully');
+  }
+
+  @Post('change-password')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { ttl: 60000, limit: 5 } }) // 5 password change attempts per minute
+  @ApiOperation({ summary: 'Change password for authenticated user' })
+  @ApiBody({ type: ChangePasswordDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Password changed successfully',
+  })
+  @ApiResponse({ status: 400, description: 'Invalid request or new password same as current' })
+  @ApiResponse({ status: 401, description: 'Current password is incorrect' })
+  @ApiResponse({
+    status: 429,
+    description: 'Too many password change attempts. Please try again later.',
+  })
+  async changePassword(
+    @Req() req: Request,
+    @Body() changePasswordDto: ChangePasswordDto,
+  ): Promise<ResponseDto<void>> {
+    const userId = (req.user as any)?.sub || (req.user as any)?.id;
+    
+    if (!userId) {
+      throw new UnauthorizedException('User not authenticated');
+    }
+
+    await this.authService.changePassword(userId, changePasswordDto);
+    return ResponseDto.ok(undefined, 'Password changed successfully');
   }
 
   @Post('refresh')

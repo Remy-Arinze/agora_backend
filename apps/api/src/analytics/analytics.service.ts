@@ -66,19 +66,33 @@ export class AnalyticsService {
     // Determine the date range for filtering
     let startDate: Date | undefined;
     let endDate: Date | undefined;
+    const filterByDate = month && year; // Only filter by date if both month and year are provided
 
-    if (month && year) {
+    if (filterByDate) {
       // Filter by specific month
       startDate = new Date(year, month - 1, 1); // First day of the month
       endDate = new Date(year, month, 0, 23, 59, 59, 999); // Last day of the month
-    } else {
-      // Default to current month
-      const now = new Date();
-      startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-      endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+    }
+    // If no month/year provided, show all-time totals (no date filtering)
+
+    // Build where clauses based on whether we're filtering by date
+    const schoolWhereClause: any = { isActive: true };
+    const studentWhereClause: any = {};
+    const teacherWhereClause: any = {};
+    const adminWhereClause: any = {};
+    const enrollmentWhereClause: any = { isActive: true };
+    const activeSessionsWhereClause: any = {};
+
+    if (filterByDate && startDate && endDate) {
+      schoolWhereClause.createdAt = { gte: startDate, lte: endDate };
+      studentWhereClause.createdAt = { gte: startDate, lte: endDate };
+      teacherWhereClause.createdAt = { gte: startDate, lte: endDate };
+      adminWhereClause.createdAt = { gte: startDate, lte: endDate };
+      enrollmentWhereClause.createdAt = { gte: startDate, lte: endDate };
+      activeSessionsWhereClause.lastLoginAt = { gte: startDate, lte: endDate };
     }
 
-    // Get total counts filtered by date range
+    // Get total counts (filtered by date range if provided, otherwise all-time)
     const [
       totalSchools,
       totalStudents,
@@ -89,86 +103,36 @@ export class AnalyticsService {
       secondarySchools,
       tertiarySchools,
     ] = await Promise.all([
+      this.prisma.school.count({ where: schoolWhereClause }),
+      this.prisma.student.count({ where: studentWhereClause }),
+      this.prisma.teacher.count({ where: teacherWhereClause }),
+      this.prisma.schoolAdmin.count({ where: adminWhereClause }),
+      this.prisma.enrollment.count({ where: enrollmentWhereClause }),
       this.prisma.school.count({
         where: {
-          isActive: true,
-          createdAt: {
-            gte: startDate,
-            lte: endDate,
-          },
-        },
-      }),
-      this.prisma.student.count({
-        where: {
-          createdAt: {
-            gte: startDate,
-            lte: endDate,
-          },
-        },
-      }),
-      this.prisma.teacher.count({
-        where: {
-          createdAt: {
-            gte: startDate,
-            lte: endDate,
-          },
-        },
-      }),
-      this.prisma.schoolAdmin.count({
-        where: {
-          createdAt: {
-            gte: startDate,
-            lte: endDate,
-          },
-        },
-      }),
-      this.prisma.enrollment.count({
-        where: {
-          isActive: true,
-          createdAt: {
-            gte: startDate,
-            lte: endDate,
-          },
-        },
-      }),
-      this.prisma.school.count({
-        where: {
-          isActive: true,
+          ...schoolWhereClause,
           hasPrimary: true,
-          createdAt: {
-            gte: startDate,
-            lte: endDate,
-          },
         },
       }),
       this.prisma.school.count({
         where: {
-          isActive: true,
+          ...schoolWhereClause,
           hasSecondary: true,
-          createdAt: {
-            gte: startDate,
-            lte: endDate,
-          },
         },
       }),
       this.prisma.school.count({
         where: {
-          isActive: true,
+          ...schoolWhereClause,
           hasTertiary: true,
-          createdAt: {
-            gte: startDate,
-            lte: endDate,
-          },
         },
       }),
     ]);
 
-    // Get active sessions (users who logged in within the selected month)
+    // Get active sessions (users who logged in within the selected period, or all-time if no filter)
     const activeSessions = await this.prisma.user.count({
-      where: {
+      where: filterByDate && startDate && endDate ? activeSessionsWhereClause : {
         lastLoginAt: {
-          gte: startDate,
-          lte: endDate,
+          not: null, // Only count users who have logged in at least once
         },
       },
     });
@@ -183,19 +147,28 @@ export class AnalyticsService {
       admins: totalAdmins,
     };
 
-    // Weekly activity (for the selected month)
-    const weeklyActivity = await this.calculateWeeklyActivity(startDate, endDate);
+    // Weekly activity (for the selected month, or last 30 days if no filter)
+    const weeklyActivity = filterByDate && startDate && endDate
+      ? await this.calculateWeeklyActivity(startDate, endDate)
+      : await this.calculateWeeklyActivity(
+          (() => {
+            const date = new Date();
+            date.setDate(date.getDate() - 30);
+            return date;
+          })(),
+          new Date()
+        );
 
-    // School distribution by state (for the selected month)
+    // School distribution by state (all-time if no filter, or filtered by date)
     const schoolDistribution = await this.calculateSchoolDistribution(startDate, endDate);
 
-    // School distribution by level (for the selected month)
+    // School distribution by level (all-time if no filter, or filtered by date)
     const schoolDistributionByLevel = await this.calculateSchoolDistributionByLevel(
       startDate,
       endDate
     );
 
-    // School distribution by location (for the selected month)
+    // School distribution by location (all-time if no filter, or filtered by date)
     const schoolDistributionByLocation = await this.calculateSchoolDistributionByLocation(
       startDate,
       endDate
@@ -205,7 +178,7 @@ export class AnalyticsService {
       endDate
     );
 
-    // Recent activity (for the selected month)
+    // Recent activity (last 30 days if no filter, or filtered by date)
     const recentActivity = await this.calculateRecentActivity(startDate, endDate);
 
     return {

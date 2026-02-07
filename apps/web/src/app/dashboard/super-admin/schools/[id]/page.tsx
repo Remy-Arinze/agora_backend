@@ -462,7 +462,7 @@ export default function SchoolDetailPage() {
         />
 
         {/* School Details */}
-        <SchoolDetailsCard school={school} />
+        <SchoolDetailsCard school={school} schoolId={schoolId} />
 
         {/* Principal Section */}
         <Card className="mb-6">
@@ -507,6 +507,7 @@ export default function SchoolDetailPage() {
                   e.stopPropagation();
                   setShowDeletePrincipalModal(true);
                 }}
+                schoolId={schoolId}
               />
             ) : (
               <div className="text-center py-8 text-gray-500 dark:text-dark-text-secondary">
@@ -557,6 +558,7 @@ export default function SchoolDetailPage() {
                     handleDeleteAdmin(admin.id);
                   }}
                   index={index}
+                  schoolId={schoolId}
                 />
               ))}
             </div>
@@ -640,6 +642,7 @@ export default function SchoolDetailPage() {
             setShowPrincipalDetailModal(false);
             setShowDeletePrincipalModal(true);
           }}
+          schoolId={schoolId}
         />
 
         <PersonDetailModal
@@ -663,6 +666,7 @@ export default function SchoolDetailPage() {
             }
           }}
           showMakePrincipal={true}
+          schoolId={schoolId}
         />
 
         <PersonFormModal
