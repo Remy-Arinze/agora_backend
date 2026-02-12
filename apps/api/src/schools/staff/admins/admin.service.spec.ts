@@ -8,6 +8,8 @@ import { IdGeneratorService } from '../../shared/id-generator.service';
 import { StaffValidatorService } from '../../shared/staff-validator.service';
 import { PrismaService } from '../../../database/prisma.service';
 import { AuthService } from '../../../auth/auth.service';
+import { CloudinaryService } from '../../../storage/cloudinary/cloudinary.service';
+import { SubscriptionsService } from '../../../subscriptions/subscriptions.service';
 import { TestUtils } from '../../../common/test/test-utils';
 
 describe('AdminService', () => {
@@ -76,7 +78,18 @@ describe('AdminService', () => {
         {
           provide: AuthService,
           useValue: {
+            sendPasswordResetEmail: jest.fn(),
             sendPasswordResetForNewUser: jest.fn(),
+          },
+        },
+        {
+          provide: CloudinaryService,
+          useValue: TestUtils.createMockCloudinaryService(),
+        },
+        {
+          provide: SubscriptionsService,
+          useValue: {
+            checkAdminLimit: jest.fn().mockResolvedValue({ canAdd: true }),
           },
         },
       ],
@@ -113,19 +126,19 @@ describe('AdminService', () => {
       staffValidator.validatePhoneUniqueInSchool.mockResolvedValue(undefined);
       idGenerator.generateAdminId.mockResolvedValue('AD-123');
       idGenerator.generatePublicId.mockResolvedValue('AG-TEST-ABC123');
-      prisma.$transaction.mockImplementation(async (callback) => {
-        const mockTx = {
-          user: {
-            findUnique: jest.fn().mockResolvedValue(null),
-            create: jest.fn().mockResolvedValue({ id: 'user-1' }),
-          },
-        };
-        return callback(mockTx);
+      (prisma.$transaction as jest.Mock).mockImplementation(async (callback: (tx: any) => Promise<any>) => {
+        const mockTx = TestUtils.createMockPrismaService();
+        (mockTx.user.findUnique as jest.Mock).mockResolvedValue(null);
+        (mockTx.user.create as jest.Mock).mockResolvedValue({ id: 'user-1' });
+        (mockTx.schoolAdmin.create as jest.Mock).mockResolvedValue({
+          id: 'admin-1',
+          publicId: 'AG-TEST-ABC123',
+          school: { id: 'school-1', name: 'Test School' },
+          user: { id: 'user-1' },
+        } as any);
+        return callback(mockTx as any);
       });
-      staffRepository.createAdmin.mockResolvedValue({
-        id: 'admin-1',
-        ...mockAdminData,
-      } as any);
+      staffMapper.toAdminDto.mockReturnValue({ id: 'admin-1', ...mockAdminData } as any);
 
       const result = await service.addAdmin('school-1', mockAdminData);
 
@@ -209,6 +222,7 @@ describe('AdminService', () => {
       const principalAdmin = { ...mockAdmin, role: 'Principal', user: { accountStatus: 'ACTIVE' } };
       schoolRepository.findByIdOrSubdomain.mockResolvedValue(mockSchool as any);
       staffRepository.findAdminById.mockResolvedValue(principalAdmin as any);
+      staffRepository.findAdminsBySchool.mockResolvedValue([principalAdmin] as any);
       (prisma.schoolAdmin.findFirst as jest.Mock).mockResolvedValue(principalAdmin as any);
 
       await expect(service.deleteAdmin('school-1', 'admin-1')).rejects.toThrow(BadRequestException);

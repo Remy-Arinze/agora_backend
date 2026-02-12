@@ -73,6 +73,13 @@ describe('StudentsService', () => {
           uid: 'STU-001',
           firstName: 'John',
           lastName: 'Doe',
+          middleName: null,
+          dateOfBirth: new Date('2010-01-01'),
+          profileLocked: false,
+          profileImage: null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          user: null,
           enrollments: [
             {
               id: 'enrollment-1',
@@ -87,6 +94,7 @@ describe('StudentsService', () => {
 
       (prisma.class.findMany as jest.Mock).mockResolvedValue([]);
       (prisma.classArm.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.classLevel.findMany as jest.Mock).mockResolvedValue([]);
       (prisma.student.findMany as jest.Mock).mockResolvedValue(mockStudents as any);
       (prisma.student.count as jest.Mock).mockResolvedValue(1);
 
@@ -101,6 +109,7 @@ describe('StudentsService', () => {
     it('should return empty result when no classes found for school type', async () => {
       (prisma.class.findMany as jest.Mock).mockResolvedValue([]);
       (prisma.classArm.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.classLevel.findMany as jest.Mock).mockResolvedValue([]);
 
       const result = await service.findAll(mockTenantId, mockPagination, 'PRIMARY');
 
@@ -123,6 +132,9 @@ describe('StudentsService', () => {
         dateOfBirth: new Date('2010-01-01'),
         profileLocked: false,
         profileImage: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        user: { id: 'user-1', email: 'john@example.com', phone: null, accountStatus: 'ACTIVE' },
         enrollments: [
           {
             id: 'enrollment-1',
@@ -165,6 +177,9 @@ describe('StudentsService', () => {
         dateOfBirth: new Date('2010-01-01'),
         profileLocked: false,
         profileImage: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        user: { id: 'user-1', email: 'john@example.com', phone: null, accountStatus: 'ACTIVE' },
         enrollments: [
           {
             id: 'enrollment-1',
@@ -176,16 +191,16 @@ describe('StudentsService', () => {
         ],
       };
 
-      (prisma.student.findFirst as jest.Mock).mockResolvedValue(mockStudent as any);
+      (prisma.student.findUnique as jest.Mock).mockResolvedValue(mockStudent as any);
 
       const result = await service.findByUid(mockTenantId, mockUid);
 
-      expect(prisma.student.findFirst).toHaveBeenCalled();
+      expect(prisma.student.findUnique).toHaveBeenCalled();
       expect(result).toHaveProperty('uid', mockUid);
     });
 
     it('should throw NotFoundException if student not found', async () => {
-      (prisma.student.findFirst as jest.Mock).mockResolvedValue(null);
+      (prisma.student.findUnique as jest.Mock).mockResolvedValue(null);
 
       await expect(service.findByUid(mockTenantId, mockUid)).rejects.toThrow(NotFoundException);
     });
@@ -209,15 +224,20 @@ describe('StudentsService', () => {
         dateOfBirth: new Date('2010-01-01'),
         profileLocked: false,
         profileImage: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
         user: {
           id: mockUser.id,
           email: mockUser.email,
+          phone: null,
+          accountStatus: 'ACTIVE',
         },
         enrollments: [
           {
             id: 'enrollment-1',
             classLevel: 'Primary 1',
             academicYear: '2024/2025',
+            enrollmentDate: new Date(),
             isActive: true,
             school: { id: 'school-1', name: 'Test School' },
           },

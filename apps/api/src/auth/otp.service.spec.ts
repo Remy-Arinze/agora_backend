@@ -68,8 +68,12 @@ describe('OtpService', () => {
 
       expect(prisma.loginSession.count).toHaveBeenCalled();
       expect(prisma.loginSession.create).toHaveBeenCalled();
-      expect(emailService.sendLoginOtpEmail).toHaveBeenCalledWith(mockEmail, 'Test User', mockOtp);
-      expect(result).toBe(mockSessionId);
+      expect(emailService.sendLoginOtpEmail).toHaveBeenCalledWith(
+        mockEmail,
+        'Test User',
+        expect.stringMatching(/^\d{6}$/)
+      );
+      expect(result).toMatch(/^[a-f0-9]{64}$/);
     });
 
     it('should throw ThrottlerException if rate limit exceeded', async () => {
@@ -97,7 +101,7 @@ describe('OtpService', () => {
         usedAt: null,
       };
 
-      (prisma.loginSession.findFirst as jest.Mock).mockResolvedValue(mockSession as any);
+      (prisma.loginSession.findUnique as jest.Mock).mockResolvedValue(mockSession as any);
       (prisma.loginSession.update as jest.Mock).mockResolvedValue({
         ...mockSession,
         usedAt: new Date(),
@@ -105,13 +109,13 @@ describe('OtpService', () => {
 
       const result = await service.verifyOtp(mockSessionId, mockCode);
 
-      expect(prisma.loginSession.findFirst).toHaveBeenCalled();
+      expect(prisma.loginSession.findUnique).toHaveBeenCalled();
       expect(prisma.loginSession.update).toHaveBeenCalled();
       expect(result).toBe(mockSession.userId);
     });
 
     it('should throw BadRequestException for invalid session', async () => {
-      (prisma.loginSession.findFirst as jest.Mock).mockResolvedValue(null);
+      (prisma.loginSession.findUnique as jest.Mock).mockResolvedValue(null);
 
       await expect(service.verifyOtp(mockSessionId, mockCode)).rejects.toThrow(
         BadRequestException
@@ -130,7 +134,7 @@ describe('OtpService', () => {
         usedAt: null,
       };
 
-      (prisma.loginSession.findFirst as jest.Mock).mockResolvedValue(mockSession as any);
+      (prisma.loginSession.findUnique as jest.Mock).mockResolvedValue(mockSession as any);
 
       await expect(service.verifyOtp(mockSessionId, mockCode)).rejects.toThrow(
         BadRequestException
@@ -149,7 +153,7 @@ describe('OtpService', () => {
         usedAt: null,
       };
 
-      (prisma.loginSession.findFirst as jest.Mock).mockResolvedValue(mockSession as any);
+      (prisma.loginSession.findUnique as jest.Mock).mockResolvedValue(mockSession as any);
       (prisma.loginSession.update as jest.Mock).mockResolvedValue({
         ...mockSession,
         attempts: 1,
@@ -172,7 +176,7 @@ describe('OtpService', () => {
         usedAt: null,
       };
 
-      (prisma.loginSession.findFirst as jest.Mock).mockResolvedValue(mockSession as any);
+      (prisma.loginSession.findUnique as jest.Mock).mockResolvedValue(mockSession as any);
 
       await expect(service.verifyOtp(mockSessionId, mockCode)).rejects.toThrow(
         BadRequestException

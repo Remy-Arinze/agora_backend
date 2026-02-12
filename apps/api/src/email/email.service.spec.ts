@@ -62,13 +62,13 @@ describe('EmailService', () => {
       expect(mockTransporter.sendMail).toHaveBeenCalledWith(
         expect.objectContaining({
           to: email,
-          subject: expect.stringContaining('Password Reset'),
+          subject: expect.stringContaining('Set Your Password'),
           html: expect.stringContaining(resetToken),
         })
       );
     });
 
-    it('should successfully send password setup email for new user with schools', async () => {
+    it('should successfully send password reset email for existing user with schools', async () => {
       const email = 'newuser@example.com';
       const name = 'New User';
       const resetToken = 'setup-token-123';
@@ -82,7 +82,7 @@ describe('EmailService', () => {
       expect(mockTransporter.sendMail).toHaveBeenCalledWith(
         expect.objectContaining({
           to: email,
-          subject: expect.stringContaining('Set Up Your Account'),
+          subject: expect.stringContaining('Reset Your Password'),
           html: expect.stringContaining(resetToken),
         })
       );
@@ -100,7 +100,7 @@ describe('EmailService', () => {
       expect(mockTransporter.sendMail).toHaveBeenCalledWith(
         expect.objectContaining({
           to: email,
-          subject: expect.stringContaining('OTP'),
+          subject: expect.stringContaining('Verification'),
           html: expect.stringContaining(otp),
         })
       );

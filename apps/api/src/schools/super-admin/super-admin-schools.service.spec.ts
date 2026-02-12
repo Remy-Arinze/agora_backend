@@ -110,17 +110,12 @@ describe('SuperAdminSchoolsService', () => {
       schoolValidator.validateSchoolData.mockReturnValue(undefined);
       schoolValidator.validateSubdomainUnique.mockResolvedValue(undefined);
       idGenerator.generateSchoolId.mockResolvedValue('SCH-123');
-      prisma.$transaction.mockImplementation(async (callback) => {
-        const mockTx = {
-          school: {
-            create: jest.fn().mockResolvedValue({ id: 'school-1', ...mockCreateSchoolDto }),
-          },
-          user: {
-            findUnique: jest.fn(),
-            create: jest.fn(),
-          },
-        };
-        return callback(mockTx);
+      (prisma.$transaction as jest.Mock).mockImplementation(async (callback: (tx: any) => Promise<any>) => {
+        const mockTx = TestUtils.createMockPrismaService();
+        (mockTx.school.create as jest.Mock).mockResolvedValue({ id: 'school-1', ...mockCreateSchoolDto });
+        (mockTx.user.findUnique as jest.Mock).mockResolvedValue(null);
+        (mockTx.user.create as jest.Mock).mockResolvedValue({ id: 'user-1' });
+        return callback(mockTx as any);
       });
       (prisma.school.findUnique as jest.Mock).mockResolvedValue({
         id: 'school-1',
@@ -146,14 +141,18 @@ describe('SuperAdminSchoolsService', () => {
   });
 
   describe('findAll', () => {
-    it('should return all schools', async () => {
+    it('should return paginated schools', async () => {
       const mockSchools = [{ id: 'school-1' }, { id: 'school-2' }];
       (prisma.school.findMany as jest.Mock).mockResolvedValue(mockSchools as any);
+      (prisma.school.count as jest.Mock).mockResolvedValue(2);
       schoolMapper.toDtoArray.mockReturnValue(mockSchools as any);
 
       const result = await service.findAll();
 
-      expect(result).toEqual(mockSchools);
+      expect(result.data).toEqual(mockSchools);
+      expect(result.total).toBe(2);
+      expect(result.page).toBe(1);
+      expect(result.limit).toBe(10);
       expect(schoolMapper.toDtoArray).toHaveBeenCalled();
     });
   });

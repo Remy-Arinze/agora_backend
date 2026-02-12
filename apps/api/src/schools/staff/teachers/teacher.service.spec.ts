@@ -8,12 +8,14 @@ import { IdGeneratorService } from '../../shared/id-generator.service';
 import { StaffValidatorService } from '../../shared/staff-validator.service';
 import { PrismaService } from '../../../database/prisma.service';
 import { AuthService } from '../../../auth/auth.service';
+import { CloudinaryService } from '../../../storage/cloudinary/cloudinary.service';
 import { TestUtils } from '../../../common/test/test-utils';
 
 describe('TeacherService', () => {
   let service: TeacherService;
   let schoolRepository: jest.Mocked<SchoolRepository>;
   let staffRepository: jest.Mocked<StaffRepository>;
+  let staffMapper: jest.Mocked<StaffMapper>;
   let idGenerator: jest.Mocked<IdGeneratorService>;
   let staffValidator: jest.Mocked<StaffValidatorService>;
   let prisma: jest.Mocked<PrismaService>;
@@ -63,14 +65,21 @@ describe('TeacherService', () => {
           provide: PrismaService,
           useValue: {
             ...TestUtils.createMockPrismaService(),
-            $transaction: jest.fn((callback) => callback(prisma)),
+            $transaction: jest.fn((callback: (tx: any) => Promise<any>) =>
+              callback(TestUtils.createMockPrismaService() as any)
+            ),
           },
         },
         {
           provide: AuthService,
           useValue: {
+            sendPasswordResetEmail: jest.fn(),
             sendPasswordResetForNewUser: jest.fn(),
           },
+        },
+        {
+          provide: CloudinaryService,
+          useValue: TestUtils.createMockCloudinaryService(),
         },
       ],
     }).compile();
@@ -107,14 +116,17 @@ describe('TeacherService', () => {
       staffValidator.validatePhoneUniqueInSchool.mockResolvedValue(undefined);
       idGenerator.generateTeacherId.mockResolvedValue('TE-123');
       idGenerator.generatePublicId.mockResolvedValue('AG-TEST-XYZ789');
-      prisma.$transaction.mockImplementation(async (callback) => {
-        const mockTx = {
-          user: {
-            findUnique: jest.fn().mockResolvedValue(null),
-            create: jest.fn().mockResolvedValue({ id: 'user-1' }),
-          },
-        };
-        return callback(mockTx);
+      (prisma.$transaction as jest.Mock).mockImplementation(async (callback: (tx: any) => Promise<any>) => {
+        const mockTx = TestUtils.createMockPrismaService();
+        (mockTx.user.findUnique as jest.Mock).mockResolvedValue(null);
+        (mockTx.user.create as jest.Mock).mockResolvedValue({ id: 'user-1' });
+        (mockTx.teacher.create as jest.Mock).mockResolvedValue({
+          id: 'teacher-1',
+          publicId: 'AG-TEST-XYZ789',
+          school: { id: 'school-1', name: 'Test School' },
+          user: { id: 'user-1' },
+        } as any);
+        return callback(mockTx as any);
       });
       staffRepository.createTeacher.mockResolvedValue({
         id: 'teacher-1',
@@ -176,7 +188,7 @@ describe('TeacherService', () => {
     it('should successfully delete a teacher', async () => {
       schoolRepository.findByIdOrSubdomain.mockResolvedValue(mockSchool as any);
       staffRepository.findTeacherById.mockResolvedValue(mockTeacher as any);
-      staffRepository.deleteTeacher.mockResolvedValue(undefined);
+      staffRepository.deleteTeacher.mockResolvedValue(mockTeacher as any);
 
       await service.deleteTeacher('school-1', 'teacher-1');
 

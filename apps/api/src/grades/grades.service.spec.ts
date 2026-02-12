@@ -10,7 +10,7 @@ import { SchoolRepository } from '../schools/domain/repositories/school.reposito
 import { StaffRepository } from '../schools/domain/repositories/staff.repository';
 import { TestUtils } from '../common/test/test-utils';
 import { UserWithContext } from '../auth/types/user-with-context.type';
-import { CreateGradeDto } from './dto/grade.dto';
+import { CreateGradeDto, GradeType } from './dto/grade.dto';
 
 describe('GradesService', () => {
   let service: GradesService;
@@ -60,10 +60,11 @@ describe('GradesService', () => {
     const mockDto: CreateGradeDto = {
       enrollmentId: 'enrollment-1',
       subjectId: 'subject-1',
-      gradeType: 'CA',
+      gradeType: GradeType.CA,
       score: 75,
       maxScore: 100,
       assessmentDate: new Date().toISOString(),
+      term: 'First Term',
     };
 
     it('should successfully create a grade', async () => {
@@ -76,18 +77,51 @@ describe('GradesService', () => {
         id: 'enrollment-1',
         schoolId: mockSchoolId,
         isActive: true,
+        academicYear: '2024/2025',
+        classArmId: 'class-arm-1',
+        classId: null,
         student: { id: 'student-1' },
         school: { id: mockSchoolId },
       };
       const mockGrade = {
         id: 'grade-1',
-        ...mockDto,
+        enrollmentId: mockDto.enrollmentId,
+        subjectId: 'subject-1',
+        subject: 'Math',
+        gradeType: mockDto.gradeType,
+        assessmentName: null,
+        assessmentDate: new Date(mockDto.assessmentDate!),
+        sequence: null,
+        score: { toNumber: () => 75 },
+        maxScore: { toNumber: () => 100 },
+        term: 'First Term',
+        academicYear: '2024/2025',
         teacherId: 'teacher-1',
+        remarks: null,
+        isPublished: false,
+        signedAt: new Date(),
+        createdAt: new Date(),
+        enrollment: {
+          student: {
+            id: 'student-1',
+            firstName: 'John',
+            lastName: 'Doe',
+            uid: 'STU-001',
+          },
+        },
+        teacher: {
+          id: 'teacher-1',
+          firstName: 'Jane',
+          lastName: 'Smith',
+          subject: 'Mathematics',
+        },
       };
 
       schoolRepository.findByIdOrSubdomain.mockResolvedValue(mockSchool as any);
       staffRepository.findTeacherByTeacherId.mockResolvedValue(mockTeacher as any);
       (prisma.enrollment.findUnique as jest.Mock).mockResolvedValue(mockEnrollment as any);
+      (prisma.subject.findUnique as jest.Mock).mockResolvedValue({ id: 'subject-1', name: 'Math' } as any);
+      (prisma.classTeacher.findFirst as jest.Mock).mockResolvedValue({ id: 'ct-1' } as any);
       (prisma.grade.create as jest.Mock).mockResolvedValue(mockGrade as any);
 
       const result = await service.createGrade(mockSchoolId, mockDto, mockUser);

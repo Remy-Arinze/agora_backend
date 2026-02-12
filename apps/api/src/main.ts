@@ -92,9 +92,10 @@ async function bootstrap() {
       .addTag('transfers', 'Student transfer requests')
       .build();
 
-    const document = SwaggerModule.createDocument(app, config);
+    // Cast app to satisfy Swagger types when workspace has duplicate @nestjs/common in node_modules
+    const document = SwaggerModule.createDocument(app as any, config);
     // Setup swagger at /api to serve as API documentation endpoint
-    SwaggerModule.setup('api', app, document, {
+    SwaggerModule.setup('api', app as any, document, {
       swaggerOptions: {
         persistAuthorization: true,
       },

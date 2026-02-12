@@ -74,6 +74,14 @@ export class TestUtils {
         update: jest.fn() as jest.Mock,
         delete: jest.fn() as jest.Mock,
       },
+      classLevel: {
+        findUnique: jest.fn() as jest.Mock,
+        findFirst: jest.fn() as jest.Mock,
+        findMany: jest.fn() as jest.Mock,
+        create: jest.fn() as jest.Mock,
+        update: jest.fn() as jest.Mock,
+        delete: jest.fn() as jest.Mock,
+      },
       enrollment: {
         findUnique: jest.fn() as jest.Mock,
         findFirst: jest.fn() as jest.Mock,
@@ -115,6 +123,22 @@ export class TestUtils {
         delete: jest.fn() as jest.Mock,
       },
       grade: {
+        findUnique: jest.fn() as jest.Mock,
+        findFirst: jest.fn() as jest.Mock,
+        findMany: jest.fn() as jest.Mock,
+        create: jest.fn() as jest.Mock,
+        update: jest.fn() as jest.Mock,
+        delete: jest.fn() as jest.Mock,
+      },
+      subject: {
+        findUnique: jest.fn() as jest.Mock,
+        findFirst: jest.fn() as jest.Mock,
+        findMany: jest.fn() as jest.Mock,
+        create: jest.fn() as jest.Mock,
+        update: jest.fn() as jest.Mock,
+        delete: jest.fn() as jest.Mock,
+      },
+      classTeacher: {
         findUnique: jest.fn() as jest.Mock,
         findFirst: jest.fn() as jest.Mock,
         findMany: jest.fn() as jest.Mock,
@@ -165,6 +189,8 @@ export class TestUtils {
         update: jest.fn() as jest.Mock,
         delete: jest.fn() as jest.Mock,
         deleteMany: jest.fn() as jest.Mock,
+        updateMany: jest.fn() as jest.Mock,
+        count: jest.fn() as jest.Mock,
       },
       $transaction: jest.fn((callback) => {
         const mockTx = TestUtils.createMockPrismaService();
@@ -199,6 +225,7 @@ export class TestUtils {
   static createMockEmailService(): jest.Mocked<EmailService> {
     return {
       sendPasswordResetEmail: jest.fn(),
+      sendPasswordResetConfirmationEmail: jest.fn(),
       sendLoginOtpEmail: jest.fn(),
       sendSchoolProfileEditVerificationEmail: jest.fn(),
       verifyConnection: jest.fn(),

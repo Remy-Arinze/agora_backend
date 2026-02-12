@@ -141,6 +141,8 @@ describe('SessionService', () => {
         id: mockSessionId,
         schoolId: mockSchoolId,
         status: SessionStatus.ACTIVE,
+        startDate: new Date('2024-09-01'),
+        endDate: new Date('2025-07-31'),
       };
       const mockTerm = {
         id: 'term-1',
@@ -150,7 +152,7 @@ describe('SessionService', () => {
       };
 
       schoolRepository.findByIdOrSubdomain.mockResolvedValue(mockSchool as any);
-      (prisma.academicSession.findUnique as jest.Mock).mockResolvedValue(mockSession as any);
+      (prisma.academicSession.findFirst as jest.Mock).mockResolvedValue(mockSession as any);
       (prisma.term.findFirst as jest.Mock).mockResolvedValue(null); // No overlapping term
       (prisma.term.create as jest.Mock).mockResolvedValue(mockTerm as any);
 
@@ -162,7 +164,7 @@ describe('SessionService', () => {
     it('should throw NotFoundException if session not found', async () => {
       const mockSchool = TestUtils.createMockSchool({ id: mockSchoolId });
       schoolRepository.findByIdOrSubdomain.mockResolvedValue(mockSchool as any);
-      (prisma.academicSession.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.academicSession.findFirst as jest.Mock).mockResolvedValue(null);
 
       await expect(service.createTerm(mockSchoolId, mockSessionId, mockDto)).rejects.toThrow(
         NotFoundException
