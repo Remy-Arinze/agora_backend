@@ -180,7 +180,7 @@ stages:
       workingDirectory: $(workingDir)
       displayName: 'Install Dependencies'
 
-    - script: npm run build -- --no-lint
+    - script: npm run build
       workingDirectory: $(workingDir)
       displayName: 'Build Next.js App'
       env:
