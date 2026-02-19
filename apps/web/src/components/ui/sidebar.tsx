@@ -2,8 +2,8 @@
 
 import { cn } from "@/lib/utils";
 import Link, { LinkProps } from "next/link";
-import React, { useState, createContext, useContext } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import React, { useState, createContext, useContext, useRef, useEffect } from "react";
+import gsap from "gsap";
 import { Menu, X } from "lucide-react";
 
 interface Links {
@@ -70,11 +70,11 @@ export const Sidebar = ({
   );
 };
 
-export const SidebarBody = (props: React.ComponentProps<typeof motion.div>) => {
+export const SidebarBody = (props: React.ComponentProps<"div">) => {
   return (
     <>
       <DesktopSidebar {...props} />
-      <MobileSidebar {...(props as React.ComponentProps<"div">)} />
+      <MobileSidebar {...props} />
     </>
   );
 };
@@ -83,22 +83,29 @@ export const DesktopSidebar = ({
   className,
   children,
   ...props
-}: React.ComponentProps<typeof motion.div>) => {
-  const { open, setOpen, animate } = useSidebar();
+}: React.ComponentProps<"div">) => {
+  const { open, animate } = useSidebar();
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || !animate) return;
+    const width = open ? 250 : 80;
+    gsap.to(el, { width, duration: 0.25, ease: "power2.inOut" });
+  }, [open, animate]);
 
   return (
-    <motion.div
+    <div
+      ref={ref}
       className={cn(
-        "h-screen px-4 py-4 hidden md:flex md:flex-col bg-[var(--dark-bg)] border-r border-[var(--dark-border)] w-[250px] flex-shrink-0 fixed left-0 top-0 z-20",
+        "h-screen px-4 py-4 hidden md:flex md:flex-col bg-[var(--dark-bg)] border-r border-[var(--dark-border)] flex-shrink-0 fixed left-0 top-0 z-20",
         className
       )}
-      animate={{
-        width: animate ? (open ? "250px" : "80px") : "250px",
-      }}
+      style={{ width: animate ? (open ? 250 : 80) : 250 }}
       {...props}
     >
       {children}
-    </motion.div>
+    </div>
   );
 };
 
@@ -108,6 +115,39 @@ export const MobileSidebar = ({
   ...props
 }: React.ComponentProps<"div">) => {
   const { open, setOpen } = useSidebar();
+  const ref = useRef<HTMLDivElement>(null);
+  const [shouldRender, setShouldRender] = useState(open);
+  const isExitingRef = useRef(false);
+
+  useEffect(() => {
+    if (open) {
+      setShouldRender(true);
+      isExitingRef.current = false;
+      const el = ref.current;
+      if (el) {
+        gsap.killTweensOf(el);
+        gsap.fromTo(el, { x: "-100%", opacity: 0 }, { x: 0, opacity: 1, duration: 0.3, ease: "power2.inOut", clearProps: "all" });
+      }
+    } else if (shouldRender && !isExitingRef.current) {
+      isExitingRef.current = true;
+      const el = ref.current;
+      if (!el) {
+        setShouldRender(false);
+        return;
+      }
+      gsap.killTweensOf(el);
+      gsap.to(el, {
+        x: "-100%",
+        opacity: 0,
+        duration: 0.3,
+        ease: "power2.inOut",
+        onComplete: () => {
+          setShouldRender(false);
+          isExitingRef.current = false;
+        },
+      });
+    }
+  }, [open, shouldRender]);
 
   return (
     <>
@@ -123,31 +163,24 @@ export const MobileSidebar = ({
             onClick={() => setOpen(!open)}
           />
         </div>
-        <AnimatePresence>
-          {open && (
-            <motion.div
-              initial={{ x: "-100%", opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              exit={{ x: "-100%", opacity: 0 }}
-              transition={{
-                duration: 0.3,
-                ease: "easeInOut",
-              }}
-              className={cn(
-                "fixed h-full w-full inset-0 bg-[var(--dark-bg)] p-10 z-[100] flex flex-col justify-between",
-                className
-              )}
+        {shouldRender && (
+          <div
+            ref={ref}
+            className={cn(
+              "fixed h-full w-full inset-0 bg-[var(--dark-bg)] p-10 z-[100] flex flex-col justify-between",
+              className
+            )}
+            style={{ transform: 'translateX(-100%)', opacity: 0 }}
+          >
+            <div
+              className="absolute right-10 top-10 z-50 text-gray-700 dark:text-dark-text-primary cursor-pointer"
+              onClick={() => setOpen(!open)}
             >
-              <div
-                className="absolute right-10 top-10 z-50 text-gray-700 dark:text-dark-text-primary cursor-pointer"
-                onClick={() => setOpen(!open)}
-              >
-                <X />
-              </div>
-              {children}
-            </motion.div>
-          )}
-        </AnimatePresence>
+              <X />
+            </div>
+            {children}
+          </div>
+        )}
       </div>
     </>
   );
@@ -166,27 +199,27 @@ export const SidebarLink = ({
 }) => {
   const { open, animate } = useSidebar();
 
-  // Clone icon and apply accent blue color when active, gray when inactive
   const iconWithColor = isActive
     ? React.cloneElement(link.icon as React.ReactElement, {
-      className: cn(
-        (link.icon as React.ReactElement)?.props?.className,
-        "text-[#2490FD]"
-      ),
-    })
+        className: cn(
+          (link.icon as React.ReactElement)?.props?.className,
+          "text-[#2490FD]"
+        ),
+      })
     : React.cloneElement(link.icon as React.ReactElement, {
-      className: cn(
-        (link.icon as React.ReactElement)?.props?.className,
-        "text-[#9ca3af] group-hover/sidebar:text-white"
-      ),
-    });
+        className: cn(
+          (link.icon as React.ReactElement)?.props?.className,
+          "text-[#9ca3af] group-hover/sidebar:text-white"
+        ),
+      });
+
+  const showLabel = animate ? open : true;
 
   return (
     <Link
       href={link.href}
       className={cn(
         "flex items-center justify-between gap-2 group/sidebar py-2 px-3 rounded-lg transition-colors relative",
-        // No background for active, just highlighted icon and white text
         isActive
           ? "text-white dark:text-white"
           : "text-[#9ca3af] dark:text-[#9ca3af] hover:bg-[#1f2937] dark:hover:bg-[#1f2937]",
@@ -196,27 +229,22 @@ export const SidebarLink = ({
     >
       <div className="flex items-center gap-2">
         {iconWithColor}
-        <motion.span
-          animate={{
-            display: animate ? (open ? "inline-block" : "none") : "inline-block",
-            opacity: animate ? (open ? 1 : 0) : 1,
-          }}
+        <span
           className={cn(
-            "text-[13px] group-hover/sidebar:translate-x-1 transition duration-150 whitespace-pre inline-block !p-0 !m-0",
-            isActive ? "text-white" : "text-[#9ca3af] group-hover/sidebar:text-white"
+            "text-[.85rem] group-hover/sidebar:translate-x-1 transition-all duration-200 whitespace-pre inline-block !p-0 !m-0",
+            isActive ? "text-white" : "text-[#9ca3af] group-hover/sidebar:text-white",
+            !showLabel && "opacity-0 w-0 overflow-hidden"
           )}
         >
           {link.label}
-        </motion.span>
+        </span>
       </div>
-      {/* Right arrow indicator for active link */}
       {isActive && (
-        <motion.div
-          animate={{
-            display: animate ? (open ? "inline-block" : "none") : "inline-block",
-            opacity: animate ? (open ? 1 : 0) : 1,
-          }}
-          className="text-white"
+        <span
+          className={cn(
+            "text-white inline-block transition-all duration-200",
+            !showLabel && "opacity-0 w-0 overflow-hidden"
+          )}
         >
           <svg
             width="16"
@@ -233,9 +261,8 @@ export const SidebarLink = ({
               strokeLinejoin="round"
             />
           </svg>
-        </motion.div>
+        </span>
       )}
     </Link>
   );
 };
-

@@ -26,7 +26,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Clock, GripVertical, X, Loader2, Sparkles } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { FadeInUp } from '@/components/ui/FadeInUp';
 import {
   type TimetablePeriod,
   type DayOfWeek,

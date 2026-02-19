@@ -5,7 +5,7 @@ import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { motion } from 'framer-motion';
+import { FadeInUp } from '@/components/ui/FadeInUp';
 import { Smartphone, QrCode, Users, CheckCircle2, XCircle, Clock } from 'lucide-react';
 
 // Mock data

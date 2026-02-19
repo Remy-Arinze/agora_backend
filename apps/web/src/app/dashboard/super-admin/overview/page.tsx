@@ -8,7 +8,7 @@ import { AnalyticsChart } from '@/components/dashboard/AnalyticsChart';
 import { ActivityLog } from '@/components/dashboard/ActivityLog';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { EntityAvatar } from '@/components/ui/EntityAvatar';
-import { motion } from 'framer-motion';
+import { FadeInUp } from '@/components/ui/FadeInUp';
 import { useSchools } from '@/hooks/useSchools';
 import { useAnalytics } from '@/hooks/useAnalytics';
 import { useAuth } from '@/hooks/useAuth';

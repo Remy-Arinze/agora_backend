@@ -9,9 +9,9 @@ import { Button } from '@/components/ui/Button';
 import { LogOut } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { motion } from 'framer-motion';
 import { getActivePluginsForTeacher } from '@/lib/plugins';
 import { usePermissionFilteredSidebar, type NavItem } from '@/hooks/useSidebarConfig';
+import { cn } from '@/lib/utils';
 import { SchoolTypeSwitcher } from '@/components/dashboard/SchoolTypeSwitcher';
 
 function LogoSection() {
@@ -48,15 +48,14 @@ function LogoutButton() {
       className="w-full justify-start gap-2 text-gray-700 dark:text-[#9ca3af] hover:bg-gray-100 dark:hover:bg-[#1f2937]"
     >
       <LogOut className="h-5 w-5 flex-shrink-0" />
-      <motion.span
-        animate={{
-          display: open ? "inline-block" : "none",
-          opacity: open ? 1 : 0,
-        }}
-        className="text-[13px]"
+      <span
+        className={cn(
+          "text-[13px] transition-opacity duration-200",
+          !open && "opacity-0 w-0 overflow-hidden inline-block"
+        )}
       >
         Logout
-      </motion.span>
+      </span>
     </Button>
   );
 }

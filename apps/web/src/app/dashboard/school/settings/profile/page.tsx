@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
-import { motion } from 'framer-motion';
+import { FadeInUp } from '@/components/ui/FadeInUp';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';

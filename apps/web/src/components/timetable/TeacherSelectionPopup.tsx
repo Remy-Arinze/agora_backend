@@ -14,7 +14,7 @@
  */
 
 import { useState, useMemo } from 'react';
-import { motion } from 'framer-motion';
+import { FadeInUp } from '@/components/ui/FadeInUp';
 import { X, User, Users, Clock, AlertTriangle, Check, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import type { TeacherWithWorkload, WorkloadStatus } from '@/lib/store/api/schoolAdminApi';

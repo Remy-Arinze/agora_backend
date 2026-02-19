@@ -4,7 +4,7 @@ import { useState, useMemo } from 'react';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { motion } from 'framer-motion';
+import { FadeInUp } from '@/components/ui/FadeInUp';
 import { GraduationCap, Download, Award, School, Calendar, FileText, TrendingUp, BookOpen } from 'lucide-react';
 import { useGetMyStudentTranscriptQuery } from '@/lib/store/api/schoolAdminApi';
 import { format } from 'date-fns';

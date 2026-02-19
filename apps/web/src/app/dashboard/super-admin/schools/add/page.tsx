@@ -8,7 +8,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
-import { motion } from 'framer-motion';
+import { FadeInUp } from '@/components/ui/FadeInUp';
 import { ArrowLeft, Building2, UserPlus, X, User, GraduationCap } from 'lucide-react';
 import { useCreateSchool, useUpdateSchool, useSchool } from '@/hooks/useSchools';
 import { createSchoolFormSchema } from '@/lib/validations/school-forms';

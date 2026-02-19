@@ -4,7 +4,7 @@ import { useState, useMemo } from 'react';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { motion, AnimatePresence } from 'framer-motion';
+import { FadeInUp } from '@/components/ui/FadeInUp';
 import { 
   FileText, 
   Download, 

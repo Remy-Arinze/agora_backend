@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { Alert } from '@/components/ui/Alert';
 import { SearchInput } from '@/components/ui/SearchInput';
-import { motion } from 'framer-motion';
+import { FadeInUp } from '@/components/ui/FadeInUp';
 import { 
   Puzzle,
   Sparkles,

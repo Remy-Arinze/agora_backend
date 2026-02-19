@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { Button } from '@/components/ui/Button';
-import { motion } from 'framer-motion';
+import { FadeInUp } from '@/components/ui/FadeInUp';
 import { Home, ArrowLeft, Search, AlertCircle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
@@ -12,18 +12,9 @@ export default function NotFound() {
   return (
     <div className="min-h-screen bg-[var(--light-bg)] dark:bg-dark-bg flex items-center justify-center p-4">
       <div className="max-w-2xl w-full text-center">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-        >
+        <FadeInUp from={{ opacity: 0, y: 20 }} to={{ opacity: 1, y: 0 }} duration={0.5}>
           {/* 404 Illustration */}
-          <motion.div
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            transition={{ delay: 0.2, type: 'spring', stiffness: 200 }}
-            className="mb-8"
-          >
+          <FadeInUp from={{ scale: 0 }} to={{ scale: 1 }} duration={0.4} delay={0.2} className="mb-8">
             <div className="relative inline-block">
               <div className="text-9xl font-bold text-blue-600 dark:text-blue-400 opacity-20">
                 404
@@ -32,34 +23,19 @@ export default function NotFound() {
                 <AlertCircle className="h-24 w-24 text-blue-600 dark:text-blue-400" />
               </div>
             </div>
-          </motion.div>
+          </FadeInUp>
 
           {/* Error Message */}
-          <motion.h1
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.3 }}
-            className="text-4xl font-bold text-light-text-primary dark:text-dark-text-primary mb-4"
-          >
+          <FadeInUp from={{ opacity: 0 }} to={{ opacity: 1 }} duration={0.3} delay={0.3} className="text-4xl font-bold text-light-text-primary dark:text-dark-text-primary mb-4">
             Page Not Found
-          </motion.h1>
+          </FadeInUp>
 
-          <motion.p
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.4 }}
-            className="text-lg text-light-text-secondary dark:text-dark-text-secondary mb-8"
-          >
+          <FadeInUp from={{ opacity: 0 }} to={{ opacity: 1 }} duration={0.3} delay={0.4} className="text-lg text-light-text-secondary dark:text-dark-text-secondary mb-8">
             The page you&apos;re looking for doesn&apos;t exist or has been moved.
-          </motion.p>
+          </FadeInUp>
 
           {/* Action Buttons */}
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.5 }}
-            className="flex flex-col sm:flex-row gap-4 justify-center items-center"
-          >
+          <FadeInUp from={{ opacity: 0, y: 10 }} to={{ opacity: 1, y: 0 }} duration={0.3} delay={0.5} className="flex flex-col sm:flex-row gap-4 justify-center items-center">
             <Button
               variant="primary"
               onClick={() => router.back()}
@@ -69,32 +45,21 @@ export default function NotFound() {
               Go Back
             </Button>
             <Link href="/dashboard">
-              <Button
-                variant="ghost"
-                className="flex items-center gap-2"
-              >
+              <Button variant="ghost" className="flex items-center gap-2">
                 <Home className="h-4 w-4" />
                 Go to Dashboard
               </Button>
             </Link>
             <Link href="/">
-              <Button
-                variant="ghost"
-                className="flex items-center gap-2"
-              >
+              <Button variant="ghost" className="flex items-center gap-2">
                 <Search className="h-4 w-4" />
                 Go to Home
               </Button>
             </Link>
-          </motion.div>
+          </FadeInUp>
 
           {/* Helpful Links */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.6 }}
-            className="mt-12 pt-8 border-t border-light-border dark:border-dark-border"
-          >
+          <FadeInUp from={{ opacity: 0 }} to={{ opacity: 1 }} duration={0.3} delay={0.6} className="mt-12 pt-8 border-t border-light-border dark:border-dark-border">
             <p className="text-sm text-light-text-muted dark:text-dark-text-muted mb-4">
               Common pages:
             </p>
@@ -109,10 +74,9 @@ export default function NotFound() {
                 Login
               </Link>
             </div>
-          </motion.div>
-        </motion.div>
+          </FadeInUp>
+        </FadeInUp>
       </div>
     </div>
   );
 }
-

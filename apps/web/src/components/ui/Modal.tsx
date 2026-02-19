@@ -1,9 +1,9 @@
 'use client';
 
-import { Fragment, ReactNode } from 'react';
+import { Fragment, ReactNode, useEffect, useRef, useState } from 'react';
+import gsap from 'gsap';
 import { X } from 'lucide-react';
 import { Button } from './Button';
-import { motion, AnimatePresence } from 'framer-motion';
 
 interface ModalProps {
   isOpen: boolean;
@@ -21,46 +21,69 @@ export function Modal({ isOpen, onClose, title, children, size = 'md' }: ModalPr
     xl: 'max-w-4xl',
   };
 
+  const backdropRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [shouldRender, setShouldRender] = useState(isOpen);
+  const isExitingRef = useRef(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      setShouldRender(true);
+      isExitingRef.current = false;
+      gsap.killTweensOf([backdropRef.current, panelRef.current].filter(Boolean));
+      const backdrop = backdropRef.current;
+      const panel = panelRef.current;
+      if (backdrop) gsap.fromTo(backdrop, { opacity: 0 }, { opacity: 1, duration: 0.2, ease: 'power2.out' });
+      if (panel) gsap.fromTo(panel, { opacity: 0, scale: 0.95, y: 20 }, { opacity: 1, scale: 1, y: 0, duration: 0.25, ease: 'power2.out', clearProps: 'all' });
+    } else if (shouldRender && !isExitingRef.current) {
+      isExitingRef.current = true;
+      const backdrop = backdropRef.current;
+      const panel = panelRef.current;
+      const complete = () => {
+        setShouldRender(false);
+        isExitingRef.current = false;
+      };
+      gsap.killTweensOf([backdrop, panel].filter(Boolean));
+      const tl = gsap.timeline({ onComplete: complete });
+      if (panel) tl.to(panel, { opacity: 0, scale: 0.95, y: 20, duration: 0.2, ease: 'power2.in' }, 0);
+      if (backdrop) tl.to(backdrop, { opacity: 0, duration: 0.2, ease: 'power2.in' }, 0);
+    }
+  }, [isOpen, shouldRender]);
+
+  if (!shouldRender) return null;
+
   return (
-    <AnimatePresence>
-      {isOpen && (
-        <>
-          {/* Backdrop */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={onClose}
-            className="fixed inset-0 bg-black/50 dark:bg-black/70 z-50"
-          />
-          {/* Modal */}
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className={`bg-light-card dark:bg-dark-surface rounded-lg shadow-xl w-full ${sizes[size]} max-h-[90vh] overflow-hidden flex flex-col`}
-              onClick={(e) => e.stopPropagation()}
+    <Fragment>
+      <div
+        ref={backdropRef}
+        role="presentation"
+        onClick={onClose}
+        className="fixed inset-0 bg-black/50 dark:bg-black/70 z-50"
+        style={{ opacity: 0 }}
+      />
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+        <div
+          ref={panelRef}
+          className={`bg-light-card dark:bg-dark-surface rounded-lg shadow-xl w-full ${sizes[size]} max-h-[90vh] overflow-hidden flex flex-col pointer-events-auto`}
+          style={{ opacity: 0 }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex items-center justify-between p-6 border-b border-light-border dark:border-dark-border">
+            <h2 className="text-xl font-semibold text-light-text-primary dark:text-dark-text-primary">
+              {title}
+            </h2>
+            <button
+              type="button"
+              onClick={onClose}
+              className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
             >
-              {/* Header */}
-              <div className="flex items-center justify-between p-6 border-b border-light-border dark:border-dark-border">
-                <h2 className="text-xl font-semibold text-light-text-primary dark:text-dark-text-primary">
-                  {title}
-                </h2>
-                <button
-                  onClick={onClose}
-                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
-              {/* Content */}
-              <div className="flex-1 overflow-y-auto p-6 scrollbar-hide">{children}</div>
-            </motion.div>
+              <X className="h-5 w-5" />
+            </button>
           </div>
-        </>
-      )}
-    </AnimatePresence>
+          <div className="flex-1 overflow-y-auto p-6 scrollbar-hide">{children}</div>
+        </div>
+      </div>
+    </Fragment>
   );
 }
 
@@ -122,4 +145,3 @@ export function ConfirmModal({
     </Modal>
   );
 }
-

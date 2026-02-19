@@ -7,7 +7,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Alert } from '@/components/ui/Alert';
-import { motion } from 'framer-motion';
+import { FadeInUp } from '@/components/ui/FadeInUp';
 import { Mail, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';

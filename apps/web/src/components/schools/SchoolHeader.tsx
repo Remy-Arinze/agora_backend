@@ -1,6 +1,6 @@
 'use client';
 
-import { motion } from 'framer-motion';
+import { FadeInUp } from '@/components/ui/FadeInUp';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/Button';
 import { EntityAvatar } from '@/components/ui/EntityAvatar';
@@ -18,11 +18,7 @@ export function SchoolHeader({ school, onEdit, onDelete }: SchoolHeaderProps) {
   const router = useRouter();
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: -20 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="mb-8"
-    >
+    <FadeInUp from={{ opacity: 0, y: -20 }} to={{ opacity: 1, y: 0 }} className="mb-8">
       <Button
         variant="ghost"
         size="sm"
@@ -75,7 +71,7 @@ export function SchoolHeader({ school, onEdit, onDelete }: SchoolHeaderProps) {
           </Button>
         </div>
       </div>
-    </motion.div>
+    </FadeInUp>
   );
 }
 

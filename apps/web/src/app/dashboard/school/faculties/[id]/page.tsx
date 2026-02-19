@@ -10,7 +10,7 @@ import { AutoGenerateButton } from '@/components/ui/AutoGenerateButton';
 import { EntityAvatar } from '@/components/ui/EntityAvatar';
 import { PermissionGate } from '@/components/permissions/PermissionGate';
 import { PermissionResource, PermissionType } from '@/hooks/usePermissions';
-import { motion } from 'framer-motion';
+import { FadeInUp } from '@/components/ui/FadeInUp';
 import {
   Library,
   Users,

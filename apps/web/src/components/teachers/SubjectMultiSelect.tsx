@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo, useCallback, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { FadeInUp } from '@/components/ui/FadeInUp';
 import { 
   Check, 
   X, 
@@ -276,13 +276,11 @@ export function SubjectMultiSelect({
       )}
 
       {/* Dropdown */}
-      <AnimatePresence>
-        {isOpen && (
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            transition={{ duration: 0.15 }}
+      {isOpen && (
+          <FadeInUp
+            from={{ opacity: 0, y: -10 }}
+            to={{ opacity: 1, y: 0 }}
+            duration={0.15}
             className="absolute z-50 mt-1 w-full max-w-md bg-light-card dark:bg-dark-surface border border-light-border dark:border-dark-border rounded-lg shadow-xl overflow-hidden"
             style={{ maxHeight: '400px' }}
           >
@@ -406,9 +404,8 @@ export function SubjectMultiSelect({
                 Done ({selectedSubjectIds.length})
               </Button>
             </div>
-          </motion.div>
+          </FadeInUp>
         )}
-      </AnimatePresence>
     </div>
   );
 }

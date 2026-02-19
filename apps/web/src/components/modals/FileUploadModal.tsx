@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useModalAnimation } from '@/lib/gsap';
 import { X, Upload, FileText, File, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 
@@ -195,17 +195,12 @@ export function FileUploadModal({
     }).join(',');
   };
 
-  if (!isOpen) return null;
+  const { shouldRender, backdropRef, panelRef } = useModalAnimation(isOpen);
+  if (!shouldRender) return null;
 
   return (
-    <AnimatePresence>
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          exit={{ opacity: 0, scale: 0.95 }}
-          className="bg-light-card dark:bg-dark-surface rounded-xl shadow-2xl max-w-lg w-full overflow-hidden"
-        >
+    <div ref={backdropRef} className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" style={{ opacity: 0 }}>
+      <div ref={panelRef} className="bg-light-card dark:bg-dark-surface rounded-xl shadow-2xl max-w-lg w-full overflow-hidden" style={{ opacity: 0 }}>
           {/* Header */}
           <div className="px-6 py-4 border-b border-light-border dark:border-dark-border flex items-center justify-between">
             <h2 className="text-xl font-semibold text-light-text-primary dark:text-dark-text-primary">
@@ -288,11 +283,9 @@ export function FileUploadModal({
                   {uploadStatus === 'uploading' && (
                     <div className="space-y-2">
                       <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                        <motion.div
-                          initial={{ width: 0 }}
-                          animate={{ width: `${uploadProgress}%` }}
-                          className="h-full bg-blue-600 rounded-full"
-                          transition={{ duration: 0.3 }}
+                        <div
+                          className="h-full bg-blue-600 rounded-full transition-[width] duration-300 ease-out"
+                          style={{ width: `${uploadProgress}%` }}
                         />
                       </div>
                       <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary">
@@ -383,9 +376,8 @@ export function FileUploadModal({
               )}
             </Button>
           </div>
-        </motion.div>
       </div>
-    </AnimatePresence>
+    </div>
   );
 }
 

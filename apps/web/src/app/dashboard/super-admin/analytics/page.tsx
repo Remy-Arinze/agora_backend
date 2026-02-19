@@ -6,7 +6,7 @@ import { AnalyticsChart } from '@/components/dashboard/AnalyticsChart';
 import { StatCard } from '@/components/dashboard/StatCard';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { Card } from '@/components/ui/Card';
-import { motion } from 'framer-motion';
+import { FadeInUp } from '@/components/ui/FadeInUp';
 import { useAnalytics } from '@/hooks/useAnalytics';
 import { Calendar } from 'lucide-react';
 

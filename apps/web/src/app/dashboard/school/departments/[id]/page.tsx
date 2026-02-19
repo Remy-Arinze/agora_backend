@@ -9,7 +9,7 @@ import { Alert } from '@/components/ui/Alert';
 import { BackButton } from '@/components/ui/BackButton';
 import { PermissionGate } from '@/components/permissions/PermissionGate';
 import { PermissionResource, PermissionType } from '@/hooks/usePermissions';
-import { motion } from 'framer-motion';
+import { FadeInUp } from '@/components/ui/FadeInUp';
 import {
   BookOpen,
   Users,

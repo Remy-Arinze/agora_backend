@@ -1,6 +1,6 @@
 'use client';
 
-import { motion } from 'framer-motion';
+import { FadeInUp } from '@/components/ui/FadeInUp';
 import { Trash2 } from 'lucide-react';
 import { CopyToClipboard } from './CopyToClipboard';
 import { formatRoleDisplayName } from '@/lib/utils/school-utils';
@@ -42,10 +42,10 @@ export function PersonCard({ person, type, onClick, onDelete, index = 0, schoolI
   };
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: index * 0.1 }}
+    <FadeInUp
+      delay={index * 0.1}
+      from={{ opacity: 0, y: 20 }}
+      to={{ opacity: 1, y: 0 }}
       onClick={onClick}
       className="p-4 bg-gray-50 dark:bg-dark-surface rounded-lg hover:bg-gray-100 dark:hover:bg-dark-surface/80 transition-colors relative group cursor-pointer"
     >
@@ -136,7 +136,7 @@ export function PersonCard({ person, type, onClick, onDelete, index = 0, schoolI
           Principal
         </span>
       )}
-    </motion.div>
+    </FadeInUp>
   );
 }
 

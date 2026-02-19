@@ -2,7 +2,7 @@
 
 import { useSelector } from 'react-redux';
 import { useRouter } from 'next/navigation';
-import { motion } from 'framer-motion';
+import { FadeInUp } from '@/components/ui/FadeInUp';
 import { RootState } from '@/lib/store/store';
 import { LandingNavbar } from '@/components/layout/LandingNavbar';
 import { Button } from '@/components/ui/Button';

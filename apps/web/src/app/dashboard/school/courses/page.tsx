@@ -8,7 +8,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { SearchInput } from '@/components/ui/SearchInput';
 import { Alert } from '@/components/ui/Alert';
-import { motion } from 'framer-motion';
+import { FadeInUp } from '@/components/ui/FadeInUp';
 import { BookOpen, Plus, Users, GraduationCap, Calendar, Loader2, Grid3x3, List, Edit, Trash2 } from 'lucide-react';
 import { AutoGenerateButton } from '@/components/ui/AutoGenerateButton';
 import { PermissionGate } from '@/components/permissions/PermissionGate';

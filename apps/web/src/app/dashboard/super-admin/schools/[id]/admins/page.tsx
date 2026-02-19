@@ -6,7 +6,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { Modal } from '@/components/ui/Modal';
-import { motion } from 'framer-motion';
+import { FadeInUp } from '@/components/ui/FadeInUp';
 import { ArrowLeft, Users, Copy, Check, UserCog, Trash2 } from 'lucide-react';
 import { useSchool } from '@/hooks/useSchools';
 import { useState } from 'react';

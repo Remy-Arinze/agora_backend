@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Alert } from '@/components/ui/Alert';
 import { SessionWizardInfoModal } from '@/components/modals';
-import { motion, AnimatePresence } from 'framer-motion';
+import { FadeInUp } from '@/components/ui/FadeInUp';
 import { Calendar, ArrowRight, CheckCircle, Loader2, AlertCircle, XCircle, GraduationCap, AlertTriangle } from 'lucide-react';
 import {
   useGetMySchoolQuery,

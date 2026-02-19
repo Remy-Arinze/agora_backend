@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/Button';
 import { X, Save, Loader2, Plus, ChevronDown, Trash2, Sparkles } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { FadeInUp } from '@/components/ui/FadeInUp';
 import {
   type TimetablePeriod,
   type DayOfWeek,

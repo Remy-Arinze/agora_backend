@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { motion } from 'framer-motion';
+import { FadeInUp } from '@/components/ui/FadeInUp';
 import { GraduationCap, Download, Award, School, Calendar, FileText, TrendingUp, Users, BookOpen } from 'lucide-react';
 
 // Mock data - will be replaced with API calls later

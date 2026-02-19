@@ -1,6 +1,6 @@
 'use client';
 
-import { motion } from 'framer-motion';
+import { FadeInUp } from '@/components/ui/FadeInUp';
 import { LandingNavbar } from '@/components/layout/LandingNavbar';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';

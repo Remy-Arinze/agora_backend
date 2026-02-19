@@ -8,7 +8,7 @@ import { StatCard } from '@/components/dashboard/StatCard';
 import { AnalyticsChart } from '@/components/dashboard/AnalyticsChart';
 import { Button } from '@/components/ui/Button';
 import { Alert } from '@/components/ui/Alert';
-import { motion } from 'framer-motion';
+import { FadeInUp } from '@/components/ui/FadeInUp';
 import { GraduationCap, Users, BookOpen, UserPlus, Loader2, AlertCircle, Calendar, XCircle, Upload } from 'lucide-react';
 import { ImageCropModal } from '@/components/ui/ImageCropModal';
 import { useRouter } from 'next/navigation';
@@ -209,11 +209,7 @@ export default function AdminOverviewPage() {
     <ProtectedRoute roles={['SCHOOL_ADMIN']}>
       <div className="w-full">
         {/* Header */}
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="mb-8"
-        >
+        <FadeInUp from={{ opacity: 0, y: -20 }} to={{ opacity: 1, y: 0 }} className="mb-8">
           <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
             <div>
               <h1 className="font-bold text-light-text-primary dark:text-white mb-2" style={{ fontSize: 'var(--text-page-title)' }}>
@@ -382,9 +378,9 @@ export default function AdminOverviewPage() {
             const isDueSoon = daysRemaining <= 7 && daysRemaining >= 0;
             
             return (
-              <motion.div
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
+              <FadeInUp
+                from={{ opacity: 0, y: -10 }}
+                to={{ opacity: 1, y: 0 }}
                 className="flex items-center gap-x-2"
                 style={{ marginTop: '50px', fontSize: 'var(--text-body)' }}
               >
@@ -413,10 +409,10 @@ export default function AdminOverviewPage() {
                     </span>
                   )}
                 </span>
-              </motion.div>
+              </FadeInUp>
             );
           })()}
-        </motion.div>
+        </FadeInUp>
 
         {/* Error State */}
         {error && (
@@ -555,9 +551,9 @@ export default function AdminOverviewPage() {
                         key={student.id}
                         href={`/dashboard/school/students/${student.id}`}
                       >
-                        <motion.div
-                          initial={{ opacity: 0, y: 10 }}
-                          animate={{ opacity: 1, y: 0 }}
+                        <FadeInUp
+                          from={{ opacity: 0, y: 10 }}
+                          to={{ opacity: 1, y: 0 }}
                           className="p-4 bg-transparent rounded-lg hover:bg-gray-100 dark:hover:bg-[var(--dark-hover)] transition-colors cursor-pointer border border-transparent hover:border-gray-200 dark:hover:border-dark-border"
                         >
                           <div className="flex items-center justify-between">
@@ -580,7 +576,7 @@ export default function AdminOverviewPage() {
                               {student.status}
                             </span>
                           </div>
-                        </motion.div>
+                        </FadeInUp>
                       </Link>
                     ))}
                   </div>

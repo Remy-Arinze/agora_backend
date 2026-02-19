@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Alert } from '@/components/ui/Alert';
 import { ImageUpload } from '@/components/ui/ImageUpload';
-import { motion } from 'framer-motion';
+import { FadeInUp } from '@/components/ui/FadeInUp';
 import { UserPlus, Users } from 'lucide-react';
 import { BackButton } from '@/components/ui/BackButton';
 import { useAddTeacher, useAddAdmin } from '@/hooks/useSchools';

@@ -1,7 +1,7 @@
 'use client';
 
 import { Card, CardContent } from '@/components/ui/Card';
-import { motion } from 'framer-motion';
+import { FadeInUp } from '@/components/ui/FadeInUp';
 
 interface StatCardProps {
   title: string;
@@ -27,13 +27,8 @@ export function StatCard({
   };
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3 }}
-      className="h-full" // Ensure motion div takes full height
-    >
-      <Card className="hover:shadow-lg transition-shadow duration-200 h-full"> {/* Add h-full to make cards same height */}
+    <FadeInUp duration={0.3} className="h-full">
+      <Card className="hover:shadow-lg transition-shadow duration-200 h-full">
         <CardContent className="h-full flex flex-col justify-center" style={{ padding: 'var(--stat-card-padding)' }}>
           <div className="flex items-center justify-between gap-3"> {/* Added gap for spacing */}
             <div className="flex-1 min-w-0"> {/* Added min-w-0 for text truncation */}
@@ -69,7 +64,7 @@ export function StatCard({
           </div>
         </CardContent>
       </Card>
-    </motion.div>
+    </FadeInUp>
   );
 }
 

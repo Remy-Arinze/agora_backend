@@ -6,7 +6,7 @@ import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
-import { motion } from 'framer-motion';
+import { FadeInUp } from '@/components/ui/FadeInUp';
 import { BookOpen, Search, Users, Clock, MapPin, Loader2, AlertCircle } from 'lucide-react';
 import { useGetMyClassesQuery, useGetMyTeacherSchoolQuery, useGetMyTeacherProfileQuery } from '@/lib/store/api/schoolAdminApi';
 import { useSchoolType } from '@/hooks/useSchoolType';

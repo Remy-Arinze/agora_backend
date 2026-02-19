@@ -3,7 +3,7 @@
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Zap, AlertCircle, CheckCircle, Info, ArrowRight, ExternalLink } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { FadeInUp } from '@/components/ui/FadeInUp';
 
 interface ActivityItem {
   type: string;
@@ -93,11 +93,11 @@ export function ActivityLog({ activities, onViewAll }: ActivityLogProps) {
         ) : (
           <div className="space-y-3">
             {displayActivities.map((activity, index) => (
-              <motion.div
+              <FadeInUp
                 key={index}
-                initial={{ opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: index * 0.1 }}
+                from={{ opacity: 0, x: -10 }}
+                to={{ opacity: 1, x: 0 }}
+                delay={index * 0.1}
                 className="relative flex items-start gap-3 p-3 rounded-lg bg-light-surface dark:bg-[#1a1f2e] hover:bg-light-hover dark:hover:bg-[#1f2937] transition-colors"
               >
                 {/* Colored vertical bar */}
@@ -122,7 +122,7 @@ export function ActivityLog({ activities, onViewAll }: ActivityLogProps) {
                     {activity.description}
                   </p>
                 </div>
-              </motion.div>
+              </FadeInUp>
             ))}
           </div>
         )}

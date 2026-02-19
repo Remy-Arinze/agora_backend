@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { motion } from 'framer-motion';
+import { FadeInUp } from '@/components/ui/FadeInUp';
 import {
   BookOpen,
   Plus,

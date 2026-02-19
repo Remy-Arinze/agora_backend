@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
-import { motion } from 'framer-motion';
+import { FadeInUp } from '@/components/ui/FadeInUp';
 import { Clock, Loader2, AlertCircle } from 'lucide-react';
 import {
   useGetSessionsQuery,

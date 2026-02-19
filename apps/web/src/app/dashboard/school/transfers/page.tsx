@@ -11,7 +11,7 @@ import { Modal } from '@/components/ui/Modal';
 import { SearchInput } from '@/components/ui/SearchInput';
 import { PermissionGate } from '@/components/permissions/PermissionGate';
 import { PermissionResource, PermissionType } from '@/hooks/usePermissions';
-import { motion } from 'framer-motion';
+import { FadeInUp } from '@/components/ui/FadeInUp';
 import {
   CheckCircle2,
   XCircle,

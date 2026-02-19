@@ -13,8 +13,8 @@
  * Used by SECONDARY schools after auto-generation.
  */
 
-import { useState, useMemo } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useState, useMemo, useRef, useEffect } from 'react';
+import gsap from 'gsap';
 import { 
   X, 
   Check, 
@@ -223,12 +223,17 @@ export function TimetablePreviewModal({
     onApply(editablePeriods);
   };
 
+  const panelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = panelRef.current;
+    if (!el) return;
+    gsap.fromTo(el, { opacity: 0, scale: 0.95 }, { opacity: 1, scale: 1, duration: 0.25, ease: 'power2.out', clearProps: 'all' });
+  }, []);
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.95 }}
+      <div
+        ref={panelRef}
         className="bg-white dark:bg-dark-surface rounded-lg shadow-xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col"
       >
         {/* Header */}
@@ -393,14 +398,8 @@ export function TimetablePreviewModal({
               )}
             </button>
             
-            <AnimatePresence>
-              {showDetails && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  className="overflow-hidden border-t border-light-border dark:border-dark-border"
-                >
+            {showDetails && (
+                <div className="overflow-hidden border-t border-light-border dark:border-dark-border">
                   <div className="p-2 max-h-48 overflow-y-auto">
                     {analysis.teacherAssignments.length > 0 ? (
                       analysis.teacherAssignments.map((assignment, idx) => (
@@ -415,9 +414,8 @@ export function TimetablePreviewModal({
                       </p>
                     )}
                   </div>
-                </motion.div>
+                </div>
               )}
-            </AnimatePresence>
           </div>
 
           {/* Subjects without teachers */}
@@ -482,7 +480,7 @@ export function TimetablePreviewModal({
             </Button>
           </div>
         </div>
-      </motion.div>
+      </div>
     </div>
   );
 }

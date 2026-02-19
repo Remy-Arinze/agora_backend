@@ -1,6 +1,6 @@
 'use client';
 
-import { motion } from 'framer-motion';
+import { FadeInUp } from '@/components/ui/FadeInUp';
 import { CheckCircle2, XCircle, LucideIcon } from 'lucide-react';
 
 interface Plugin {
@@ -23,10 +23,10 @@ export function PluginCard({ plugin, index }: PluginCardProps) {
   const Icon = plugin.icon;
 
   return (
-    <motion.div
-      initial={{ opacity: 0, x: -20 }}
-      animate={{ opacity: 1, x: 0 }}
-      transition={{ delay: index * 0.1 }}
+    <FadeInUp
+      delay={index * 0.1}
+      from={{ opacity: 0, x: -20 }}
+      to={{ opacity: 1, x: 0 }}
       className={`p-6 rounded-lg border ${
         plugin.status === 'active'
           ? 'bg-blue-50 dark:bg-blue-900/10 border-blue-200 dark:border-blue-800'
@@ -101,7 +101,7 @@ export function PluginCard({ plugin, index }: PluginCardProps) {
           </p>
         </div>
       </div>
-    </motion.div>
+    </FadeInUp>
   );
 }
 

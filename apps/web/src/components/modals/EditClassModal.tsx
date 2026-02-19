@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { useModalAnimation } from '@/lib/gsap';
 import { X, Loader2, Edit } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -73,15 +73,12 @@ export function EditClassModal({
     }
   };
 
-  if (!isOpen) return null;
+  const { shouldRender, backdropRef, panelRef } = useModalAnimation(isOpen);
+  if (!shouldRender) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="bg-light-card dark:bg-dark-surface rounded-lg shadow-xl max-w-md w-full"
-      >
+    <div ref={backdropRef} className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" style={{ opacity: 0 }}>
+      <div ref={panelRef} className="bg-light-card dark:bg-dark-surface rounded-lg shadow-xl max-w-md w-full" style={{ opacity: 0 }}>
         <div className="p-6">
           {/* Header */}
           <div className="flex items-start gap-4 mb-6">
@@ -166,7 +163,7 @@ export function EditClassModal({
             </div>
           </form>
         </div>
-      </motion.div>
+      </div>
     </div>
   );
 }

@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/Input';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { Pagination } from '@/components/ui/Pagination';
 import { StatCard } from '@/components/dashboard/StatCard';
-import { motion } from 'framer-motion';
+import { FadeInUp } from '@/components/ui/FadeInUp';
 import { Users, Plus, FileSpreadsheet, Search, Grid3x3, List, MoreVertical, BookOpen, CheckCircle, Clock, Ban, Mail, Loader2 } from 'lucide-react';
 import { useGetStaffListQuery, useGetMySchoolQuery, useResendPasswordResetForStaffMutation } from '@/lib/store/api/schoolAdminApi';
 import { useSchoolType } from '@/hooks/useSchoolType';

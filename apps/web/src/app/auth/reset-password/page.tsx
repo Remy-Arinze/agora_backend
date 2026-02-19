@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Alert } from '@/components/ui/Alert';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
-import { motion } from 'framer-motion';
+import { FadeInUp } from '@/components/ui/FadeInUp';
 import { Lock, Eye, EyeOff } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
