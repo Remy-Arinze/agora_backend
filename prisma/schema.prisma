@@ -135,6 +135,8 @@ model User {
   @@index([email])
   @@index([phone])
   @@index([accountStatus])
+  @@index([lastLoginAt])
+  @@index([createdAt])
 }
 
 model Student {
@@ -310,6 +312,7 @@ model School {
   @@index([subdomain])
   @@index([schoolId])
   @@index([isActive])
+  @@index([isActive, createdAt])
 }
 
 model Class {
@@ -339,6 +342,7 @@ model Class {
   @@index([type])
   @@index([academicYear])
   @@index([isActive])
+  @@index([schoolId, type, isActive])
 }
 
 model ClassTeacher {
@@ -394,6 +398,7 @@ model AcademicSession {
   @@index([startDate])
   @@index([schoolType])
   @@index([schoolId, name, schoolType]) // For efficient lookups
+  @@index([schoolId, status])
 }
 
 model Term {
@@ -633,6 +638,8 @@ model Enrollment {
   @@index([classArmId])
   @@index([termId])
   @@index([isActive])
+  @@index([schoolId, isActive])
+  @@index([schoolId, createdAt])
 }
 
 model Grade {

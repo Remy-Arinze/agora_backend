@@ -1,15 +1,25 @@
 import { School } from '@prisma/client';
 import { SchoolDto } from '../../dto/school.dto';
 
+/** Optional counts when mapping for list views (avoids loading full relations) */
+export interface SchoolListContext {
+  studentsCount?: number;
+  teachersCount?: number;
+}
+
 /**
  * Mapper for converting School entities to DTOs
  * Follows the mapper pattern for separation of concerns
  */
 export class SchoolMapper {
   /**
-   * Convert School entity to SchoolDto
+   * Convert School entity to SchoolDto.
+   * When listContext is provided (e.g. from groupBy counts), uses those counts instead of relation length.
    */
-  toDto(school: School & { admins?: any[]; teachers?: any[]; enrollments?: any[] }): SchoolDto {
+  toDto(
+    school: School & { admins?: any[]; teachers?: any[]; enrollments?: any[] },
+    listContext?: SchoolListContext
+  ): SchoolDto {
     // Calculate school type context
     const availableTypes: ('PRIMARY' | 'SECONDARY' | 'TERTIARY')[] = [];
     if (school.hasPrimary) availableTypes.push('PRIMARY');
@@ -65,8 +75,8 @@ export class SchoolMapper {
           isTemporary: teacher.isTemporary,
           createdAt: teacher.createdAt,
         })) || [],
-      teachersCount: school.teachers?.length || 0,
-      studentsCount: school.enrollments?.filter((e) => e.isActive).length || 0,
+      teachersCount: listContext?.teachersCount ?? school.teachers?.length ?? 0,
+      studentsCount: listContext?.studentsCount ?? school.enrollments?.filter((e) => e.isActive).length ?? 0,
       schoolType: {
         hasPrimary: school.hasPrimary,
         hasSecondary: school.hasSecondary,
@@ -79,11 +89,13 @@ export class SchoolMapper {
   }
 
   /**
-   * Convert array of School entities to SchoolDto array
+   * Convert array of School entities to SchoolDto array.
+   * Optional countsMap: schoolId -> { studentsCount, teachersCount } for list views (avoids loading full relations).
    */
   toDtoArray(
-    schools: (School & { admins?: any[]; teachers?: any[]; enrollments?: any[] })[]
+    schools: (School & { admins?: any[]; teachers?: any[]; enrollments?: any[] })[],
+    countsMap?: Record<string, SchoolListContext>
   ): SchoolDto[] {
-    return schools.map((school) => this.toDto(school));
+    return schools.map((school) => this.toDto(school, countsMap?.[school.id]));
   }
 }

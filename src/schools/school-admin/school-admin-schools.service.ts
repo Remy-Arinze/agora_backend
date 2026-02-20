@@ -30,6 +30,9 @@ import { EmailService } from '../../email/email.service';
 import { randomBytes } from 'crypto';
 import { isPrincipalRole } from '../dto/permission.dto';
 
+/** Max staff records fetched per type (admins + teachers) to avoid unbounded memory; full server-side pagination would require a union query. */
+const STAFF_FETCH_CAP = 500;
+
 /**
  * Service for school admin operations on their own school
  * Handles viewing and updating their own school information
@@ -221,25 +224,8 @@ export class SchoolAdminSchoolsService {
       // Pending admissions (placeholder - will be 0 if Admission model doesn't exist)
       this.getPendingAdmissionsCount(schoolId).catch(() => 0),
       this.getPendingAdmissionsCount(schoolId, lastMonth).catch(() => 0),
-      // All enrollments for growth trends - filter by schoolType if provided
-      this.prisma.enrollment.findMany({
-        where: {
-          schoolId,
-          createdAt: { gte: sixMonthsAgo },
-          ...(schoolType &&
-          classIds &&
-          classLevels &&
-          (classIds.length > 0 || classLevels.length > 0)
-            ? {
-                OR: [
-                  ...(classIds.length > 0 ? [{ classId: { in: classIds } }] : []),
-                  ...(classLevels.length > 0 ? [{ classLevel: { in: classLevels } }] : []),
-                ],
-              }
-            : {}),
-        },
-        select: { createdAt: true },
-      }),
+      // Omit full list; growth trends use per-month counts below (indexed, bounded)
+      Promise.resolve([] as { createdAt: Date }[]),
       // Recent students (last 5) - filter by schoolType if provided
       this.prisma.enrollment.findMany({
         where: {
@@ -272,25 +258,8 @@ export class SchoolAdminSchoolsService {
         orderBy: { createdAt: 'desc' },
         take: 5,
       }),
-      // Weekly admissions - filter by schoolType if provided
-      this.prisma.enrollment.findMany({
-        where: {
-          schoolId,
-          createdAt: { gte: lastWeek },
-          ...(schoolType &&
-          classIds &&
-          classLevels &&
-          (classIds.length > 0 || classLevels.length > 0)
-            ? {
-                OR: [
-                  ...(classIds.length > 0 ? [{ classId: { in: classIds } }] : []),
-                  ...(classLevels.length > 0 ? [{ classLevel: { in: classLevels } }] : []),
-                ],
-              }
-            : {}),
-        },
-        select: { createdAt: true },
-      }),
+      // Omit full list; weekly activity uses per-day counts below (indexed, bounded)
+      Promise.resolve([] as { createdAt: Date }[]),
       // Weekly transfers (assuming there's a transfer model or we track it via enrollment changes)
       Promise.resolve([]), // Placeholder for transfers
     ]);
@@ -339,30 +308,42 @@ export class SchoolAdminSchoolsService {
       'Dec',
     ];
 
+    const enrollmentTrendWhere =
+      schoolType && classIds && classLevels && (classIds.length > 0 || classLevels.length > 0)
+        ? {
+            OR: [
+              ...(classIds.length > 0 ? [{ classId: { in: classIds } }] : []),
+              ...(classLevels.length > 0 ? [{ classLevel: { in: classLevels } }] : []),
+            ],
+          }
+        : {};
+
     for (let i = 5; i >= 0; i--) {
       const monthDate = new Date(currentYear, currentMonth - i, 1);
       const nextMonthDate = new Date(currentYear, currentMonth - i + 1, 1);
 
-      const monthEnrollments = allEnrollments.filter(
-        (e) => e.createdAt >= monthDate && e.createdAt < nextMonthDate
-      ).length;
-
-      // Get teachers created in this month
-      const monthTeachers = await this.prisma.teacher.count({
-        where: {
-          schoolId,
-          createdAt: { gte: monthDate, lt: nextMonthDate },
-        },
-      });
-
-      // Get classes created in this month
-      const monthCourses = await this.prisma.class.count({
-        where: {
-          schoolId,
-          isActive: true,
-          createdAt: { gte: monthDate, lt: nextMonthDate },
-        },
-      });
+      const [monthEnrollments, monthTeachers, monthCourses] = await Promise.all([
+        this.prisma.enrollment.count({
+          where: {
+            schoolId,
+            createdAt: { gte: monthDate, lt: nextMonthDate },
+            ...enrollmentTrendWhere,
+          },
+        }),
+        this.prisma.teacher.count({
+          where: {
+            schoolId,
+            createdAt: { gte: monthDate, lt: nextMonthDate },
+          },
+        }),
+        this.prisma.class.count({
+          where: {
+            schoolId,
+            isActive: true,
+            createdAt: { gte: monthDate, lt: nextMonthDate },
+          },
+        }),
+      ]);
 
       growthTrends.push({
         name: monthNames[monthDate.getMonth()],
@@ -372,30 +353,44 @@ export class SchoolAdminSchoolsService {
       });
     }
 
-    // Calculate weekly activity (last 7 days)
-    const weeklyActivity: WeeklyActivityDataDto[] = [];
+    // Calculate weekly activity (last 7 days) using indexed count per day (batched)
     const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const weeklyAdmissionWhere =
+      schoolType && classIds && classLevels && (classIds.length > 0 || classLevels.length > 0)
+        ? {
+            OR: [
+              ...(classIds.length > 0 ? [{ classId: { in: classIds } }] : []),
+              ...(classLevels.length > 0 ? [{ classLevel: { in: classLevels } }] : []),
+            ],
+          }
+        : {};
 
-    for (let i = 6; i >= 0; i--) {
+    const dayRanges = Array.from({ length: 7 }, (_, i) => {
       const dayDate = new Date(now);
-      dayDate.setDate(dayDate.getDate() - i);
+      dayDate.setDate(dayDate.getDate() - (6 - i));
       dayDate.setHours(0, 0, 0, 0);
       const nextDayDate = new Date(dayDate);
       nextDayDate.setDate(nextDayDate.getDate() + 1);
+      return { dayDate, nextDayDate };
+    });
 
-      const dayAdmissions = weeklyAdmissions.filter(
-        (e) => e.createdAt >= dayDate && e.createdAt < nextDayDate
-      ).length;
+    const dayAdmissionCounts = await Promise.all(
+      dayRanges.map(({ dayDate, nextDayDate }) =>
+        this.prisma.enrollment.count({
+          where: {
+            schoolId,
+            createdAt: { gte: dayDate, lt: nextDayDate },
+            ...weeklyAdmissionWhere,
+          },
+        })
+      )
+    );
 
-      // Transfers placeholder (would need Transfer model)
-      const dayTransfers = 0;
-
-      weeklyActivity.push({
-        name: dayNames[dayDate.getDay()],
-        admissions: dayAdmissions,
-        transfers: dayTransfers,
-      });
-    }
+    const weeklyActivity: WeeklyActivityDataDto[] = dayRanges.map(({ dayDate }, idx) => ({
+      name: dayNames[dayDate.getDay()],
+      admissions: dayAdmissionCounts[idx],
+      transfers: 0,
+    }));
 
     // Map recent students
     const recentStudents: RecentStudentDto[] = recentEnrollments.map((enrollment) => ({
@@ -616,10 +611,8 @@ export class SchoolAdminSchoolsService {
       teacherIdsForSchoolType = Array.from(teacherIdSets);
     }
 
-    // Get all staff (admins and teachers) with filters
+    // Fetch staff with cap (bounded) to avoid unbounded memory for large schools
     const [allAdmins, allTeachers] = await Promise.all([
-      // Get all admins (filtered by search and role if needed)
-      // Note: Admins are not filtered by schoolType as they can manage all types
       this.prisma.schoolAdmin.findMany({
         where: {
           schoolId,
@@ -630,8 +623,8 @@ export class SchoolAdminSchoolsService {
         },
         include: { user: true },
         orderBy: { createdAt: 'desc' },
+        take: STAFF_FETCH_CAP,
       }),
-      // Get all teachers (filtered by search, exclude if filtering by specific admin role)
       this.prisma.teacher.findMany({
         where: teacherWhereCondition,
         include: {
@@ -669,6 +662,7 @@ export class SchoolAdminSchoolsService {
           },
         },
         orderBy: { createdAt: 'desc' },
+        take: STAFF_FETCH_CAP,
       }),
     ]);
 
@@ -778,7 +772,7 @@ export class SchoolAdminSchoolsService {
       availableRoles.add('Teacher');
     }
 
-    // Apply pagination
+    // Apply pagination (result set is bounded by STAFF_FETCH_CAP per type)
     const totalCount = filteredStaff.length;
     const totalPages = Math.ceil(totalCount / limit);
     const paginatedStaff = filteredStaff.slice(skip, skip + limit);
