@@ -386,17 +386,17 @@ export class SuperAdminSchoolsService {
     // Get total count for pagination
     const total = await this.prisma.school.count({ where });
 
-    // Get paginated schools
+    // Get paginated schools with bounded nested relations (list view)
     const schools = await this.prisma.school.findMany({
       where,
       include: {
         admins: {
           include: { user: true },
           orderBy: { role: 'asc' },
+          take: 10,
         },
-        teachers: true,
-        enrollments: {
-          where: { isActive: true },
+        teachers: {
+          take: 10,
         },
       },
       orderBy: { createdAt: 'desc' },
@@ -404,10 +404,48 @@ export class SuperAdminSchoolsService {
       take: limit,
     });
 
+    const schoolIds = schools.map((s) => s.id);
+    if (schoolIds.length === 0) {
+      return {
+        data: [],
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+        hasNext: page < Math.ceil(total / limit),
+        hasPrev: page > 1,
+      };
+    }
+
+    // Batch counts for students (active enrollments) and teachers per school (indexed, scalable)
+    const [enrollmentCounts, teacherCounts] = await Promise.all([
+      this.prisma.enrollment.groupBy({
+        by: ['schoolId'],
+        where: { schoolId: { in: schoolIds }, isActive: true },
+        _count: { id: true },
+      }),
+      this.prisma.teacher.groupBy({
+        by: ['schoolId'],
+        where: { schoolId: { in: schoolIds } },
+        _count: { id: true },
+      }),
+    ]);
+
+    const countsMap: Record<string, { studentsCount: number; teachersCount: number }> = {};
+    schoolIds.forEach((id) => {
+      countsMap[id] = { studentsCount: 0, teachersCount: 0 };
+    });
+    enrollmentCounts.forEach((row) => {
+      countsMap[row.schoolId].studentsCount = row._count.id;
+    });
+    teacherCounts.forEach((row) => {
+      countsMap[row.schoolId].teachersCount = row._count.id;
+    });
+
     const totalPages = Math.ceil(total / limit);
 
     return {
-      data: this.schoolMapper.toDtoArray(schools),
+      data: this.schoolMapper.toDtoArray(schools, countsMap),
       total,
       page,
       limit,

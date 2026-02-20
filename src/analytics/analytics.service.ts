@@ -202,162 +202,116 @@ export class AnalyticsService {
   }
 
   private async calculateGrowthTrends(): Promise<MonthlyData[]> {
-    const months: any[] = [];
     const now = new Date();
-
+    const monthRanges: { monthDate: Date; nextMonth: Date }[] = [];
     for (let i = 5; i >= 0; i--) {
-      const monthDate = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const nextMonth = new Date(now.getFullYear(), now.getMonth() - i + 1, 1);
-
-      const monthName = monthDate.toLocaleDateString('en-US', { month: 'short' });
-
-      const [schools, students, teachers, admins] = await Promise.all([
-        this.prisma.school.count({
-          where: {
-            createdAt: {
-              lt: nextMonth,
-            },
-            isActive: true,
-          },
-        }),
-        this.prisma.student.count({
-          where: {
-            createdAt: {
-              lt: nextMonth,
-            },
-          },
-        }),
-        this.prisma.teacher.count({
-          where: {
-            createdAt: {
-              lt: nextMonth,
-            },
-          },
-        }),
-        this.prisma.schoolAdmin.count({
-          where: {
-            createdAt: {
-              lt: nextMonth,
-            },
-          },
-        }),
-      ]);
-
-      months.push({
-        name: monthName,
-        schools,
-        students,
-        teachers,
-        admins,
+      monthRanges.push({
+        monthDate: new Date(now.getFullYear(), now.getMonth() - i, 1),
+        nextMonth: new Date(now.getFullYear(), now.getMonth() - i + 1, 1),
       });
     }
 
-    return months;
+    // Single batched round-trip: all count queries in parallel (indexed)
+    const allCounts = await Promise.all(
+      monthRanges.flatMap(({ nextMonth }) => [
+        this.prisma.school.count({
+          where: { createdAt: { lt: nextMonth }, isActive: true },
+        }),
+        this.prisma.student.count({
+          where: { createdAt: { lt: nextMonth } },
+        }),
+        this.prisma.teacher.count({
+          where: { createdAt: { lt: nextMonth } },
+        }),
+        this.prisma.schoolAdmin.count({
+          where: { createdAt: { lt: nextMonth } },
+        }),
+      ])
+    );
+
+    return monthRanges.map(({ monthDate }, i) => {
+      const base = i * 4;
+      return {
+        name: monthDate.toLocaleDateString('en-US', { month: 'short' }),
+        schools: allCounts[base],
+        students: allCounts[base + 1],
+        teachers: allCounts[base + 2],
+        admins: allCounts[base + 3],
+      };
+    });
   }
 
   private async calculateWeeklyActivity(startDate: Date, endDate: Date): Promise<WeeklyActivity[]> {
-    const days: WeeklyActivity[] = [];
-    const currentDate = new Date(startDate);
-    currentDate.setHours(0, 0, 0, 0);
+    const dayRanges: { dayDate: Date; nextDay: Date }[] = [];
+    const current = new Date(startDate);
+    current.setHours(0, 0, 0, 0);
     const end = new Date(endDate);
     end.setHours(23, 59, 59, 999);
 
-    while (currentDate <= end) {
-      const dayDate = new Date(currentDate);
+    while (current <= end) {
+      const dayDate = new Date(current);
       dayDate.setHours(0, 0, 0, 0);
-
       const nextDay = new Date(dayDate);
       nextDay.setDate(nextDay.getDate() + 1);
-
-      const dayName = dayDate.toLocaleDateString('en-US', { weekday: 'short' });
-
-      const [logins, registrations] = await Promise.all([
-        this.prisma.user.count({
-          where: {
-            lastLoginAt: {
-              gte: dayDate,
-              lt: nextDay,
-            },
-          },
-        }),
-        this.prisma.user.count({
-          where: {
-            createdAt: {
-              gte: dayDate,
-              lt: nextDay,
-            },
-          },
-        }),
-      ]);
-
-      days.push({
-        name: dayName,
-        logins,
-        registrations,
-      });
-
-      currentDate.setDate(currentDate.getDate() + 1);
+      dayRanges.push({ dayDate, nextDay });
+      current.setDate(current.getDate() + 1);
     }
 
-    return days;
+    const allCounts = await Promise.all(
+      dayRanges.flatMap(({ dayDate, nextDay }) => [
+        this.prisma.user.count({
+          where: { lastLoginAt: { gte: dayDate, lt: nextDay } },
+        }),
+        this.prisma.user.count({
+          where: { createdAt: { gte: dayDate, lt: nextDay } },
+        }),
+      ])
+    );
+
+    return dayRanges.map(({ dayDate }, i) => ({
+      name: dayDate.toLocaleDateString('en-US', { weekday: 'short' }),
+      logins: allCounts[i * 2],
+      registrations: allCounts[i * 2 + 1],
+    }));
   }
 
   private async calculateSchoolDistribution(
     startDate?: Date,
     endDate?: Date
   ): Promise<SchoolDistribution[]> {
-    const whereClause: any = { isActive: true };
+    const where: { isActive: true; createdAt?: { gte: Date; lte: Date } } = { isActive: true };
     if (startDate && endDate) {
-      whereClause.createdAt = {
-        gte: startDate,
-        lte: endDate,
-      };
+      where.createdAt = { gte: startDate, lte: endDate };
     }
 
-    const schools = await this.prisma.school.findMany({
-      where: whereClause,
-      select: {
-        state: true,
-      },
+    const byState = await this.prisma.school.groupBy({
+      by: ['state'],
+      where,
+      _count: { id: true },
     });
 
-    const distribution = schools.reduce(
-      (acc, school) => {
-        const state = school.state || 'Unknown';
-        acc[state] = (acc[state] || 0) + 1;
-        return acc;
-      },
-      {} as Record<string, number>
-    );
-
-    return Object.entries(distribution)
-      .map(([name, value]) => ({ name, value }))
+    return byState
+      .map((row) => ({ name: row.state ?? 'Unknown', value: row._count.id }))
       .sort((a, b) => b.value - a.value)
-      .slice(0, 5); // Top 5 states
+      .slice(0, 5);
   }
 
   private async calculateSchoolDistributionByLevel(
     startDate?: Date,
     endDate?: Date
   ): Promise<SchoolLevelDistribution[]> {
-    const whereClause: any = { isActive: true };
+    const where: { isActive: true; createdAt?: { gte: Date; lte: Date } } = { isActive: true };
     if (startDate && endDate) {
-      whereClause.createdAt = {
-        gte: startDate,
-        lte: endDate,
-      };
+      where.createdAt = { gte: startDate, lte: endDate };
     }
 
-    const schools = await this.prisma.school.findMany({
-      where: whereClause,
-      select: {
-        hasPrimary: true,
-        hasSecondary: true,
-        hasTertiary: true,
-      },
+    const byLevel = await this.prisma.school.groupBy({
+      by: ['hasPrimary', 'hasSecondary', 'hasTertiary'],
+      where,
+      _count: { id: true },
     });
 
-    const distribution = {
+    const distribution: Record<string, number> = {
       'Primary Only': 0,
       'Secondary Only': 0,
       'Tertiary Only': 0,
@@ -367,26 +321,15 @@ export class AnalyticsService {
       'All Levels': 0,
     };
 
-    schools.forEach((school) => {
-      const hasPrimary = school.hasPrimary;
-      const hasSecondary = school.hasSecondary;
-      const hasTertiary = school.hasTertiary;
-
-      if (hasPrimary && hasSecondary && hasTertiary) {
-        distribution['All Levels']++;
-      } else if (hasPrimary && hasSecondary) {
-        distribution['Primary + Secondary']++;
-      } else if (hasPrimary && hasTertiary) {
-        distribution['Primary + Tertiary']++;
-      } else if (hasSecondary && hasTertiary) {
-        distribution['Secondary + Tertiary']++;
-      } else if (hasPrimary) {
-        distribution['Primary Only']++;
-      } else if (hasSecondary) {
-        distribution['Secondary Only']++;
-      } else if (hasTertiary) {
-        distribution['Tertiary Only']++;
-      }
+    byLevel.forEach((row) => {
+      const { hasPrimary, hasSecondary, hasTertiary } = row;
+      if (hasPrimary && hasSecondary && hasTertiary) distribution['All Levels'] += row._count.id;
+      else if (hasPrimary && hasSecondary) distribution['Primary + Secondary'] += row._count.id;
+      else if (hasPrimary && hasTertiary) distribution['Primary + Tertiary'] += row._count.id;
+      else if (hasSecondary && hasTertiary) distribution['Secondary + Tertiary'] += row._count.id;
+      else if (hasPrimary) distribution['Primary Only'] += row._count.id;
+      else if (hasSecondary) distribution['Secondary Only'] += row._count.id;
+      else if (hasTertiary) distribution['Tertiary Only'] += row._count.id;
     });
 
     return Object.entries(distribution)
@@ -399,69 +342,45 @@ export class AnalyticsService {
     startDate?: Date,
     endDate?: Date
   ): Promise<LocationDistribution[]> {
-    const whereClause: any = { isActive: true };
+    const where: { isActive: true; createdAt?: { gte: Date; lte: Date } } = { isActive: true };
     if (startDate && endDate) {
-      whereClause.createdAt = {
-        gte: startDate,
-        lte: endDate,
-      };
+      where.createdAt = { gte: startDate, lte: endDate };
     }
 
-    const schools = await this.prisma.school.findMany({
-      where: whereClause,
-      select: {
-        state: true,
-      },
+    const byState = await this.prisma.school.groupBy({
+      by: ['state'],
+      where,
+      _count: { id: true },
     });
 
-    const distribution = schools.reduce(
-      (acc, school) => {
-        const state = school.state || 'Unknown';
-        acc[state] = (acc[state] || 0) + 1;
-        return acc;
-      },
-      {} as Record<string, number>
-    );
-
-    return Object.entries(distribution)
-      .map(([name, value]) => ({ name, value }))
+    return byState
+      .map((row) => ({ name: row.state ?? 'Unknown', value: row._count.id }))
       .sort((a, b) => b.value - a.value)
-      .slice(0, 10); // Top 10 states
+      .slice(0, 10);
   }
 
   private async calculateSchoolDistributionByCity(
     startDate?: Date,
     endDate?: Date
   ): Promise<LocationDistribution[]> {
-    const whereClause: any = { isActive: true };
+    const where: { isActive: true; createdAt?: { gte: Date; lte: Date } } = { isActive: true };
     if (startDate && endDate) {
-      whereClause.createdAt = {
-        gte: startDate,
-        lte: endDate,
-      };
+      where.createdAt = { gte: startDate, lte: endDate };
     }
 
-    const schools = await this.prisma.school.findMany({
-      where: whereClause,
-      select: {
-        city: true,
-        state: true,
-      },
+    const byCityState = await this.prisma.school.groupBy({
+      by: ['city', 'state'],
+      where,
+      _count: { id: true },
     });
 
-    const distribution = schools.reduce(
-      (acc, school) => {
-        const city = school.city ? `${school.city}, ${school.state || ''}`.trim() : 'Unknown';
-        acc[city] = (acc[city] || 0) + 1;
-        return acc;
-      },
-      {} as Record<string, number>
-    );
-
-    return Object.entries(distribution)
-      .map(([name, value]) => ({ name, value }))
+    return byCityState
+      .map((row) => ({
+        name: row.city ? `${row.city}, ${row.state ?? ''}`.trim() : 'Unknown',
+        value: row._count.id,
+      }))
       .sort((a, b) => b.value - a.value)
-      .slice(0, 10); // Top 10 cities
+      .slice(0, 10);
   }
 
   private async calculateRecentActivity(
