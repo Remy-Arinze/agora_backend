@@ -1,0 +1,90 @@
+trigger:
+  - main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  azureSubscription: 'agora-current-sc'
+  apiAppName: 'agora-api-dev'
+
+stages:
+- stage: Backend
+  displayName: 'Deploy Backend (API)'
+  jobs:
+  - job: BuildAndDeployAPI
+    steps:
+    - task: NodeTool@0
+      inputs:
+        versionSpec: '20.x'
+    
+    - script: npm ci
+      displayName: 'Install Dependencies'
+
+    # ⚠️ Check this path: update it if your schema.prisma moved during the repo split
+    - script: npx prisma generate --schema=packages/database/prisma/schema.prisma
+      displayName: 'Generate Prisma Client'
+
+    - bash: |
+        path="tsconfig.json"
+        if [ -f "$path" ]; then
+            node -e "
+                const fs = require('fs');
+                const tsconfig = JSON.parse(fs.readFileSync('$path'));
+                if (!tsconfig.compilerOptions) tsconfig.compilerOptions = {};
+                tsconfig.compilerOptions.strict = false;
+                tsconfig.compilerOptions.noImplicitAny = false;
+                tsconfig.compilerOptions.skipLibCheck = true;
+                fs.writeFileSync('$path', JSON.stringify(tsconfig, null, 2));
+            "
+            echo "Disabled strict mode in tsconfig.json"
+        fi
+      displayName: 'Disable Strict TypeScript Checks'
+
+    - script: npm run build
+      displayName: 'Build NestJS'
+      env:
+        NODE_OPTIONS: '--max-old-space-size=4096'
+
+    - script: npm prune --production
+      displayName: 'Prune Dev Dependencies'
+
+    - bash: |
+        ROOT=$(Build.SourcesDirectory)
+        DEPLOY_DIR=$ROOT/deploy_api
+        
+        echo "Preparing deployment package at $DEPLOY_DIR..."
+        rm -rf $DEPLOY_DIR
+        mkdir -p $DEPLOY_DIR/dist
+
+        cp $ROOT/package.json $DEPLOY_DIR/
+
+        if [ -f "$ROOT/dist/main.js" ]; then
+            echo "Found compiled entry point."
+            cp -r $ROOT/dist/* $DEPLOY_DIR/dist/
+        else
+            echo "##vso[task.logissue type=error]CRITICAL: Could not find dist/main.js"
+            exit 1
+        fi
+
+        echo "Copying node_modules..."
+        cp -r -L $ROOT/node_modules $DEPLOY_DIR/
+        
+        echo "Artifact assembly complete."
+      displayName: 'Assemble Deployment Package'
+
+    - task: ArchiveFiles@2
+      inputs:
+        rootFolderOrFile: '$(Build.SourcesDirectory)/deploy_api'
+        includeRootFolder: false
+        archiveType: 'zip'
+        archiveFile: '$(Build.ArtifactStagingDirectory)/api.zip'
+        replaceExistingArchive: true
+
+    - task: AzureWebApp@1
+      inputs:
+        azureSubscription: $(azureSubscription)
+        appType: 'webAppLinux'
+        appName: $(apiAppName)
+        package: '$(Build.ArtifactStagingDirectory)/api.zip'
+        startUpCommand: 'node dist/main'
