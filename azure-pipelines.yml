@@ -22,7 +22,7 @@ stages:
       displayName: 'Install Dependencies'
 
     # ⚠️ Check this path: update it if your schema.prisma moved during the repo split
-    - script: npx prisma generate --schema=packages/database/prisma/schema.prisma
+    - script: npx prisma generate --schema=prisma/schema.prisma
       displayName: 'Generate Prisma Client'
 
     - bash: |
