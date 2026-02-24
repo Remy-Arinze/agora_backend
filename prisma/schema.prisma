@@ -149,6 +149,8 @@ model Student {
   dateOfBirth   DateTime
   profileImage  String? // Cloudinary URL for student profile image
   profileLocked Boolean  @default(false)
+  nationality   String?  // e.g. Nigerian, Ghanaian
+  state         String?  // e.g. Lagos, Abuja (state/region of origin or residence)
   healthInfo    Json? // Health information (bloodGroup, allergies, medications, emergencyContact, emergencyContactPhone, medicalNotes)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt

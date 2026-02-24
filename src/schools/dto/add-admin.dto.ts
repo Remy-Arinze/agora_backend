@@ -1,8 +1,14 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsEmail, IsOptional, IsArray, ValidateNested } from 'class-validator';
-import { Type } from 'class-transformer';
+import { IsString, IsEmail, IsOptional, IsArray, ValidateNested, MinLength, MaxLength } from 'class-validator';
+import { Type, Transform } from 'class-transformer';
 import { AdminRole } from './create-school.dto';
 import { PermissionResource, PermissionType } from './permission.dto';
+import {
+  sanitizeString,
+  sanitizeOptionalString,
+  sanitizeEmail,
+  sanitizePhone,
+} from '../../common/utils/sanitize.util';
 
 /**
  * Represents a single permission assignment for the new admin
@@ -28,18 +34,27 @@ export class AdminPermissionDto {
 export class AddAdminDto {
   @ApiProperty({ description: 'Admin first name' })
   @IsString()
+  @MaxLength(50)
+  @Transform(({ value }) => sanitizeString(value, 50))
   firstName: string;
 
   @ApiProperty({ description: 'Admin last name' })
   @IsString()
+  @MaxLength(50)
+  @Transform(({ value }) => sanitizeString(value, 50))
   lastName: string;
 
   @ApiProperty({ description: 'Admin email' })
   @IsEmail()
+  @MaxLength(255)
+  @Transform(({ value }) => sanitizeEmail(value) ?? value ?? '')
   email: string;
 
   @ApiProperty({ description: 'Admin phone number' })
   @IsString()
+  @MinLength(10)
+  @MaxLength(20)
+  @Transform(({ value }) => sanitizePhone(value) ?? '')
   phone: string;
 
   @ApiProperty({
@@ -48,16 +63,22 @@ export class AddAdminDto {
     example: 'BURSAR or "Dean of Students"',
   })
   @IsString()
+  @MaxLength(50)
+  @Transform(({ value }) => sanitizeString(value, 50))
   role: string; // Changed to string to accept custom roles
 
   @ApiPropertyOptional({ description: 'Profile image URL (Cloudinary)' })
   @IsOptional()
   @IsString()
+  @MaxLength(2048)
+  @Transform(({ value }) => sanitizeOptionalString(value, 2048))
   profileImage?: string;
 
   @ApiPropertyOptional({ description: 'Employee ID (optional internal identifier)' })
   @IsOptional()
   @IsString()
+  @MaxLength(50)
+  @Transform(({ value }) => sanitizeOptionalString(value, 50))
   employeeId?: string;
 
   @ApiPropertyOptional({

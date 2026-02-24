@@ -250,6 +250,7 @@ export class SchoolAdminSchoolsService {
               firstName: true,
               middleName: true,
               lastName: true,
+              profileImage: true,
               uid: true,
               publicId: true,
             },
@@ -396,6 +397,7 @@ export class SchoolAdminSchoolsService {
     const recentStudents: RecentStudentDto[] = recentEnrollments.map((enrollment) => ({
       id: enrollment.student.id,
       name: `${enrollment.student.firstName} ${enrollment.student.middleName ? `${enrollment.student.middleName} ` : ''}${enrollment.student.lastName}`.trim(),
+      profileImage: enrollment.student.profileImage ?? null,
       classLevel: enrollment.classLevel || 'N/A',
       admissionNumber: enrollment.student.uid || enrollment.student.publicId || 'N/A',
       status: enrollment.isActive ? 'active' : 'inactive',

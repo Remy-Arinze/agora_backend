@@ -769,7 +769,8 @@ export class AuthService {
     name: string,
     role: string,
     publicId?: string,
-    schoolName?: string
+    schoolName?: string,
+    studentUid?: string // For students: show in signup email for their records
   ): Promise<void> {
     // Generate reset token
     const token = randomBytes(32).toString('hex');
@@ -794,7 +795,8 @@ export class AuthService {
         role,
         undefined, // schools array (not used in this context)
         publicId || undefined, // legacy publicId parameter
-        schoolName // legacy schoolName parameter
+        schoolName, // legacy schoolName parameter
+        studentUid // for students: UID shown in signup email
       );
     } catch (error) {
       // Log error but don't fail the request

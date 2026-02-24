@@ -7,6 +7,10 @@ export class EmailService {
   private readonly logger = new Logger(EmailService.name);
   private transporter: nodemailer.Transporter;
 
+  /** Agora logo URL for email headers (Cloudinary) */
+  private static readonly AGORA_LOGO_URL =
+    'https://res.cloudinary.com/dstm3asg5/image/upload/v1771924083/agora_main_htekwx.png';
+
   constructor(private configService: ConfigService) {
     // Support both MAIL_* and SMTP_* environment variable names
     const host =
@@ -69,9 +73,25 @@ export class EmailService {
     }
     
     // Otherwise, auto-detect based on environment
-    return nodeEnv === 'production' 
-      ? 'https://agora-schools.com' 
+    return nodeEnv === 'production'
+      ? 'https://agora-schools.com'
       : 'http://localhost:3000';
+  }
+
+  /**
+   * Returns the shared email header HTML with Agora logo and optional title.
+   * Logo and title are on one line; logo sized to match header text (~24px).
+   */
+  private getEmailHeaderHtml(title: string = 'Agora school space'): string {
+    const logoUrl = EmailService.AGORA_LOGO_URL;
+    return `<div style="background-color: #f9fafb; padding: 16px 20px; text-align: center; border-radius: 8px 8px 0 0; border-bottom: 2px solid #e5e7eb;">
+<table cellpadding="0" cellspacing="0" border="0" style="margin: 0 auto;">
+<tr>
+<td style="vertical-align: middle; padding-right: 12px;"><img src="${logoUrl}" alt="Agora" width="36" height="36" style="display: block; width: 36px; height: 36px; object-fit: contain; border: 0; outline: none; text-decoration: none;" /></td>
+<td style="vertical-align: middle;"><h1 style="color: #1f2937; margin: 0; font-size: 24px;">${title}</h1></td>
+</tr>
+</table>
+</div>`;
   }
 
   async sendPasswordResetEmail(
@@ -81,7 +101,8 @@ export class EmailService {
     role: string,
     schools?: Array<{ name: string; publicId: string; role: string }>,
     publicId?: string, // Legacy parameter for backward compatibility
-    schoolName?: string // Legacy parameter for backward compatibility
+    schoolName?: string, // Legacy parameter for backward compatibility
+    studentUid?: string // For students: show UID in signup email (for their records)
   ): Promise<void> {
     const frontendUrl = this.getFrontendUrl();
     // Normalize URL - remove trailing slash if present to prevent double slashes
@@ -110,7 +131,7 @@ export class EmailService {
           <div style="background-color: #eff6ff; border-left: 4px solid #3b82f6; padding: 15px; margin: 20px 0; border-radius: 4px;">
             <p style="margin: 0; color: #1e40af; font-weight: bold;">School: <strong>${schools[0].name}</strong></p>
             <p style="margin: 10px 0 0 0; color: #1e40af; font-weight: bold;">Your Public ID: <code style="background-color: white; padding: 4px 8px; border-radius: 4px; font-size: 16px;">${schools[0].publicId}</code></p>
-            <p style="margin: 10px 0 0 0; color: #1e40af; font-size: 14px;">Use this Public ID along with your password to log in to your account.</p>
+            <p style="margin: 10px 0 0 0; color: #1e40af; font-size: 14px;">You can log in using either your email address or this Public ID, along with your password.</p>
           </div>
         `;
       } else {
@@ -134,17 +155,27 @@ export class EmailService {
               ${schoolsList}
             </div>
             <p style="margin: 15px 0 0 0; color: #1e40af; font-size: 14px;">
-              <strong>Note:</strong> Resetting your password will update it for <strong>all schools</strong>. You can log in with your email (goes to first school) or any Public ID above (goes to that specific school).
+              <strong>Note:</strong> Resetting your password will update it for <strong>all schools</strong>. You can log in with your email (goes to first school) or any Public ID above, along with your password.
             </p>
           </div>
         `;
       }
     } else if (publicId && schoolName) {
-      // Legacy format for backward compatibility
+      // Legacy format for backward compatibility (new admin/teacher/student account)
       schoolsSection = `
         <div style="background-color: #eff6ff; border-left: 4px solid #3b82f6; padding: 15px; margin: 20px 0; border-radius: 4px;">
           <p style="margin: 0; color: #1e40af; font-weight: bold;">Your Public ID: <code style="background-color: white; padding: 4px 8px; border-radius: 4px; font-size: 16px;">${publicId}</code></p>
-          <p style="margin: 10px 0 0 0; color: #1e40af; font-size: 14px;">Use this Public ID along with your password to log in to your account.</p>
+          <p style="margin: 10px 0 0 0; color: #1e40af; font-size: 14px;">You can log in using either your email address or this Public ID, along with your password.</p>
+        </div>
+      `;
+    }
+
+    // For students: optional Student ID (UID) for their records in signup email
+    let studentUidSection = '';
+    if (studentUid && role === 'Student') {
+      studentUidSection = `
+        <div style="background-color: #f0fdf4; border-left: 4px solid #22c55e; padding: 15px; margin: 20px 0; border-radius: 4px;">
+          <p style="margin: 0; color: #166534; font-weight: bold;">Your Student ID (for your records): <code style="background-color: white; padding: 4px 8px; border-radius: 4px; font-size: 16px;">${studentUid}</code></p>
         </div>
       `;
     }
@@ -172,9 +203,7 @@ export class EmailService {
           <title>${isPasswordReset ? 'Reset Your Password' : 'Set Your Password'}</title>
         </head>
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="background-color: #f9fafb; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; border-bottom: 2px solid #e5e7eb;">
-            <h1 style="color: #1f2937; margin: 0; font-size: 24px;">Agora school space</h1>
-          </div>
+          ${this.getEmailHeaderHtml()}
           <div style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px;">
             ${
               isPasswordReset
@@ -191,6 +220,7 @@ export class EmailService {
             `
             }
             ${schoolsSection}
+            ${studentUidSection}
             <div style="background-color: #fff; border: 1px solid #e5e7eb; border-radius: 6px; padding: 20px; margin: 25px 0;">
               <p style="margin: 0 0 15px 0; color: #374151; font-weight: 600;">${isPasswordReset ? 'Click the button below to reset your password:' : 'Click the button below to set your password:'}</p>
               <div style="text-align: center;">
@@ -281,9 +311,7 @@ export class EmailService {
           <title>Password Changed</title>
         </head>
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="background-color: #f9fafb; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; border-bottom: 2px solid #e5e7eb;">
-            <h1 style="color: #1f2937; margin: 0; font-size: 24px;">Agora school space</h1>
-          </div>
+          ${this.getEmailHeaderHtml()}
           <div style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px;">
             <h2 style="color: #1f2937; margin-top: 0;">Password Successfully Changed</h2>
             <p>Hello ${name},</p>
@@ -293,12 +321,12 @@ export class EmailService {
                 ? `
             <div style="background-color: #eff6ff; border-left: 4px solid #3b82f6; padding: 15px; margin: 20px 0; border-radius: 4px;">
               <p style="margin: 0; color: #1e40af; font-weight: bold;">Your Public ID: <code style="background-color: white; padding: 4px 8px; border-radius: 4px; font-size: 16px;">${publicId}</code></p>
-              <p style="margin: 10px 0 0 0; color: #1e40af; font-size: 14px;">Use this Public ID along with your password to log in.</p>
+              <p style="margin: 10px 0 0 0; color: #1e40af; font-size: 14px;">You can log in using either your email address or this Public ID, along with your password.</p>
             </div>
             `
                 : ''
             }
-            <p>You can now log in to your account using your ${publicId ? 'Public ID or ' : ''}email and your new password.</p>
+            <p>You can now log in to your account using your ${publicId ? 'email or Public ID' : 'email'}, along with your new password.</p>
             <div style="text-align: center; margin: 30px 0;">
               <a href="${loginUrl}" style="background-color: #3b82f6; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: bold;">Log In</a>
             </div>
@@ -375,9 +403,7 @@ export class EmailService {
           <title>Role Change Notification</title>
         </head>
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="background-color: #f9fafb; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; border-bottom: 2px solid #e5e7eb;">
-            <h1 style="color: #1f2937; margin: 0; font-size: 24px;">Agora school space</h1>
-          </div>
+          ${this.getEmailHeaderHtml()}
           <div style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px;">
             <h2 style="color: #1f2937; margin-top: 0;">Role Change Notification</h2>
             <p>Hello ${name},</p>
@@ -391,12 +417,12 @@ export class EmailService {
                 ? `
             <div style="background-color: #eff6ff; border-left: 4px solid #3b82f6; padding: 15px; margin: 20px 0; border-radius: 4px;">
               <p style="margin: 0; color: #1e40af; font-weight: bold;">Your Public ID: <code style="background-color: white; padding: 4px 8px; border-radius: 4px; font-size: 16px;">${publicId}</code></p>
-              <p style="margin: 10px 0 0 0; color: #1e40af; font-size: 14px;">Use this Public ID and your password to log in to your account.</p>
+              <p style="margin: 10px 0 0 0; color: #1e40af; font-size: 14px;">You can log in using either your email address or this Public ID, along with your password.</p>
             </div>
             `
                 : ''
             }
-            <p>You can now access your account with your new role permissions. Please log in using your ${publicId ? 'Public ID and password' : 'email and password'} to see the updated dashboard.</p>
+            <p>You can now access your account with your new role permissions. Please log in using your ${publicId ? 'email or Public ID' : 'email'}, along with your password, to see the updated dashboard.</p>
             <div style="text-align: center; margin: 30px 0;">
               <a href="${loginUrl}" style="background-color: #3b82f6; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: bold;">Log In</a>
             </div>
@@ -468,9 +494,7 @@ export class EmailService {
           <title>Transfer Access Code Generated</title>
         </head>
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="background-color: #f9fafb; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; border-bottom: 2px solid #e5e7eb;">
-            <h1 style="color: #1f2937; margin: 0; font-size: 24px;">Agora school space</h1>
-          </div>
+          ${this.getEmailHeaderHtml()}
           <div style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px;">
             <h2 style="color: #1f2937; margin-top: 0;">Transfer Access Code Generated</h2>
             <p>Hello ${studentName},</p>
@@ -564,9 +588,7 @@ export class EmailService {
           <title>Transfer Access Code Revoked</title>
         </head>
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="background-color: #f9fafb; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; border-bottom: 2px solid #e5e7eb;">
-            <h1 style="color: #1f2937; margin: 0; font-size: 24px;">Agora school space</h1>
-          </div>
+          ${this.getEmailHeaderHtml()}
           <div style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px;">
             <h2 style="color: #1f2937; margin-top: 0;">Transfer Access Code Revoked</h2>
             <p>Hello ${studentName},</p>
@@ -655,9 +677,7 @@ export class EmailService {
           <title>Class Assignment</title>
         </head>
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="background-color: #f9fafb; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; border-bottom: 2px solid #e5e7eb;">
-            <h1 style="color: #1f2937; margin: 0; font-size: 24px;">Agora school space</h1>
-          </div>
+          ${this.getEmailHeaderHtml()}
           <div style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px;">
             <h2 style="color: #1f2937; margin-top: 0;">Class Assignment Notification</h2>
             <p>Hello ${teacherName},</p>
@@ -748,9 +768,7 @@ export class EmailService {
           <title>Class Assignment Removed</title>
         </head>
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="background-color: #f9fafb; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; border-bottom: 2px solid #e5e7eb;">
-            <h1 style="color: #1f2937; margin: 0; font-size: 24px;">Agora school space</h1>
-          </div>
+          ${this.getEmailHeaderHtml()}
           <div style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px;">
             <h2 style="color: #1f2937; margin-top: 0;">Class Assignment Removed</h2>
             <p>Hello ${teacherName},</p>
@@ -853,9 +871,7 @@ export class EmailService {
           <title>Permissions Updated</title>
         </head>
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="background-color: #f9fafb; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; border-bottom: 2px solid #e5e7eb;">
-            <h1 style="color: #1f2937; margin: 0; font-size: 24px;">Agora school space</h1>
-          </div>
+          ${this.getEmailHeaderHtml()}
           <div style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px;">
             <h2 style="color: #1f2937; margin-top: 0;">Permissions Updated</h2>
             <p>Hello ${adminName},</p>
@@ -1005,9 +1021,7 @@ export class EmailService {
           <title>New Academic Session Started</title>
         </head>
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="background-color: #f9fafb; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; border-bottom: 2px solid #e5e7eb;">
-            <h1 style="color: #1f2937; margin: 0; font-size: 24px;">🎓 New Session Started!</h1>
-          </div>
+          ${this.getEmailHeaderHtml('🎓 New Session Started!')}
           <div style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px;">
             <h2 style="color: #1f2937; margin-top: 0;">Welcome to ${sessionName}</h2>
             <p>Hello ${recipientName},</p>
@@ -1089,9 +1103,7 @@ export class EmailService {
           <title>New Term Started</title>
         </head>
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="background-color: #f9fafb; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; border-bottom: 2px solid #e5e7eb;">
-            <h1 style="color: #1f2937; margin: 0; font-size: 24px;">📚 ${termName} Has Started!</h1>
-          </div>
+          ${this.getEmailHeaderHtml(`📚 ${termName} Has Started!`)}
           <div style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px;">
             <h2 style="color: #1f2937; margin-top: 0;">Welcome Back!</h2>
             <p>Hello ${recipientName},</p>
@@ -1171,9 +1183,7 @@ export class EmailService {
           <title>Class Promotion</title>
         </head>
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="background-color: #f9fafb; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; border-bottom: 2px solid #e5e7eb;">
-            <h1 style="color: #1f2937; margin: 0; font-size: 24px;">🎉 Congratulations!</h1>
-          </div>
+          ${this.getEmailHeaderHtml('🎉 Congratulations!')}
           <div style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px;">
             <h2 style="color: #1f2937; margin-top: 0;">You've Been Promoted!</h2>
             <p>Dear ${studentName},</p>
@@ -1344,9 +1354,7 @@ export class EmailService {
           <title>Verify School Profile Changes</title>
         </head>
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="background-color: #f9fafb; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; border-bottom: 2px solid #e5e7eb;">
-            <h1 style="color: #1f2937; margin: 0; font-size: 24px;">Agora school space</h1>
-          </div>
+          ${this.getEmailHeaderHtml()}
           <div style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px;">
             <h2 style="color: #1f2937; margin-top: 0;">Verify School Profile Changes</h2>
             <p>Hello ${name},</p>
@@ -1459,9 +1467,7 @@ If you didn't request this code, please ignore this email or contact support imm
           <title>Login Verification Code</title>
         </head>
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="background-color: #f9fafb; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; border-bottom: 2px solid #e5e7eb;">
-            <h1 style="color: #1f2937; margin: 0; font-size: 24px;">Agora school space</h1>
-          </div>
+          ${this.getEmailHeaderHtml()}
           <div style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px;">
             <h2 style="color: #1f2937; margin-top: 0;">Login Verification Code</h2>
             <p>Hello ${name},</p>
@@ -1532,9 +1538,7 @@ If you didn't request this code, please ignore this email or contact support imm
         <title>Verify Password Change</title>
       </head>
       <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-        <div style="background-color: #f9fafb; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; border-bottom: 2px solid #e5e7eb;">
-          <h1 style="color: #1f2937; margin: 0; font-size: 24px;">Agora school space</h1>
-        </div>
+        ${this.getEmailHeaderHtml()}
         <div style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px;">
           <h2 style="color: #1f2937; margin-top: 0;">Verify Your Password Change</h2>
           <p>Hello ${name},</p>
@@ -1590,9 +1594,7 @@ If you didn't request this code, please ignore this email or contact support imm
         <title>Reset Your Password</title>
       </head>
       <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-        <div style="background-color: #f9fafb; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; border-bottom: 2px solid #e5e7eb;">
-          <h1 style="color: #1f2937; margin: 0; font-size: 24px;">Agora school space</h1>
-        </div>
+        ${this.getEmailHeaderHtml()}
         <div style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px;">
           <h2 style="color: #1f2937; margin-top: 0;">Reset Your Password</h2>
           <p>Hello ${name},</p>

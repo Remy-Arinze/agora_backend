@@ -22,6 +22,16 @@ export class UpdateStudentDto {
   @IsString()
   phone?: string;
 
+  @ApiPropertyOptional({ description: 'Nationality (e.g. Nigerian, Ghanaian)' })
+  @IsOptional()
+  @IsString()
+  nationality?: string;
+
+  @ApiPropertyOptional({ description: 'State or region (e.g. Lagos, Abuja)' })
+  @IsOptional()
+  @IsString()
+  state?: string;
+
   // Health Information (Optional)
   @ApiPropertyOptional({ description: 'Blood group' })
   @IsOptional()

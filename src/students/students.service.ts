@@ -366,6 +366,8 @@ export class StudentsService {
       dateOfBirth: student.dateOfBirth.toISOString().split('T')[0],
       profileLocked: student.profileLocked,
       profileImage: student.profileImage,
+      nationality: student.nationality ?? undefined,
+      state: student.state ?? undefined,
       healthInfo: healthInfo,
       createdAt: student.createdAt.toISOString(),
       updatedAt: student.updatedAt.toISOString(),
@@ -2303,6 +2305,8 @@ export class StudentsService {
       middleName?: string;
       lastName?: string;
       phone?: string;
+      nationality?: string;
+      state?: string;
       bloodGroup?: string;
       allergies?: string;
       medications?: string;
@@ -2320,6 +2324,8 @@ export class StudentsService {
     if (updateData.middleName !== undefined)
       studentUpdateData.middleName = updateData.middleName || null;
     if (updateData.lastName !== undefined) studentUpdateData.lastName = updateData.lastName;
+    if (updateData.nationality !== undefined) studentUpdateData.nationality = updateData.nationality || null;
+    if (updateData.state !== undefined) studentUpdateData.state = updateData.state || null;
 
     // Build health info object
     const healthInfo: any = {};
