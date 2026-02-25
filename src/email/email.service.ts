@@ -131,6 +131,7 @@ export class EmailService {
           <div style="background-color: #eff6ff; border-left: 4px solid #3b82f6; padding: 15px; margin: 20px 0; border-radius: 4px;">
             <p style="margin: 0; color: #1e40af; font-weight: bold;">School: <strong>${schools[0].name}</strong></p>
             <p style="margin: 10px 0 0 0; color: #1e40af; font-weight: bold;">Your Public ID: <code style="background-color: white; padding: 4px 8px; border-radius: 4px; font-size: 16px;">${schools[0].publicId}</code></p>
+            <p style="margin: 10px 0 0 0; color: #1e40af; font-weight: bold;">Login Email: <code style="background-color: white; padding: 4px 8px; border-radius: 4px; font-size: 16px;">${email}</code></p>
             <p style="margin: 10px 0 0 0; color: #1e40af; font-size: 14px;">You can log in using either your email address or this Public ID, along with your password.</p>
           </div>
         `;
@@ -151,6 +152,7 @@ export class EmailService {
           <div style="background-color: #eff6ff; border-left: 4px solid #3b82f6; padding: 15px; margin: 20px 0; border-radius: 4px;">
             <p style="margin: 0; color: #1e40af; font-weight: bold; font-size: 16px;">Your Schools & Public IDs:</p>
             <p style="margin: 10px 0; color: #1e40af; font-size: 14px;">You have accounts at multiple schools. After resetting your password, you can log in using:</p>
+            <p style="margin: 10px 0; color: #1e40af; font-weight: bold;">Login Email: <code style="background-color: white; padding: 4px 8px; border-radius: 4px; font-size: 14px;">${email}</code></p>
             <div style="margin-top: 15px;">
               ${schoolsList}
             </div>
@@ -165,6 +167,7 @@ export class EmailService {
       schoolsSection = `
         <div style="background-color: #eff6ff; border-left: 4px solid #3b82f6; padding: 15px; margin: 20px 0; border-radius: 4px;">
           <p style="margin: 0; color: #1e40af; font-weight: bold;">Your Public ID: <code style="background-color: white; padding: 4px 8px; border-radius: 4px; font-size: 16px;">${publicId}</code></p>
+          <p style="margin: 10px 0 0 0; color: #1e40af; font-weight: bold;">Login Email: <code style="background-color: white; padding: 4px 8px; border-radius: 4px; font-size: 16px;">${email}</code></p>
           <p style="margin: 10px 0 0 0; color: #1e40af; font-size: 14px;">You can log in using either your email address or this Public ID, along with your password.</p>
         </div>
       `;
@@ -185,6 +188,7 @@ export class EmailService {
     // If schools is undefined but schoolName/publicId are provided, it's a new account setup
     const isPasswordReset = schools !== undefined; // schools array provided = password reset
     const isNewAccount = !isPasswordReset && (schoolName || publicId); // legacy params = new account
+
 
     const mailOptions = {
       from: this.getFormattedFrom(),

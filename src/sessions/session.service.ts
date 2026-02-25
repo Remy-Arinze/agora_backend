@@ -78,6 +78,12 @@ export class SessionService {
       );
     }
 
+    if (monthsDiff > 12 || daysDiff > 370) {
+      throw new BadRequestException(
+        'An academic session cannot exceed 12 months.'
+      );
+    }
+
     // Check if session name already exists for this school type
     const existingSession = await this.prisma.academicSession.findFirst({
       where: {
@@ -181,12 +187,12 @@ export class SessionService {
       throw new BadRequestException('School not found');
     }
 
-    // First, try to find active session for the specified school type
-    let session = await this.prisma.academicSession.findFirst({
+    // Find active session for the specified school type
+    const session = await this.prisma.academicSession.findFirst({
       where: {
         schoolId: school.id,
         status: SessionStatus.ACTIVE,
-        ...(schoolType ? { schoolType } : {}),
+        schoolType: schoolType || null,
       },
       include: {
         terms: {
@@ -200,30 +206,6 @@ export class SessionService {
         },
       },
     });
-
-    // Fallback: If no session found with specific schoolType, try without schoolType filter
-    // This handles cases where sessions were created before schoolType was required
-    if (!session && schoolType) {
-      session = await this.prisma.academicSession.findFirst({
-        where: {
-          schoolId: school.id,
-          status: SessionStatus.ACTIVE,
-          // Also check for null or undefined schoolType
-          OR: [{ schoolType: null }, { schoolType: undefined }],
-        },
-        include: {
-          terms: {
-            where: {
-              status: TermStatus.ACTIVE,
-            },
-            orderBy: {
-              number: 'desc',
-            },
-            take: 1,
-          },
-        },
-      });
-    }
 
     if (!session) {
       return { session: undefined, term: undefined };
@@ -286,6 +268,12 @@ export class SessionService {
       if (monthsDiff < 10 || daysDiff < 300) {
         throw new BadRequestException(
           'An academic session must span at least 10 months (approximately one year). Please select appropriate start and end dates.'
+        );
+      }
+
+      if (monthsDiff > 12 || daysDiff > 370) {
+        throw new BadRequestException(
+          'An academic session cannot exceed 12 months.'
         );
       }
 
@@ -647,9 +635,11 @@ export class SessionService {
     const classLevels = await this.prisma.classLevel.findMany({
       where: {
         schoolId,
-        ...(schoolType ? { type: schoolType } : {}),
+        type: schoolType || undefined,
       },
-      orderBy: { level: 'asc' },
+      orderBy: {
+        level: 'asc',
+      },
     });
 
     // Check if any levels need nextLevelId set
@@ -691,7 +681,7 @@ export class SessionService {
       where: {
         academicSession: {
           schoolId: schoolId,
-          ...(schoolType ? { schoolType } : {}),
+          schoolType: schoolType || null,
         },
         id: { not: termId },
         status: { in: [TermStatus.ACTIVE, TermStatus.COMPLETED] },
@@ -846,7 +836,7 @@ export class SessionService {
       where: {
         academicSession: {
           schoolId: schoolId,
-          ...(schoolType ? { schoolType } : {}),
+          schoolType: schoolType || null,
         },
         id: { not: termId },
         status: { in: [TermStatus.ACTIVE, TermStatus.COMPLETED] },
@@ -1124,7 +1114,7 @@ export class SessionService {
       where: {
         academicSession: {
           schoolId: school.id,
-          ...(schoolType ? { schoolType } : {}),
+          schoolType: schoolType || null,
         },
         status: TermStatus.ACTIVE,
       },
@@ -1166,7 +1156,7 @@ export class SessionService {
       where: {
         schoolId: school.id,
         status: SessionStatus.ACTIVE,
-        ...(schoolType ? { schoolType } : {}),
+        schoolType: schoolType || null,
       },
       include: {
         terms: true,
@@ -1296,7 +1286,7 @@ export class SessionService {
     const sessions = await this.prisma.academicSession.findMany({
       where: {
         schoolId: school.id,
-        ...(schoolType ? { schoolType } : {}),
+        schoolType: schoolType || null,
       },
       include: {
         terms: {
