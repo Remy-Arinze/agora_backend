@@ -12,7 +12,9 @@ import {
   InitializeSessionDto,
   CreateTermDto,
   MigrateStudentsDto,
+  UpdateTermDatesDto,
   SessionType,
+  TermDateDto,
 } from './dto/initialize-session.dto';
 import { AcademicSessionDto, TermDto, ActiveSessionDto } from './dto/session.dto';
 import { SessionStatus, TermStatus } from '@prisma/client';
@@ -29,7 +31,7 @@ export class SessionService {
     private readonly prisma: PrismaService,
     private readonly schoolRepository: SchoolRepository,
     private readonly emailService: EmailService
-  ) {}
+  ) { }
 
   /**
    * Initialize a new academic session
@@ -320,91 +322,50 @@ export class SessionService {
         },
       });
 
+      // Determine which term to activate (defaults to 1 for backward compat)
+      const startingTermNumber = dto.startingTermNumber || 1;
+
       // Create terms/semesters based on school type
       // TERTIARY: 2 semesters, PRIMARY/SECONDARY: 3 terms
-      const sessionDurationMs = endDate.getTime() - startDate.getTime();
+      const termCount = isTertiary ? 2 : 3;
+      const termLabel = isTertiary ? 'Semester' : 'Term';
 
-      if (isTertiary) {
-        // TERTIARY: Create 2 semesters
-        const semesterDurationMs = sessionDurationMs / 2;
+      // Validate startingTermNumber range
+      if (startingTermNumber > termCount) {
+        throw new BadRequestException(
+          `Starting ${termLabel.toLowerCase()} number cannot exceed ${termCount} for ${isTertiary ? 'tertiary' : 'primary/secondary'} schools.`
+        );
+      }
 
-        const sem1Start = new Date(startDate);
-        const sem1End = new Date(startDate.getTime() + semesterDurationMs);
+      // Build the date ranges for each term – either from custom termDates or auto-calculated
+      const termRanges = this.buildTermDateRanges(
+        startDate,
+        endDate,
+        termCount,
+        dto.termDates,
+      );
 
-        const sem2Start = new Date(sem1End.getTime() + 1);
-        const sem2End = new Date(endDate);
+      // Create all terms, activate the starting term
+      for (const range of termRanges) {
+        const isStartingTerm = range.number === startingTermNumber;
+        const ordinal = range.number === 1 ? '1st' : range.number === 2 ? '2nd' : '3rd';
 
-        // Create 1st Semester (ACTIVE)
-        term = await this.prisma.term.create({
+        const createdTerm = await this.prisma.term.create({
           data: {
-            name: '1st Semester',
-            number: 1,
-            startDate: sem1Start,
-            endDate: sem1End,
-            status: TermStatus.ACTIVE,
+            name: `${ordinal} ${termLabel}`,
+            number: range.number,
+            startDate: range.startDate,
+            endDate: range.endDate,
+            status: isStartingTerm ? TermStatus.ACTIVE : (
+              range.number < startingTermNumber ? TermStatus.COMPLETED : TermStatus.DRAFT
+            ),
             academicSessionId: session.id,
           },
         });
 
-        // Create 2nd Semester (DRAFT)
-        await this.prisma.term.create({
-          data: {
-            name: '2nd Semester',
-            number: 2,
-            startDate: sem2Start,
-            endDate: sem2End,
-            status: TermStatus.DRAFT,
-            academicSessionId: session.id,
-          },
-        });
-      } else {
-        // PRIMARY/SECONDARY: Create 3 terms
-        const termDurationMs = sessionDurationMs / 3;
-
-        const term1Start = new Date(startDate);
-        const term1End = new Date(startDate.getTime() + termDurationMs);
-
-        const term2Start = new Date(term1End.getTime() + 1);
-        const term2End = new Date(term1End.getTime() + termDurationMs);
-
-        const term3Start = new Date(term2End.getTime() + 1);
-        const term3End = new Date(endDate);
-
-        // Create 1st Term (ACTIVE)
-        term = await this.prisma.term.create({
-          data: {
-            name: '1st Term',
-            number: 1,
-            startDate: term1Start,
-            endDate: term1End,
-            status: TermStatus.ACTIVE,
-            academicSessionId: session.id,
-          },
-        });
-
-        // Create 2nd Term (DRAFT)
-        await this.prisma.term.create({
-          data: {
-            name: '2nd Term',
-            number: 2,
-            startDate: term2Start,
-            endDate: term2End,
-            status: TermStatus.DRAFT,
-            academicSessionId: session.id,
-          },
-        });
-
-        // Create 3rd Term (DRAFT)
-        await this.prisma.term.create({
-          data: {
-            name: '3rd Term',
-            number: 3,
-            startDate: term3Start,
-            endDate: term3End,
-            status: TermStatus.DRAFT,
-            academicSessionId: session.id,
-          },
-        });
+        if (isStartingTerm) {
+          term = createdTerm;
+        }
       }
 
       // Deactivate previous terms for the same school type
@@ -711,26 +672,26 @@ export class SessionService {
     // If schoolType is specified, filter enrollments by class type (if class exists) or by classLevel name pattern
     const filteredEnrollments = schoolType
       ? previousEnrollments.filter((e) => {
-          // If class is linked, check its type
-          if (e.class?.type) {
-            return e.class.type === schoolType;
-          }
-          // Otherwise, try to infer from classLevel string
-          // PRIMARY: Class 1-6, Primary 1-6
-          // SECONDARY: JSS1-3, SS1-3
-          // TERTIARY: 100L-500L
-          const level = e.classLevel?.toUpperCase() || '';
-          if (schoolType === 'PRIMARY') {
-            return level.includes('CLASS') || level.includes('PRIMARY') || /^P[1-6]$/i.test(level);
-          }
-          if (schoolType === 'SECONDARY') {
-            return level.includes('JSS') || level.includes('SS') || level.includes('SECONDARY');
-          }
-          if (schoolType === 'TERTIARY') {
-            return /\d+L/.test(level) || level.includes('LEVEL');
-          }
-          return true; // Include if can't determine
-        })
+        // If class is linked, check its type
+        if (e.class?.type) {
+          return e.class.type === schoolType;
+        }
+        // Otherwise, try to infer from classLevel string
+        // PRIMARY: Class 1-6, Primary 1-6
+        // SECONDARY: JSS1-3, SS1-3
+        // TERTIARY: 100L-500L
+        const level = e.classLevel?.toUpperCase() || '';
+        if (schoolType === 'PRIMARY') {
+          return level.includes('CLASS') || level.includes('PRIMARY') || /^P[1-6]$/i.test(level);
+        }
+        if (schoolType === 'SECONDARY') {
+          return level.includes('JSS') || level.includes('SS') || level.includes('SECONDARY');
+        }
+        if (schoolType === 'TERTIARY') {
+          return /\d+L/.test(level) || level.includes('LEVEL');
+        }
+        return true; // Include if can't determine
+      })
       : previousEnrollments;
 
     let promotedCount = 0;
@@ -762,8 +723,8 @@ export class SessionService {
       // Find next level
       const nextLevel = currentLevel.nextLevelId
         ? await this.prisma.classLevel.findUnique({
-            where: { id: currentLevel.nextLevelId },
-          })
+          where: { id: currentLevel.nextLevelId },
+        })
         : null;
 
       if (!nextLevel) {
@@ -869,21 +830,21 @@ export class SessionService {
     // Filter by school type
     const filteredEnrollments = schoolType
       ? previousEnrollments.filter((e) => {
-          if (e.class?.type) {
-            return e.class.type === schoolType;
-          }
-          const level = e.classLevel?.toUpperCase() || '';
-          if (schoolType === 'PRIMARY') {
-            return level.includes('CLASS') || level.includes('PRIMARY') || /^P[1-6]$/i.test(level);
-          }
-          if (schoolType === 'SECONDARY') {
-            return level.includes('JSS') || level.includes('SS') || level.includes('SECONDARY');
-          }
-          if (schoolType === 'TERTIARY') {
-            return /\d+L/.test(level) || level.includes('LEVEL');
-          }
-          return true;
-        })
+        if (e.class?.type) {
+          return e.class.type === schoolType;
+        }
+        const level = e.classLevel?.toUpperCase() || '';
+        if (schoolType === 'PRIMARY') {
+          return level.includes('CLASS') || level.includes('PRIMARY') || /^P[1-6]$/i.test(level);
+        }
+        if (schoolType === 'SECONDARY') {
+          return level.includes('JSS') || level.includes('SS') || level.includes('SECONDARY');
+        }
+        if (schoolType === 'TERTIARY') {
+          return /\d+L/.test(level) || level.includes('LEVEL');
+        }
+        return true;
+      })
       : previousEnrollments;
 
     let promotedCount = 0;
@@ -920,8 +881,8 @@ export class SessionService {
       // Find next level
       const nextLevel = currentLevel.nextLevelId
         ? await this.prisma.classLevel.findUnique({
-            where: { id: currentLevel.nextLevelId },
-          })
+          where: { id: currentLevel.nextLevelId },
+        })
         : null;
 
       if (!nextLevel) {
@@ -1045,22 +1006,22 @@ export class SessionService {
     // Filter by school type if specified (using class.type or classLevel pattern)
     const filteredEnrollments = schoolType
       ? previousEnrollments.filter((e) => {
-          if (e.class?.type) {
-            return e.class.type === schoolType;
-          }
-          // Infer from classLevel string
-          const level = e.classLevel?.toUpperCase() || '';
-          if (schoolType === 'PRIMARY') {
-            return level.includes('CLASS') || level.includes('PRIMARY') || /^P[1-6]$/i.test(level);
-          }
-          if (schoolType === 'SECONDARY') {
-            return level.includes('JSS') || level.includes('SS') || level.includes('SECONDARY');
-          }
-          if (schoolType === 'TERTIARY') {
-            return /\d+L/.test(level) || level.includes('LEVEL');
-          }
-          return true;
-        })
+        if (e.class?.type) {
+          return e.class.type === schoolType;
+        }
+        // Infer from classLevel string
+        const level = e.classLevel?.toUpperCase() || '';
+        if (schoolType === 'PRIMARY') {
+          return level.includes('CLASS') || level.includes('PRIMARY') || /^P[1-6]$/i.test(level);
+        }
+        if (schoolType === 'SECONDARY') {
+          return level.includes('JSS') || level.includes('SS') || level.includes('SECONDARY');
+        }
+        if (schoolType === 'TERTIARY') {
+          return /\d+L/.test(level) || level.includes('LEVEL');
+        }
+        return true;
+      })
       : previousEnrollments;
 
     let carriedOverCount = 0;
@@ -1318,6 +1279,21 @@ export class SessionService {
   }
 
   private mapToTermDto(term: any): TermDto {
+    const now = new Date();
+    const termStart = new Date(term.startDate);
+    const termEnd = new Date(term.endDate);
+
+    // Compute currentWeek only for ACTIVE terms
+    let currentWeek: number | undefined;
+    if (term.status === TermStatus.ACTIVE && termStart <= now) {
+      const msPerWeek = 7 * 24 * 60 * 60 * 1000;
+      currentWeek = Math.max(1, Math.floor((now.getTime() - termStart.getTime()) / msPerWeek) + 1);
+    }
+
+    // Compute total weeks from start to end
+    const msPerWeek = 7 * 24 * 60 * 60 * 1000;
+    const totalWeeks = Math.max(1, Math.ceil((termEnd.getTime() - termStart.getTime()) / msPerWeek));
+
     return {
       id: term.id,
       name: term.name,
@@ -1328,8 +1304,127 @@ export class SessionService {
       halfTermEnd: term.halfTermEnd,
       status: term.status,
       academicSessionId: term.academicSessionId,
+      currentWeek,
+      totalWeeks,
       createdAt: term.createdAt,
     };
+  }
+
+  /**
+   * Build date ranges for terms. Uses custom termDates if provided,
+   * otherwise auto-calculates equal-split ranges (preserving existing behavior).
+   */
+  private buildTermDateRanges(
+    sessionStart: Date,
+    sessionEnd: Date,
+    termCount: number,
+    customTermDates?: TermDateDto[],
+  ): Array<{ number: number; startDate: Date; endDate: Date }> {
+    // If custom dates are provided, validate and use them
+    if (customTermDates && customTermDates.length > 0) {
+      // Validate we have the right count
+      if (customTermDates.length !== termCount) {
+        throw new BadRequestException(
+          `Expected ${termCount} term date entries but received ${customTermDates.length}.`
+        );
+      }
+
+      // Validate each term's dates
+      const ranges = customTermDates
+        .sort((a, b) => a.number - b.number)
+        .map((td) => {
+          const start = new Date(td.startDate);
+          const end = new Date(td.endDate);
+
+          if (start >= end) {
+            throw new BadRequestException(
+              `Term ${td.number}: start date must be before end date.`
+            );
+          }
+
+          if (start < sessionStart || end > sessionEnd) {
+            throw new BadRequestException(
+              `Term ${td.number}: dates must be within the session period ` +
+              `(${sessionStart.toISOString().split('T')[0]} to ${sessionEnd.toISOString().split('T')[0]}).`
+            );
+          }
+
+          return { number: td.number, startDate: start, endDate: end };
+        });
+
+      return ranges;
+    }
+
+    // Default: auto-calculate equal splits (preserves existing behavior)
+    const sessionDurationMs = sessionEnd.getTime() - sessionStart.getTime();
+    const termDurationMs = sessionDurationMs / termCount;
+    const ranges: Array<{ number: number; startDate: Date; endDate: Date }> = [];
+
+    for (let i = 0; i < termCount; i++) {
+      const termStart = i === 0
+        ? new Date(sessionStart)
+        : new Date(sessionStart.getTime() + termDurationMs * i + 1);
+      const termEnd = i === termCount - 1
+        ? new Date(sessionEnd)
+        : new Date(sessionStart.getTime() + termDurationMs * (i + 1));
+
+      ranges.push({ number: i + 1, startDate: termStart, endDate: termEnd });
+    }
+
+    return ranges;
+  }
+
+  /**
+   * Update term dates after creation.
+   * Validates new dates are within the parent session's date range.
+   */
+  async updateTermDates(
+    schoolId: string,
+    sessionId: string,
+    termId: string,
+    dto: UpdateTermDatesDto,
+  ): Promise<TermDto> {
+    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    if (!school) {
+      throw new BadRequestException('School not found');
+    }
+
+    const term = await this.prisma.term.findFirst({
+      where: {
+        id: termId,
+        academicSessionId: sessionId,
+        academicSession: { schoolId: school.id },
+      },
+      include: { academicSession: true },
+    });
+
+    if (!term) {
+      throw new NotFoundException('Term not found');
+    }
+
+    const newStart = dto.startDate ? new Date(dto.startDate) : term.startDate;
+    const newEnd = dto.endDate ? new Date(dto.endDate) : term.endDate;
+
+    if (newStart >= newEnd) {
+      throw new BadRequestException('Start date must be before end date');
+    }
+
+    // Validate within session bounds
+    if (newStart < term.academicSession.startDate || newEnd > term.academicSession.endDate) {
+      throw new BadRequestException('Term dates must be within session dates');
+    }
+
+    const updated = await this.prisma.term.update({
+      where: { id: termId },
+      data: {
+        ...(dto.startDate && { startDate: newStart }),
+        ...(dto.endDate && { endDate: newEnd }),
+        ...(dto.halfTermStart !== undefined && { halfTermStart: dto.halfTermStart ? new Date(dto.halfTermStart) : null }),
+        ...(dto.halfTermEnd !== undefined && { halfTermEnd: dto.halfTermEnd ? new Date(dto.halfTermEnd) : null }),
+      },
+    });
+
+    return this.mapToTermDto(updated);
   }
 
   /**

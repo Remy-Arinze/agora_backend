@@ -50,7 +50,7 @@ export class SchoolAdminSchoolsService {
     private readonly cloudinaryService: CloudinaryService,
     private readonly emailService: EmailService,
     private readonly configService: ConfigService
-  ) {}
+  ) { }
 
   /**
    * Get school admin's own school
@@ -163,15 +163,15 @@ export class SchoolAdminSchoolsService {
           schoolId,
           isActive: true,
           ...(schoolType &&
-          classIds &&
-          classLevels &&
-          (classIds.length > 0 || classLevels.length > 0)
+            classIds &&
+            classLevels &&
+            (classIds.length > 0 || classLevels.length > 0)
             ? {
-                OR: [
-                  ...(classIds.length > 0 ? [{ classId: { in: classIds } }] : []),
-                  ...(classLevels.length > 0 ? [{ classLevel: { in: classLevels } }] : []),
-                ],
-              }
+              OR: [
+                ...(classIds.length > 0 ? [{ classId: { in: classIds } }] : []),
+                ...(classLevels.length > 0 ? [{ classLevel: { in: classLevels } }] : []),
+              ],
+            }
             : {}),
         },
       }),
@@ -182,15 +182,15 @@ export class SchoolAdminSchoolsService {
           isActive: true,
           createdAt: { lte: lastMonth },
           ...(schoolType &&
-          classIds &&
-          classLevels &&
-          (classIds.length > 0 || classLevels.length > 0)
+            classIds &&
+            classLevels &&
+            (classIds.length > 0 || classLevels.length > 0)
             ? {
-                OR: [
-                  ...(classIds.length > 0 ? [{ classId: { in: classIds } }] : []),
-                  ...(classLevels.length > 0 ? [{ classLevel: { in: classLevels } }] : []),
-                ],
-              }
+              OR: [
+                ...(classIds.length > 0 ? [{ classId: { in: classIds } }] : []),
+                ...(classLevels.length > 0 ? [{ classLevel: { in: classLevels } }] : []),
+              ],
+            }
             : {}),
         },
       }),
@@ -232,15 +232,15 @@ export class SchoolAdminSchoolsService {
           schoolId,
           isActive: true,
           ...(schoolType &&
-          classIds &&
-          classLevels &&
-          (classIds.length > 0 || classLevels.length > 0)
+            classIds &&
+            classLevels &&
+            (classIds.length > 0 || classLevels.length > 0)
             ? {
-                OR: [
-                  ...(classIds.length > 0 ? [{ classId: { in: classIds } }] : []),
-                  ...(classLevels.length > 0 ? [{ classLevel: { in: classLevels } }] : []),
-                ],
-              }
+              OR: [
+                ...(classIds.length > 0 ? [{ classId: { in: classIds } }] : []),
+                ...(classLevels.length > 0 ? [{ classLevel: { in: classLevels } }] : []),
+              ],
+            }
             : {}),
         },
         include: {
@@ -312,11 +312,11 @@ export class SchoolAdminSchoolsService {
     const enrollmentTrendWhere =
       schoolType && classIds && classLevels && (classIds.length > 0 || classLevels.length > 0)
         ? {
-            OR: [
-              ...(classIds.length > 0 ? [{ classId: { in: classIds } }] : []),
-              ...(classLevels.length > 0 ? [{ classLevel: { in: classLevels } }] : []),
-            ],
-          }
+          OR: [
+            ...(classIds.length > 0 ? [{ classId: { in: classIds } }] : []),
+            ...(classLevels.length > 0 ? [{ classLevel: { in: classLevels } }] : []),
+          ],
+        }
         : {};
 
     for (let i = 5; i >= 0; i--) {
@@ -359,11 +359,11 @@ export class SchoolAdminSchoolsService {
     const weeklyAdmissionWhere =
       schoolType && classIds && classLevels && (classIds.length > 0 || classLevels.length > 0)
         ? {
-            OR: [
-              ...(classIds.length > 0 ? [{ classId: { in: classIds } }] : []),
-              ...(classLevels.length > 0 ? [{ classLevel: { in: classLevels } }] : []),
-            ],
-          }
+          OR: [
+            ...(classIds.length > 0 ? [{ classId: { in: classIds } }] : []),
+            ...(classLevels.length > 0 ? [{ classLevel: { in: classLevels } }] : []),
+          ],
+        }
         : {};
 
     const dayRanges = Array.from({ length: 7 }, (_, i) => {
@@ -477,12 +477,12 @@ export class SchoolAdminSchoolsService {
     // Build search conditions for both admins and teachers
     const searchCondition = search
       ? {
-          OR: [
-            { firstName: { contains: search, mode: 'insensitive' as const } },
-            { lastName: { contains: search, mode: 'insensitive' as const } },
-            { email: { contains: search, mode: 'insensitive' as const } },
-          ],
-        }
+        OR: [
+          { firstName: { contains: search, mode: 'insensitive' as const } },
+          { lastName: { contains: search, mode: 'insensitive' as const } },
+          { email: { contains: search, mode: 'insensitive' as const } },
+        ],
+      }
       : {};
 
     // Build role filter condition
@@ -622,6 +622,15 @@ export class SchoolAdminSchoolsService {
           ...(isSpecificRoleFilter
             ? { role: { equals: roleFilter, mode: 'insensitive' as const } }
             : {}),
+          // Filter admins by schoolType: show admins scoped to this type OR school-wide admins (null)
+          ...(schoolType
+            ? {
+              OR: [
+                { schoolType: schoolType },
+                { schoolType: null },
+              ],
+            }
+            : {}),
         },
         include: { user: true },
         orderBy: { createdAt: 'desc' },
@@ -713,6 +722,7 @@ export class SchoolAdminSchoolsService {
           | 'SUSPENDED'
           | 'ARCHIVED',
         profileImage: admin.profileImage,
+        schoolType: admin.schoolType || null,
         createdAt: admin.createdAt,
       })),
       ...filteredTeachers.map((teacher) => {
@@ -741,6 +751,7 @@ export class SchoolAdminSchoolsService {
             | 'SUSPENDED'
             | 'ARCHIVED',
           profileImage: teacher.profileImage,
+          schoolType: null,
           createdAt: teacher.createdAt,
         };
       }),
@@ -978,7 +989,7 @@ export class SchoolAdminSchoolsService {
       // Verify the changes match what was requested
       const requestedChanges = tokenRecord.changes as any;
       const requestedLevels = requestedChanges.levels || {};
-      
+
       // Normalize both objects to ensure consistent comparison
       // Convert undefined to false for comparison purposes
       const normalizeLevels = (lev: any) => ({
@@ -986,10 +997,10 @@ export class SchoolAdminSchoolsService {
         secondary: lev?.secondary ?? false,
         tertiary: lev?.tertiary ?? false,
       });
-      
+
       const normalizedRequested = normalizeLevels(requestedLevels);
       const normalizedIncoming = normalizeLevels(levels);
-      
+
       // Compare normalized values
       if (
         normalizedIncoming.primary !== normalizedRequested.primary ||
@@ -1243,7 +1254,7 @@ export class SchoolAdminSchoolsService {
     // Auto-detect frontend URL based on NODE_ENV
     const explicitFrontendUrl = this.configService.get<string>('FRONTEND_URL');
     const nodeEnv = this.configService.get<string>('NODE_ENV') || 'development';
-    const frontendUrl = explicitFrontendUrl || 
+    const frontendUrl = explicitFrontendUrl ||
       (nodeEnv === 'production' ? 'https://agora-schools.com' : 'http://localhost:3000');
     // Normalize URL - remove trailing slash if present to prevent double slashes
     const normalizedUrl = frontendUrl.replace(/\/+$/, '');

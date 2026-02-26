@@ -252,6 +252,7 @@ model SchoolAdmin {
   email        String?
   profileImage String? // Cloudinary URL for admin profile image
   role         String   @default("Administrator") // Store role as string to support custom roles
+  schoolType   String?  // "PRIMARY", "SECONDARY", "TERTIARY" - scopes admin to a specific school type
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -268,6 +269,7 @@ model SchoolAdmin {
   @@index([role])
   @@index([adminId])
   @@index([publicId])
+  @@index([schoolType])
 }
 
 model School {

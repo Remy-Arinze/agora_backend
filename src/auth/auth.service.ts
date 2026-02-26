@@ -34,7 +34,7 @@ export class AuthService {
     private readonly otpService: OtpService,
     private readonly passwordOtpService: PasswordOtpService,
     private readonly cloudinaryService: CloudinaryService,
-  ) {}
+  ) { }
 
   /**
    * Validate user credentials and return user with school context
@@ -214,7 +214,7 @@ export class AuthService {
    */
   async login(loginDto: LoginDto): Promise<LoginResponseDto> {
     this.logger.log(`[AUTH] Login attempt for: ${loginDto.emailOrPublicId}`);
-    
+
     try {
       const { emailOrPublicId, password } = loginDto;
 
@@ -239,7 +239,7 @@ export class AuthService {
         );
 
         this.logger.log(`[AUTH] OTP session created successfully. SessionId: ${sessionId.substring(0, 8)}...`);
-        
+
         // ALWAYS return OTP response - never return tokens directly
         return {
           requiresOtp: true,
@@ -333,6 +333,8 @@ export class AuthService {
       let currentSchoolId: string | null = null;
       let currentPublicId: string | null = null;
       let currentProfileId: string | null = null;
+      let adminRole: string | null = null;
+      let adminSchoolType: string | null = null;
 
       if (user.role === 'STUDENT') {
         if (user.studentProfile && user.studentProfile.enrollments.length > 0) {
@@ -349,6 +351,8 @@ export class AuthService {
         currentSchoolId = adminProfile.schoolId;
         currentPublicId = adminProfile.publicId;
         currentProfileId = adminProfile.id;
+        adminRole = adminProfile.role || null;
+        adminSchoolType = adminProfile.schoolType || null;
       } else if (
         user.role === 'TEACHER' &&
         user.teacherProfiles &&
@@ -382,6 +386,8 @@ export class AuthService {
           profileId: currentProfileId,
           publicId: currentPublicId,
           schoolId: currentSchoolId,
+          adminRole,
+          adminSchoolType,
         },
       };
     } catch (error) {
@@ -398,7 +404,7 @@ export class AuthService {
       throw new BadRequestException('OTP verification failed');
     }
   }
- 
+
 
   async verifyOtp(verifyOtpDto: VerifyOtpDto): Promise<AuthTokensDto> {
     const { phone, code } = verifyOtpDto;
@@ -667,11 +673,11 @@ export class AuthService {
     // This gives a grace period if the server clock is slightly ahead
     const bufferMs = 2 * 60 * 1000; // 2 minutes
     const nowWithBuffer = new Date(now.getTime() - bufferMs);
-    
+
     this.logger.log(
       `[RESET_PASSWORD] Checking token expiration. Now: ${now.toISOString()}, Now with buffer: ${nowWithBuffer.toISOString()}, Expires: ${expiresAt.toISOString()}`
     );
-    
+
     if (expiresAt < nowWithBuffer) {
       this.logger.warn(
         `[RESET_PASSWORD] Token expired. Expires: ${expiresAt.toISOString()}, Now: ${now.toISOString()} for user ${resetToken.userId}`
@@ -819,36 +825,36 @@ export class AuthService {
       include: {
         schoolAdmins: schoolId
           ? {
-              where: { schoolId },
-              include: {
-                school: {
-                  select: { name: true },
-                },
-              },
-            }
-          : {
-              include: {
-                school: {
-                  select: { name: true },
-                },
+            where: { schoolId },
+            include: {
+              school: {
+                select: { name: true },
               },
             },
+          }
+          : {
+            include: {
+              school: {
+                select: { name: true },
+              },
+            },
+          },
         teacherProfiles: schoolId
           ? {
-              where: { schoolId },
-              include: {
-                school: {
-                  select: { name: true },
-                },
-              },
-            }
-          : {
-              include: {
-                school: {
-                  select: { name: true },
-                },
+            where: { schoolId },
+            include: {
+              school: {
+                select: { name: true },
               },
             },
+          }
+          : {
+            include: {
+              school: {
+                select: { name: true },
+              },
+            },
+          },
         studentProfile: true,
       },
     });
@@ -941,7 +947,7 @@ export class AuthService {
     const token = randomBytes(32).toString('hex');
     const expiresAt = new Date();
     expiresAt.setTime(expiresAt.getTime() + 24 * 60 * 60 * 1000); // 24 hours for resent activation
-    
+
     this.logger.log(
       `[RESEND_PASSWORD_RESET] Creating new token for user ${userId}, expires at: ${expiresAt.toISOString()}`
     );
@@ -954,7 +960,7 @@ export class AuthService {
         expiresAt,
       },
     });
-    
+
     this.logger.log(
       `[RESEND_PASSWORD_RESET] New token created successfully for user ${userId}`
     );
@@ -1167,7 +1173,7 @@ export class AuthService {
     // Upload to Cloudinary with error handling and timeout
     let url: string;
     let publicId: string;
-    
+
     try {
       // Add timeout wrapper (30 seconds)
       const uploadPromise = this.cloudinaryService.uploadImage(
@@ -1175,13 +1181,13 @@ export class AuthService {
         'users/super-admin',
         safePublicId
       );
-      
+
       const timeoutPromise = new Promise((_, reject) => {
         setTimeout(() => {
           reject(new Error('Upload timeout: Cloudinary did not respond within 30 seconds'));
         }, 30000); // 30 second timeout
       });
-      
+
       const uploadResult = await Promise.race([uploadPromise, timeoutPromise]) as { url: string; publicId: string };
       url = uploadResult.url;
       publicId = uploadResult.publicId;
@@ -1190,20 +1196,20 @@ export class AuthService {
         `[PROFILE_IMAGE] Cloudinary upload failed for user ${user.id}:`,
         error instanceof Error ? error.stack : error
       );
-      
+
       // Re-throw with more context
       if (error?.http_code === 499 || error?.name === 'TimeoutError' || error?.message?.includes('timeout')) {
         throw new BadRequestException(
           'Image upload timed out. Please try again with a smaller image or check your internet connection.'
         );
       }
-      
+
       if (error?.message?.includes('Cloudinary is not configured') || error?.message?.includes('CLOUDINARY')) {
         throw new BadRequestException(
           'Image upload service is not configured. Please contact support.'
         );
       }
-      
+
       throw new BadRequestException(
         `Failed to upload image: ${error?.message || 'Unknown error'}. Please try again.`
       );

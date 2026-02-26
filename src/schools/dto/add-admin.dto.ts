@@ -96,4 +96,12 @@ export class AddAdminDto {
   @ValidateNested({ each: true })
   @Type(() => AdminPermissionDto)
   permissions?: AdminPermissionDto[];
+
+  @ApiPropertyOptional({
+    description: 'School type this admin is scoped to (PRIMARY, SECONDARY, TERTIARY). If not provided, admin is school-wide.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  schoolType?: string;
 }

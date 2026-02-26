@@ -111,5 +111,7 @@ export class AuthTokensDto {
     profileId?: string | null;
     publicId?: string | null;
     schoolId?: string | null; // ✅ Current school context
+    adminRole?: string | null; // ✅ Admin-specific role (e.g., 'principal', 'school_owner', 'headmistress')
+    adminSchoolType?: string | null; // ✅ School type this admin is scoped to (e.g., 'PRIMARY', 'SECONDARY')
   };
 }

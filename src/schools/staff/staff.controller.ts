@@ -70,7 +70,7 @@ export class StaffController {
     private readonly permissionService: PermissionService,
     private readonly staffImportService: StaffImportService,
     private readonly authService: AuthService
-  ) {}
+  ) { }
 
   // Admin endpoints
   @Post('admins')
@@ -86,8 +86,11 @@ export class StaffController {
     @Param('schoolId') schoolId: string,
     @Body() addAdminDto: AddAdminDto
   ): Promise<ResponseDto<any>> {
-    const data = await this.adminService.addAdmin(schoolId, addAdminDto);
-    return ResponseDto.ok(data, 'Administrator added successfully');
+    const result = await this.adminService.addAdmin(schoolId, addAdminDto);
+    const warnings = result.emailFailed
+      ? ['Password setup email could not be sent. You can resend it from the staff list.']
+      : undefined;
+    return ResponseDto.ok(result.data, 'Administrator added successfully', warnings);
   }
 
   @PostDecorator('admins/:adminId/image')
@@ -141,11 +144,13 @@ export class StaffController {
     description: 'Administrator deleted successfully',
   })
   @ApiResponse({ status: 404, description: 'School or administrator not found' })
+  @ApiResponse({ status: 403, description: 'Insufficient role to delete this administrator' })
   async deleteAdmin(
     @Param('schoolId') schoolId: string,
-    @Param('adminId') adminId: string
+    @Param('adminId') adminId: string,
+    @CurrentUser() user: UserWithContext
   ): Promise<ResponseDto<void>> {
-    await this.adminService.deleteAdmin(schoolId, adminId);
+    await this.adminService.deleteAdmin(schoolId, adminId, user);
     return ResponseDto.ok(undefined, 'Administrator deleted successfully');
   }
 
@@ -163,8 +168,11 @@ export class StaffController {
     @Param('schoolId') schoolId: string,
     @Body() addTeacherDto: AddTeacherDto
   ): Promise<ResponseDto<any>> {
-    const data = await this.teacherService.addTeacher(schoolId, addTeacherDto);
-    return ResponseDto.ok(data, 'Teacher added successfully');
+    const result = await this.teacherService.addTeacher(schoolId, addTeacherDto);
+    const warnings = result.emailFailed
+      ? ['Password setup email could not be sent. You can resend it from the staff list.']
+      : undefined;
+    return ResponseDto.ok(result.data, 'Teacher added successfully', warnings);
   }
 
   @PostDecorator('teachers/:teacherId/image')
@@ -218,11 +226,13 @@ export class StaffController {
     description: 'Teacher deleted successfully',
   })
   @ApiResponse({ status: 404, description: 'School or teacher not found' })
+  @ApiResponse({ status: 403, description: 'Insufficient role to delete this teacher' })
   async deleteTeacher(
     @Param('schoolId') schoolId: string,
-    @Param('teacherId') teacherId: string
+    @Param('teacherId') teacherId: string,
+    @CurrentUser() user: UserWithContext
   ): Promise<ResponseDto<void>> {
-    await this.teacherService.deleteTeacher(schoolId, teacherId);
+    await this.teacherService.deleteTeacher(schoolId, teacherId, user);
     return ResponseDto.ok(undefined, 'Teacher deleted successfully');
   }
 
