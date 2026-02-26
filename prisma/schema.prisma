@@ -149,6 +149,8 @@ model Student {
   dateOfBirth   DateTime
   profileImage  String? // Cloudinary URL for student profile image
   profileLocked Boolean  @default(false)
+  nationality   String?  // e.g. Nigerian, Ghanaian
+  state         String?  // e.g. Lagos, Abuja (state/region of origin or residence)
   healthInfo    Json? // Health information (bloodGroup, allergies, medications, emergencyContact, emergencyContactPhone, medicalNotes)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -250,6 +252,7 @@ model SchoolAdmin {
   email        String?
   profileImage String? // Cloudinary URL for admin profile image
   role         String   @default("Administrator") // Store role as string to support custom roles
+  schoolType   String?  // "PRIMARY", "SECONDARY", "TERTIARY" - scopes admin to a specific school type
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -266,6 +269,7 @@ model SchoolAdmin {
   @@index([role])
   @@index([adminId])
   @@index([publicId])
+  @@index([schoolType])
 }
 
 model School {

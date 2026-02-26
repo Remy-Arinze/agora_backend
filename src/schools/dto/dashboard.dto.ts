@@ -58,6 +58,9 @@ export class RecentStudentDto {
   @ApiProperty({ description: 'Student full name' })
   name: string;
 
+  @ApiProperty({ description: 'Profile image URL', required: false })
+  profileImage?: string | null;
+
   @ApiProperty({ description: 'Class level' })
   classLevel: string;
 

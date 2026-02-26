@@ -17,25 +17,26 @@ export class StaffMapper {
       email: admin.email,
       phone: admin.phone,
       role: admin.role,
+      schoolType: admin.schoolType,
       profileImage: admin.profileImage,
       publicId: admin.publicId,
       userId: admin.userId, // Include userId for resend email functionality
       createdAt: admin.createdAt,
       user: admin.user
         ? {
-            id: admin.user.id,
-            email: admin.user.email,
-            phone: admin.user.phone,
-            role: admin.user.role,
-            accountStatus: admin.user.accountStatus,
-          }
+          id: admin.user.id,
+          email: admin.user.email,
+          phone: admin.user.phone,
+          role: admin.user.role,
+          accountStatus: admin.user.accountStatus,
+        }
         : undefined,
       school: admin.school
         ? {
-            id: admin.school.id,
-            name: admin.school.name,
-            schoolId: admin.school.schoolId,
-          }
+          id: admin.school.id,
+          name: admin.school.name,
+          schoolId: admin.school.schoolId,
+        }
         : undefined,
     };
   }
@@ -60,19 +61,19 @@ export class StaffMapper {
       createdAt: teacher.createdAt,
       user: teacher.user
         ? {
-            id: teacher.user.id,
-            email: teacher.user.email,
-            phone: teacher.user.phone,
-            role: teacher.user.role,
-            accountStatus: teacher.user.accountStatus,
-          }
+          id: teacher.user.id,
+          email: teacher.user.email,
+          phone: teacher.user.phone,
+          role: teacher.user.role,
+          accountStatus: teacher.user.accountStatus,
+        }
         : undefined,
       school: teacher.school
         ? {
-            id: teacher.school.id,
-            name: teacher.school.name,
-            schoolId: teacher.school.schoolId,
-          }
+          id: teacher.school.id,
+          name: teacher.school.name,
+          schoolId: teacher.school.schoolId,
+        }
         : undefined,
     };
   }

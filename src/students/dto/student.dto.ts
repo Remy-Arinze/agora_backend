@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class StudentDto {
   @ApiProperty({ example: 'clx1234567890', description: 'Student ID' })
@@ -29,6 +29,12 @@ export class StudentDto {
     nullable: true,
   })
   profileImage: string | null;
+
+  @ApiPropertyOptional({ example: 'Nigerian', description: 'Nationality' })
+  nationality?: string | null;
+
+  @ApiPropertyOptional({ example: 'Lagos', description: 'State or region' })
+  state?: string | null;
 
   @ApiProperty({
     description: 'Health information',

@@ -100,15 +100,21 @@ export class OnboardingService {
         const lastName = row.lastName ? String(row.lastName).trim() : null;
         const dateOfBirth = row.dateOfBirth ? String(row.dateOfBirth).trim() : null;
         const parentPhone = row.parentPhone ? String(row.parentPhone).trim() : null;
+        const email = row.email ? String(row.email).trim() : null;
+        const nationality = row.nationality ? String(row.nationality).trim() : null;
+        const state = row.state ? String(row.state).trim() : null;
 
         // Validate required fields
-        if (!firstName || !lastName || !dateOfBirth || !classLevel || !parentPhone) {
+        if (!firstName || !lastName || !dateOfBirth || !classLevel || !parentPhone || !email || !nationality || !state) {
           const missingFields: string[] = [];
           if (!firstName) missingFields.push('firstName');
           if (!lastName) missingFields.push('lastName');
           if (!dateOfBirth) missingFields.push('dateOfBirth');
           if (!classLevel) missingFields.push('class/classLevel');
           if (!parentPhone) missingFields.push('parentPhone');
+          if (!email) missingFields.push('email');
+          if (!nationality) missingFields.push('nationality');
+          if (!state) missingFields.push('state');
 
           summary.errors.push({
             row: rowNumber,
@@ -140,7 +146,9 @@ export class OnboardingService {
           dateOfBirth: dateOfBirth,
           classLevel: classArmId ? undefined : classLevel, // Only send classLevel if no classArmId
           classArmId: classArmId, // Send classArmId if found
-          email: row.email ? String(row.email).trim() : undefined,
+          email,
+          nationality,
+          state,
           phone: row.phone ? String(row.phone).trim() : undefined,
           parentName: row.parentName ? String(row.parentName).trim() : parentPhone, // Fallback to phone if name not provided
           parentPhone: parentPhone,

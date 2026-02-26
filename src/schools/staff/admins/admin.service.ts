@@ -18,6 +18,7 @@ import { AddAdminDto } from '../../dto/add-admin.dto';
 import { UpdateAdminDto } from '../../dto/update-admin.dto';
 import { CloudinaryService } from '../../../storage/cloudinary/cloudinary.service';
 import { PermissionResource, PermissionType, isPrincipalRole } from '../../dto/permission.dto';
+import { UserWithContext } from '../../../auth/types/user-with-context.type';
 import { generateSecurePasswordHash } from '../../../common/utils/password.utils';
 
 /**
@@ -38,7 +39,7 @@ export class AdminService {
     private readonly staffValidator: StaffValidatorService,
     private readonly cloudinaryService: CloudinaryService,
     private readonly subscriptionsService: SubscriptionsService
-  ) {}
+  ) { }
 
   /**
    * Add an administrator to a school
@@ -66,7 +67,7 @@ export class AdminService {
     // Sanitize role
     const sanitizedRole = adminData.role.trim();
     const roleLower = sanitizedRole.toLowerCase();
-    
+
     // Validate role - use centralized isPrincipalRole function
     const isPrincipal = isPrincipalRole(sanitizedRole);
     this.logger.log(
@@ -153,6 +154,7 @@ export class AdminService {
             phone: adminData.phone.trim().replace(/\s+/g, ''),
             role: normalizedRole,
             profileImage: adminData.profileImage || null,
+            schoolType: adminData.schoolType?.trim() || null,
             userId: adminUser.id,
             schoolId: school.id,
           },
@@ -175,6 +177,7 @@ export class AdminService {
     });
 
     // Send password reset email
+    let emailFailed = false;
     try {
       await this.authService.sendPasswordResetForNewUser(
         result.user.id,
@@ -185,6 +188,7 @@ export class AdminService {
         result.admin.school.name
       );
     } catch (error) {
+      emailFailed = true;
       this.logger.error('Failed to send password reset email to admin:', error);
     }
 
@@ -216,7 +220,8 @@ export class AdminService {
       this.logger.log(`[addAdmin] Skipping permission assignment for Principal role`);
     }
 
-    return this.staffMapper.toAdminDto(result.admin);
+    const adminDto = this.staffMapper.toAdminDto(result.admin);
+    return { data: adminDto, emailFailed };
   }
 
   /**
@@ -289,36 +294,64 @@ export class AdminService {
   }
 
   /**
-   * Delete an administrator
+   * Delete an administrator with role-hierarchy authorization.
+   *
+   * Deletion rules:
+   * - school_owner can NEVER be deleted
+   * - Only school_owner can delete principal-level roles (principal, headmistress, etc.)
+   * - Principal-level roles can delete regular admins
+   * - Regular admins cannot delete anyone (they won't have STAFF:ADMIN permission anyway)
    */
-  async deleteAdmin(schoolId: string, adminId: string): Promise<void> {
+  async deleteAdmin(schoolId: string, adminId: string, requestingUser: UserWithContext): Promise<void> {
     // Validate school exists
     const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
 
-    // Validate admin exists in school
-    const admin = await this.staffRepository.findAdminById(adminId);
-    if (!admin || admin.schoolId !== school.id) {
+    // Validate target admin exists in school
+    const targetAdmin = await this.staffRepository.findAdminById(adminId);
+    if (!targetAdmin || targetAdmin.schoolId !== school.id) {
       throw new BadRequestException('Administrator not found in this school');
     }
 
-    // Check if it's a principal role - use centralized function
-    const isPrincipal = isPrincipalRole(admin.role);
+    // Rule: school_owner can NEVER be deleted
+    const targetRole = (targetAdmin.role || '').toLowerCase().trim();
+    if (targetRole === 'school_owner') {
+      throw new ForbiddenException('School owner cannot be deleted');
+    }
 
-    if (isPrincipal) {
-      // Check if there are other admins to take over
-      const otherAdmins = await this.staffRepository.findAdminsBySchool(school.id);
-      const nonPrincipalAdmins = otherAdmins.filter(
-        (a) => a.id !== adminId && !isPrincipalRole(a.role)
+    // Get the requesting admin's profile in this school
+    const requestingAdmin = await this.prisma.schoolAdmin.findFirst({
+      where: { userId: requestingUser.id, schoolId: school.id },
+    });
+
+    if (!requestingAdmin) {
+      throw new ForbiddenException('You do not have an admin profile in this school');
+    }
+
+    const requestingRole = (requestingAdmin.role || '').toLowerCase().trim();
+    const isRequestingSchoolOwner = requestingRole === 'school_owner';
+    const isRequestingPrincipalLevel = isPrincipalRole(requestingAdmin.role);
+    const isTargetPrincipalLevel = isPrincipalRole(targetAdmin.role);
+
+    // Rule: Only school_owner can delete principal-level roles
+    if (isTargetPrincipalLevel && !isRequestingSchoolOwner) {
+      throw new ForbiddenException(
+        'Only the school owner can delete a principal, headmistress, or headmaster'
       );
+    }
 
-      if (nonPrincipalAdmins.length === 0) {
-        throw new BadRequestException(
-          'Cannot delete principal-level role without another administrator to assign the role to'
-        );
-      }
+    // Rule: Must be school_owner or principal-level to delete anyone
+    if (!isRequestingSchoolOwner && !isRequestingPrincipalLevel) {
+      throw new ForbiddenException(
+        'Only school owners and principal-level administrators can delete staff'
+      );
+    }
+
+    // Rule: Cannot delete yourself
+    if (requestingAdmin.id === adminId) {
+      throw new BadRequestException('You cannot delete your own account');
     }
 
     await this.staffRepository.deleteAdmin(adminId);
@@ -790,10 +823,10 @@ export class AdminService {
    */
   private normalizeRoleName(role: string): string {
     if (!role) return 'administrator';
-    
+
     // Trim and normalize
     const normalized = role.trim();
-    
+
     // If it's already a principal role (case-insensitive), return the canonical form
     if (isPrincipalRole(normalized)) {
       // Find the matching canonical form from PRINCIPAL_ROLES
@@ -802,7 +835,7 @@ export class AdminService {
       const match = principalRoles.find(r => r.toLowerCase() === lowerNormalized);
       return match || normalized.toLowerCase();
     }
-    
+
     // For non-principal roles, replace spaces with underscores and lowercase
     return normalized.toLowerCase().replace(/\s+/g, '_');
   }

@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class ResponseDto<T> {
   @ApiProperty({ description: 'Indicates if the request was successful' })
@@ -13,15 +13,24 @@ export class ResponseDto<T> {
   @ApiProperty({ description: 'Timestamp of the response' })
   timestamp: string;
 
-  constructor(data: T, message = 'Success', success = true) {
+  @ApiPropertyOptional({
+    description: 'Non-fatal warnings (e.g., email delivery failed but record was created)',
+    type: [String],
+  })
+  warnings?: string[];
+
+  constructor(data: T, message = 'Success', success = true, warnings?: string[]) {
     this.success = success;
     this.message = message;
     this.data = data;
     this.timestamp = new Date().toISOString();
+    if (warnings && warnings.length > 0) {
+      this.warnings = warnings;
+    }
   }
 
-  static ok<T>(data: T, message?: string): ResponseDto<T> {
-    return new ResponseDto(data, message, true);
+  static ok<T>(data: T, message?: string, warnings?: string[]): ResponseDto<T> {
+    return new ResponseDto(data, message, true, warnings);
   }
 
   static error<T>(message: string, data?: T): ResponseDto<T> {

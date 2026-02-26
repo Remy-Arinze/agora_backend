@@ -85,6 +85,16 @@ export class CreateMasterScheduleDto {
   @IsNotEmpty()
   termId: string;
 
+  @ApiProperty({ description: 'Class ID (optional)', required: false })
+  @IsString()
+  @IsOptional()
+  classId?: string;
+
+  @ApiProperty({ description: 'Class Arm ID (optional)', required: false })
+  @IsString()
+  @IsOptional()
+  classArmId?: string;
+
   @ApiProperty({ description: 'Array of period definitions' })
   @IsNotEmpty()
   periods: Array<{

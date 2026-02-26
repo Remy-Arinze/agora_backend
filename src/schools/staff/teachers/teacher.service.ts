@@ -3,6 +3,7 @@ import {
   ConflictException,
   BadRequestException,
   NotFoundException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma.service';
 import { AuthService } from '../../../auth/auth.service';
@@ -14,6 +15,8 @@ import { StaffValidatorService } from '../../shared/staff-validator.service';
 import { AddTeacherDto } from '../../dto/add-teacher.dto';
 import { UpdateTeacherDto } from '../../dto/update-teacher.dto';
 import { CloudinaryService } from '../../../storage/cloudinary/cloudinary.service';
+import { isPrincipalRole } from '../../dto/permission.dto';
+import { UserWithContext } from '../../../auth/types/user-with-context.type';
 import { generateSecurePasswordHash } from '../../../common/utils/password.utils';
 
 /**
@@ -31,7 +34,7 @@ export class TeacherService {
     private readonly idGenerator: IdGeneratorService,
     private readonly staffValidator: StaffValidatorService,
     private readonly cloudinaryService: CloudinaryService
-  ) {}
+  ) { }
 
   /**
    * Add a teacher to a school
@@ -122,6 +125,7 @@ export class TeacherService {
     });
 
     // Send password reset email
+    let emailFailed = false;
     try {
       await this.authService.sendPasswordResetForNewUser(
         result.user.id,
@@ -132,6 +136,7 @@ export class TeacherService {
         result.teacher.school.name
       );
     } catch (error) {
+      emailFailed = true;
       console.error('Failed to send password reset email to teacher:', error);
     }
 
@@ -171,7 +176,8 @@ export class TeacherService {
       }
     }
 
-    return this.staffMapper.toTeacherDto(result.teacher);
+    const teacherDto = this.staffMapper.toTeacherDto(result.teacher);
+    return { data: teacherDto, emailFailed };
   }
 
   /**
@@ -284,9 +290,11 @@ export class TeacherService {
   }
 
   /**
-   * Delete a teacher
+   * Delete a teacher with role-hierarchy authorization.
+   *
+   * Only school_owner and principal-level roles can delete teachers.
    */
-  async deleteTeacher(schoolId: string, teacherId: string): Promise<void> {
+  async deleteTeacher(schoolId: string, teacherId: string, requestingUser: UserWithContext): Promise<void> {
     // Validate school exists
     const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
     if (!school) {
@@ -297,6 +305,26 @@ export class TeacherService {
     const teacher = await this.staffRepository.findTeacherById(teacherId);
     if (!teacher || teacher.schoolId !== school.id) {
       throw new BadRequestException('Teacher not found in this school');
+    }
+
+    // Get the requesting admin's profile in this school
+    const requestingAdmin = await this.prisma.schoolAdmin.findFirst({
+      where: { userId: requestingUser.id, schoolId: school.id },
+    });
+
+    if (!requestingAdmin) {
+      throw new ForbiddenException('You do not have an admin profile in this school');
+    }
+
+    const requestingRole = (requestingAdmin.role || '').toLowerCase().trim();
+    const isRequestingSchoolOwner = requestingRole === 'school_owner';
+    const isRequestingPrincipalLevel = isPrincipalRole(requestingAdmin.role);
+
+    // Only school_owner and principal-level roles can delete teachers
+    if (!isRequestingSchoolOwner && !isRequestingPrincipalLevel) {
+      throw new ForbiddenException(
+        'Only school owners and principal-level administrators can delete teachers'
+      );
     }
 
     await this.staffRepository.deleteTeacher(teacherId);

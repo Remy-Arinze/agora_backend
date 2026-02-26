@@ -58,8 +58,8 @@ export class StudentAdmissionService {
 
     const defaultPassword = await generateSecurePasswordHash();
 
-    // Generate student ID and public ID
-    const studentUid = await this.idGenerator.generateStudentId();
+    // Generate student UID (admission number) and public ID
+    const studentUid = await this.idGenerator.generateStudentId(school.name);
     const publicId = await this.idGenerator.generatePublicId(school.name, 'student');
 
     // Determine academic year if not provided
@@ -109,6 +109,8 @@ export class StudentAdmissionService {
             lastName: studentData.lastName,
             dateOfBirth: new Date(studentData.dateOfBirth),
             profileImage: studentData.profileImage || null,
+            nationality: studentData.nationality || null,
+            state: studentData.state || null,
             userId: studentUser.id,
           },
           include: {
@@ -231,6 +233,9 @@ export class StudentAdmissionService {
           if (Array.isArray(target) && target.includes('publicId')) {
             throw new ConflictException('Public ID conflict. Please try again.');
           }
+          if (Array.isArray(target) && target.includes('uid')) {
+            throw new ConflictException('Student ID (UID) conflict. Please try again.');
+          }
         }
         throw error;
       }
@@ -245,7 +250,8 @@ export class StudentAdmissionService {
           `${studentData.firstName} ${studentData.lastName}`,
           'Student',
           result.publicId,
-          school.name
+          school.name,
+          result.student.uid
         );
       } catch (error) {
         console.error('Failed to send password reset email to student:', error);
