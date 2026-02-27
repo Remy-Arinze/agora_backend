@@ -649,6 +649,7 @@ export class SchoolAdminSchoolsService {
               class: {
                 select: {
                   id: true,
+                  name: true,
                   type: true,
                 },
               },
@@ -657,6 +658,7 @@ export class SchoolAdminSchoolsService {
                   classLevel: {
                     select: {
                       id: true,
+                      name: true,
                       type: true,
                     },
                   },
@@ -745,6 +747,28 @@ export class SchoolAdminSchoolsService {
           teacher.subjectTeachers?.map((st: any) => st.subject?.name).filter(Boolean) || [];
         const displaySubject = subjectNames.length > 0 ? subjectNames.join(', ') : teacher.subject;
 
+        // Extract primary class assignment for PRIMARY teachers
+        let assignedClass: { id: string; name: string } | null = null;
+        const classTeachers = teacher.classTeachers || [];
+        // Extract assignment if we have class teachers
+        const primaryAssignment: any =
+          classTeachers.find((ct: any) => ct.isPrimary && (ct.classArmId || ct.classId)) ||
+          classTeachers.find((ct: any) => ct.classArmId || ct.classId);
+
+        if (primaryAssignment) {
+          if (primaryAssignment.classArm && primaryAssignment.classArm.classLevel) {
+            assignedClass = {
+              id: primaryAssignment.classArmId,
+              name: `${primaryAssignment.classArm.classLevel.name} ${primaryAssignment.classArm.name}`,
+            };
+          } else if (primaryAssignment.class) {
+            assignedClass = {
+              id: primaryAssignment.classId,
+              name: primaryAssignment.class.name || 'Unknown',
+            };
+          }
+        }
+
         return {
           id: teacher.id,
           type: 'teacher' as const,
@@ -766,6 +790,7 @@ export class SchoolAdminSchoolsService {
             | 'ARCHIVED',
           profileImage: teacher.profileImage,
           schoolType: teacher.schoolType || null,
+          assignedClass,
           createdAt: teacher.createdAt,
         };
       }),

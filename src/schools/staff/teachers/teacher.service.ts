@@ -181,6 +181,30 @@ export class TeacherService {
 
     // For PRIMARY schools: assign teacher to class arm if classArmId was provided
     if (teacherData.classArmId && result.teacher.id) {
+      // Check if the class arm already has a primary teacher before assigning
+      const existingPrimaryTeacher = await this.prisma.classTeacher.findFirst({
+        where: {
+          classArmId: teacherData.classArmId,
+          isPrimary: true,
+        },
+        include: { teacher: { select: { firstName: true, lastName: true } } },
+      });
+
+      if (existingPrimaryTeacher) {
+        const teacherName = `${existingPrimaryTeacher.teacher.firstName} ${existingPrimaryTeacher.teacher.lastName}`;
+        console.warn(
+          `Class arm ${teacherData.classArmId} already has a primary teacher (${teacherName}). Skipping assignment.`,
+        );
+        // Teacher was created successfully — return with a warning flag
+        const teacherDto = this.staffMapper.toTeacherDto(result.teacher);
+        return {
+          data: teacherDto,
+          emailFailed,
+          classAssignmentSkipped: true,
+          classAssignmentReason: `This class already has a teacher assigned (${teacherName}). Please unassign them first.`,
+        };
+      }
+
       try {
         await this.classService.assignTeacherToClass(school.id, teacherData.classArmId, {
           teacherId: result.teacher.id,
