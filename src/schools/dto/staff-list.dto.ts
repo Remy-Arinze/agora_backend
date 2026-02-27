@@ -46,6 +46,13 @@ export class StaffListItemDto {
   @ApiProperty({ description: 'School type this admin is scoped to', nullable: true })
   schoolType: string | null;
 
+  @ApiProperty({
+    description: 'Assigned class info for PRIMARY teachers (id + name)',
+    nullable: true,
+    required: false,
+  })
+  assignedClass?: { id: string; name: string } | null;
+
   @ApiProperty({ description: 'Created date' })
   createdAt: Date;
 }

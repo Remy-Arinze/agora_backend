@@ -26,7 +26,7 @@ export class ResourcesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly schoolRepository: SchoolRepository
-  ) {}
+  ) { }
 
   // Access Prisma models using bracket notation for reserved keywords
   private get classLevelModel() {
@@ -114,18 +114,32 @@ export class ResourcesService {
       where,
       include: {
         classLevel: true,
+        classTeachers: {
+          include: {
+            teacher: {
+              select: { id: true, firstName: true, lastName: true },
+            },
+          },
+          take: 1,
+        },
       },
       orderBy: [{ classLevel: { level: 'asc' } }, { name: 'asc' }],
     });
 
-    return classArms.map((ca: any) => ({
-      id: ca.id,
-      name: ca.name,
-      capacity: ca.capacity,
-      classLevelId: ca.classLevelId,
-      classLevelName: ca.classLevel.name,
-      isActive: ca.isActive,
-    }));
+    return classArms.map((ca: any) => {
+      const primaryTeacher = ca.classTeachers?.[0]?.teacher;
+      return {
+        id: ca.id,
+        name: ca.name,
+        capacity: ca.capacity,
+        classLevelId: ca.classLevelId,
+        classLevelName: ca.classLevel.name,
+        isActive: ca.isActive,
+        assignedTeacher: primaryTeacher
+          ? { id: primaryTeacher.id, name: `${primaryTeacher.firstName} ${primaryTeacher.lastName}` }
+          : null,
+      };
+    });
   }
 
   /**
@@ -303,7 +317,7 @@ export class ResourcesService {
     if (existing) {
       throw new BadRequestException(
         `ClassArm "${dto.name}" already exists for ${classLevel.name} in academic year ${academicYear}. ` +
-          `Please use a different arm name (e.g., "Gold", "Blue", "A", "B") or select a different ClassLevel.`
+        `Please use a different arm name (e.g., "Gold", "Blue", "A", "B") or select a different ClassLevel.`
       );
     }
 
@@ -1413,11 +1427,11 @@ export class ResourcesService {
         teacherId: { not: null },
         ...(schoolType
           ? {
-              OR: [
-                { classArm: { classLevel: { type: schoolType } } },
-                { class: { type: schoolType } },
-              ],
-            }
+            OR: [
+              { classArm: { classLevel: { type: schoolType } } },
+              { class: { type: schoolType } },
+            ],
+          }
           : {}),
       },
       include: {

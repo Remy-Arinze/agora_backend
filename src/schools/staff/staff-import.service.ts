@@ -6,6 +6,13 @@ import { StaffBulkImportRowDto, StaffImportSummaryDto } from '../dto/staff-bulk-
 import { UserWithContext } from '../../auth/types/user-with-context.type';
 import * as XLSX from 'xlsx';
 
+import {
+  sanitizeString,
+  sanitizeOptionalString,
+  sanitizeEmail,
+  sanitizePhone,
+} from '../../common/utils/sanitize.util';
+
 @Injectable()
 export class StaffImportService {
   constructor(
@@ -68,10 +75,22 @@ export class StaffImportService {
       errors: [],
     };
 
+    // ... (in the bulk processing loop)
+
     // Helper function to safely convert any value to trimmed string
-    const toTrimmedString = (value: any): string => {
+    const toTrimmedString = (value: unknown): string => {
       if (value === null || value === undefined) return '';
       return String(value).trim();
+    };
+
+    // Helper to capitalize words
+    const capitalizeWords = (str: string) => {
+      if (!str) return str;
+      return str
+        .toLowerCase()
+        .split(' ')
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ');
     };
 
     // For PRIMARY schools, fetch all active class arms for matching
@@ -88,14 +107,18 @@ export class StaffImportService {
       const rowNumber = i + 2;
 
       try {
-        const type = toTrimmedString(row.type).toLowerCase();
-        const firstName = toTrimmedString(row.firstName);
-        const lastName = toTrimmedString(row.lastName);
-        const email = toTrimmedString(row.email);
-        const phone = toTrimmedString(row.phone);
-        const role = toTrimmedString(row.role);
-        const subject = toTrimmedString(row.subject);
-        const employeeId = toTrimmedString(row.employeeId);
+        const typeRaw = toTrimmedString(row.type).toLowerCase();
+        const type = (typeRaw === 'teacher' || typeRaw === 'admin') ? typeRaw : undefined;
+
+        // Sanitize and format
+        const firstName = capitalizeWords(sanitizeString(toTrimmedString(row.firstName), 50));
+        const lastName = capitalizeWords(sanitizeString(toTrimmedString(row.lastName), 50));
+        const email = sanitizeEmail(toTrimmedString(row.email)) || toTrimmedString(row.email).toLowerCase();
+        const phone = sanitizePhone(toTrimmedString(row.phone)) || toTrimmedString(row.phone);
+
+        const role = sanitizeOptionalString(toTrimmedString(row.role), 100);
+        const subject = sanitizeOptionalString(toTrimmedString(row.subject), 100);
+        const employeeId = sanitizeOptionalString(toTrimmedString(row.employeeId), 50);
 
         if (!type || !firstName || !lastName || !email || !phone) {
           summary.errors.push({
@@ -151,7 +174,7 @@ export class StaffImportService {
                 }
               } else {
                 // Support comma-separated subjects for SECONDARY/TERTIARY
-                const subjectNames = subject.split(',').map(s => s.trim()).filter(Boolean);
+                const subjectNames = subject.split(',').map((s: string) => s.trim()).filter(Boolean);
                 if (subjectNames.length > 0) {
                   const dbSubjects = await this.prisma.subject.findMany({
                     where: {
@@ -161,11 +184,11 @@ export class StaffImportService {
                     },
                     select: { id: true, name: true },
                   });
-                  subjectIds = dbSubjects.map(s => s.id);
+                  subjectIds = dbSubjects.map((s: any) => s.id);
 
                   if (dbSubjects.length < subjectNames.length) {
-                    const missing = subjectNames.filter(name =>
-                      !dbSubjects.some(sd => sd.name.toLowerCase() === name.toLowerCase())
+                    const missing = subjectNames.filter((name: string) =>
+                      !dbSubjects.some((sd: any) => sd.name.toLowerCase() === name.toLowerCase())
                     );
                     console.warn(`Row ${rowNumber}: Subjects not found: ${missing.join(', ')}`);
                   }
@@ -205,7 +228,7 @@ export class StaffImportService {
               lastName,
               email,
               phone,
-              role,
+              role: role || '',
               schoolType,
             }, requestingUser);
 
