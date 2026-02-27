@@ -44,7 +44,7 @@ export class AdminService {
   /**
    * Add an administrator to a school
    */
-  async addAdmin(schoolId: string, adminData: AddAdminDto): Promise<any> {
+  async addAdmin(schoolId: string, adminData: AddAdminDto, requestingUser: UserWithContext): Promise<any> {
     // Validate school exists
     const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
     if (!school) {
@@ -70,11 +70,23 @@ export class AdminService {
 
     // Validate role - use centralized isPrincipalRole function
     const isPrincipal = isPrincipalRole(sanitizedRole);
-    this.logger.log(
-      `[addAdmin] Role: "${sanitizedRole}", isPrincipal: ${isPrincipal}, permissions: ${adminData.permissions?.length || 0}`
-    );
 
+    // Check authorization for principal roles
     if (isPrincipal) {
+      // Get the requesting admin's profile in this school
+      const requestingAdmin = await this.prisma.schoolAdmin.findFirst({
+        where: { userId: requestingUser.id, schoolId: school.id },
+      });
+
+      if (!requestingAdmin) {
+        throw new ForbiddenException('You do not have an admin profile in this school');
+      }
+
+      const requestingRole = (requestingAdmin.role || '').toLowerCase().trim();
+      if (requestingRole !== 'school_owner') {
+        throw new ForbiddenException('Only the school owner can add staff with principal-level roles');
+      }
+
       await this.staffValidator.validatePrincipalRole(school.id, sanitizedRole);
     }
 
@@ -227,7 +239,7 @@ export class AdminService {
   /**
    * Update an administrator
    */
-  async updateAdmin(schoolId: string, adminId: string, updateData: UpdateAdminDto): Promise<any> {
+  async updateAdmin(schoolId: string, adminId: string, updateData: UpdateAdminDto, requestingUser: UserWithContext): Promise<any> {
     // Validate school exists
     const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
     if (!school) {
@@ -256,6 +268,20 @@ export class AdminService {
       const isPrincipal = isPrincipalRole(sanitizedRole);
 
       if (isPrincipal) {
+        // Get the requesting admin's profile in this school
+        const requestingAdmin = await this.prisma.schoolAdmin.findFirst({
+          where: { userId: requestingUser.id, schoolId: school.id },
+        });
+
+        if (!requestingAdmin) {
+          throw new ForbiddenException('You do not have an admin profile in this school');
+        }
+
+        const requestingRole = (requestingAdmin.role || '').toLowerCase().trim();
+        if (requestingRole !== 'school_owner') {
+          throw new ForbiddenException('Only the school owner can assign principal-level roles');
+        }
+
         // Check if another principal role exists (excluding current admin)
         const normalizedRole = sanitizedRole.toLowerCase();
         const existingPrincipal = await this.prisma.schoolAdmin.findFirst({
@@ -360,11 +386,20 @@ export class AdminService {
   /**
    * Make an admin the principal (switches current principal to admin)
    */
-  async makePrincipal(schoolId: string, adminId: string): Promise<void> {
+  async makePrincipal(schoolId: string, adminId: string, requestingUser: UserWithContext): Promise<void> {
     // Validate school exists
     const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
+    }
+
+    // Role check: Only school owner can promote someone to principal
+    const requestingAdmin = await this.prisma.schoolAdmin.findFirst({
+      where: { userId: requestingUser.id, schoolId: school.id },
+    });
+
+    if (!requestingAdmin || (requestingAdmin.role || '').toLowerCase().trim() !== 'school_owner') {
+      throw new ForbiddenException('Only the school owner can promote an administrator to principal');
     }
 
     // Validate admin exists in school
@@ -497,7 +532,8 @@ export class AdminService {
     schoolId: string,
     teacherId: string,
     role: string,
-    keepAsTeacher: boolean
+    keepAsTeacher: boolean,
+    requestingUser: UserWithContext
   ): Promise<void> {
     // Validate school exists
     const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
@@ -526,11 +562,19 @@ export class AdminService {
       throw new BadRequestException('This teacher is already an administrator in this school');
     }
 
-    // Validate role - use centralized isPrincipalRole function
     const sanitizedRole = role?.trim() || '';
     const isPrincipal = isPrincipalRole(sanitizedRole);
 
     if (isPrincipal) {
+      // Role check: Only school owner can assign principal role during conversion
+      const requestingAdmin = await this.prisma.schoolAdmin.findFirst({
+        where: { userId: requestingUser.id, schoolId: school.id },
+      });
+
+      if (!requestingAdmin || (requestingAdmin.role || '').toLowerCase().trim() !== 'school_owner') {
+        throw new ForbiddenException('Only the school owner can assign a principal-level role');
+      }
+
       await this.staffValidator.validatePrincipalRole(school.id, role);
     }
 

@@ -631,6 +631,10 @@ export class SchoolAdminSchoolsService {
               ],
             }
             : {}),
+          // Exclude School Owner from general staff list
+          role: {
+            not: 'School Owner',
+          },
         },
         include: { user: true },
         orderBy: { createdAt: 'desc' },
@@ -679,23 +683,33 @@ export class SchoolAdminSchoolsService {
 
     // Filter teachers by schoolType if provided
     // Include teachers who:
-    // 1. Are assigned to classes/classArms/subjects of the specified schoolType, OR
-    // 2. Are not assigned to any class/classArm/subject yet (newly imported teachers)
+    // 1. Have a matching schoolType field, OR
+    // 2. Are assigned to classes/classArms/subjects of the specified schoolType, OR
+    // 3. Have no schoolType AND no assignments at all (newly imported legacy teachers)
     let filteredTeachers = allTeachers;
     if (schoolType && teacherIdsForSchoolType !== undefined) {
       filteredTeachers = allTeachers.filter((teacher) => {
-        // Check class assignments (both Class and ClassArm)
+        // High priority: Check the explicit schoolType field on the teacher
+        if (teacher.schoolType === schoolType) {
+          return true;
+        }
+
+        // If teacher has a different schoolType, exclude them even if assignments are weird
+        if (teacher.schoolType && teacher.schoolType !== schoolType) {
+          return false;
+        }
+
+        // Fallback for legacy/imported teachers: Check class assignments (both Class and ClassArm)
         const hasNoClassAssignments = !teacher.classTeachers || teacher.classTeachers.length === 0;
         const hasNoSubjectAssignments =
           !teacher.subjectTeachers || teacher.subjectTeachers.length === 0;
 
-        // If teacher has no assignments at all, include them (newly imported)
-        if (hasNoClassAssignments && hasNoSubjectAssignments) {
+        // If teacher has no schoolType AND no assignments at all, include them (newly imported or legacy)
+        if (!teacher.schoolType && hasNoClassAssignments && hasNoSubjectAssignments) {
           return true;
         }
 
-        // Check if teacher is in the list of teachers for this schoolType
-        // (includes class/classArm assignments for PRIMARY, subject assignments and form teachers for SECONDARY/TERTIARY)
+        // Check if teacher is in the list of teachers derived from assignments for this schoolType
         return teacherIdsForSchoolType!.includes(teacher.id);
       });
     }
@@ -751,7 +765,7 @@ export class SchoolAdminSchoolsService {
             | 'SUSPENDED'
             | 'ARCHIVED',
           profileImage: teacher.profileImage,
-          schoolType: null,
+          schoolType: teacher.schoolType || null,
           createdAt: teacher.createdAt,
         };
       }),

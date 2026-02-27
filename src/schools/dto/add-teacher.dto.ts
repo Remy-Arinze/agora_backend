@@ -60,6 +60,11 @@ export class AddTeacherDto {
   @IsBoolean()
   isTemporary?: boolean;
 
+  @ApiPropertyOptional({ description: 'School type (PRIMARY, SECONDARY, TERTIARY)' })
+  @IsOptional()
+  @IsString()
+  schoolType?: string;
+
   @ApiPropertyOptional({
     description: 'Employee ID (optional internal identifier for the teacher)',
   })
@@ -75,4 +80,13 @@ export class AddTeacherDto {
   @MaxLength(2048)
   @Transform(({ value }) => sanitizeOptionalString(value, 2048))
   profileImage?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Class arm ID to assign the teacher to (for PRIMARY schools). Creates a ClassTeacher record automatically.',
+    example: 'clxxx1',
+  })
+  @IsOptional()
+  @IsString()
+  classArmId?: string;
 }

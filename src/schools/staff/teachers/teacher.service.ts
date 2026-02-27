@@ -15,6 +15,7 @@ import { StaffValidatorService } from '../../shared/staff-validator.service';
 import { AddTeacherDto } from '../../dto/add-teacher.dto';
 import { UpdateTeacherDto } from '../../dto/update-teacher.dto';
 import { CloudinaryService } from '../../../storage/cloudinary/cloudinary.service';
+import { ClassService } from '../../classes/class.service';
 import { isPrincipalRole } from '../../dto/permission.dto';
 import { UserWithContext } from '../../../auth/types/user-with-context.type';
 import { generateSecurePasswordHash } from '../../../common/utils/password.utils';
@@ -33,7 +34,8 @@ export class TeacherService {
     private readonly staffMapper: StaffMapper,
     private readonly idGenerator: IdGeneratorService,
     private readonly staffValidator: StaffValidatorService,
-    private readonly cloudinaryService: CloudinaryService
+    private readonly cloudinaryService: CloudinaryService,
+    private readonly classService: ClassService,
   ) { }
 
   /**
@@ -101,6 +103,7 @@ export class TeacherService {
             profileImage: teacherData.profileImage || null,
             isTemporary: teacherData.isTemporary || false,
             employeeId: teacherData.employeeId || null,
+            schoolType: teacherData.schoolType || null,
             userId: teacherUser.id,
             schoolId: school.id,
           },
@@ -176,6 +179,22 @@ export class TeacherService {
       }
     }
 
+    // For PRIMARY schools: assign teacher to class arm if classArmId was provided
+    if (teacherData.classArmId && result.teacher.id) {
+      try {
+        await this.classService.assignTeacherToClass(school.id, teacherData.classArmId, {
+          teacherId: result.teacher.id,
+          isPrimary: true,
+        });
+      } catch (error) {
+        console.error(
+          `Failed to assign teacher ${result.teacher.id} to class arm ${teacherData.classArmId}:`,
+          error,
+        );
+        // Don't fail teacher creation — the assignment can be done manually later
+      }
+    }
+
     const teacherDto = this.staffMapper.toTeacherDto(result.teacher);
     return { data: teacherDto, emailFailed };
   }
@@ -217,6 +236,7 @@ export class TeacherService {
       subject: updateData.subject,
       isTemporary: updateData.isTemporary,
       profileImage: updateData.profileImage,
+      schoolType: updateData.schoolType,
     });
 
     return this.staffMapper.toTeacherDto(updatedTeacher);

@@ -84,9 +84,10 @@ export class StaffController {
   @ApiResponse({ status: 409, description: 'User with email or phone already exists' })
   async addAdmin(
     @Param('schoolId') schoolId: string,
-    @Body() addAdminDto: AddAdminDto
+    @Body() addAdminDto: AddAdminDto,
+    @CurrentUser() user: UserWithContext
   ): Promise<ResponseDto<any>> {
-    const result = await this.adminService.addAdmin(schoolId, addAdminDto);
+    const result = await this.adminService.addAdmin(schoolId, addAdminDto, user);
     const warnings = result.emailFailed
       ? ['Password setup email could not be sent. You can resend it from the staff list.']
       : undefined;
@@ -130,9 +131,10 @@ export class StaffController {
   async updateAdmin(
     @Param('schoolId') schoolId: string,
     @Param('adminId') adminId: string,
-    @Body() updateAdminDto: UpdateAdminDto
+    @Body() updateAdminDto: UpdateAdminDto,
+    @CurrentUser() user: UserWithContext
   ): Promise<ResponseDto<any>> {
-    const data = await this.adminService.updateAdmin(schoolId, adminId, updateAdminDto);
+    const data = await this.adminService.updateAdmin(schoolId, adminId, updateAdminDto, user);
     return ResponseDto.ok(data, 'Administrator updated successfully');
   }
 
@@ -395,9 +397,10 @@ export class StaffController {
   })
   async makePrincipal(
     @Param('schoolId') schoolId: string,
-    @Param('adminId') adminId: string
+    @Param('adminId') adminId: string,
+    @CurrentUser() user: UserWithContext
   ): Promise<ResponseDto<void>> {
-    await this.adminService.makePrincipal(schoolId, adminId);
+    await this.adminService.makePrincipal(schoolId, adminId, user);
     return ResponseDto.ok(undefined, 'Administrator successfully made principal');
   }
 
@@ -454,9 +457,10 @@ export class StaffController {
   async convertTeacherToAdmin(
     @Param('schoolId') schoolId: string,
     @Param('teacherId') teacherId: string,
-    @Body() dto: ConvertTeacherToAdminDto
+    @Body() dto: ConvertTeacherToAdminDto,
+    @CurrentUser() user: UserWithContext
   ): Promise<ResponseDto<void>> {
-    await this.adminService.convertTeacherToAdmin(schoolId, teacherId, dto.role, dto.keepAsTeacher);
+    await this.adminService.convertTeacherToAdmin(schoolId, teacherId, dto.role, dto.keepAsTeacher, user);
     return ResponseDto.ok(undefined, 'Teacher successfully converted to administrator');
   }
 
@@ -614,9 +618,11 @@ export class StaffController {
   @ApiResponse({ status: 400, description: 'Invalid file format or missing required fields' })
   async bulkImportStaff(
     @Param('schoolId') schoolId: string,
-    @UploadedFile() file: Express.Multer.File
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser() user: UserWithContext,
+    @Query('schoolType') schoolType?: string
   ): Promise<ResponseDto<StaffImportSummaryDto>> {
-    const data = await this.staffImportService.bulkImportStaff(schoolId, file);
+    const data = await this.staffImportService.bulkImportStaff(schoolId, file, user, schoolType);
     return ResponseDto.ok(data, 'Bulk import completed');
   }
 
