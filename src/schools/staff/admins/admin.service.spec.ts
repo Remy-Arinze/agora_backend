@@ -139,8 +139,10 @@ describe('AdminService', () => {
         return callback(mockTx as any);
       });
       staffMapper.toAdminDto.mockReturnValue({ id: 'admin-1', ...mockAdminData } as any);
+      const mockUser = { id: 'user-1', currentProfileId: 'admin-1' } as any;
+      (prisma.schoolAdmin.findFirst as jest.Mock).mockResolvedValue({ id: 'admin-1', role: 'school_owner' } as any);
 
-      const result = await service.addAdmin('school-1', mockAdminData);
+      const result = await service.addAdmin('school-1', mockAdminData, mockUser);
 
       expect(schoolRepository.findByIdOrSubdomain).toHaveBeenCalledWith('school-1');
       expect(staffValidator.validateStaffData).toHaveBeenCalledWith(mockAdminData);
@@ -150,7 +152,8 @@ describe('AdminService', () => {
     it('should throw BadRequestException if school not found', async () => {
       schoolRepository.findByIdOrSubdomain.mockResolvedValue(null);
 
-      await expect(service.addAdmin('invalid-school', mockAdminData)).rejects.toThrow(
+      const mockUser = { id: 'user-1' } as any;
+      await expect(service.addAdmin('invalid-school', mockAdminData, mockUser)).rejects.toThrow(
         BadRequestException
       );
     });
@@ -161,7 +164,8 @@ describe('AdminService', () => {
         new ConflictException('Email already exists')
       );
 
-      await expect(service.addAdmin('school-1', mockAdminData)).rejects.toThrow(ConflictException);
+      const mockUser = { id: 'user-1' } as any;
+      await expect(service.addAdmin('school-1', mockAdminData, mockUser)).rejects.toThrow(ConflictException);
     });
   });
 
@@ -182,9 +186,12 @@ describe('AdminService', () => {
       } as any);
       staffMapper.toAdminDto.mockReturnValue({ id: 'admin-1', firstName: 'Updated' } as any);
 
+      const mockUser = { id: 'user-1' } as any;
+      (prisma.schoolAdmin.findFirst as jest.Mock).mockResolvedValue({ id: 'admin-1', role: 'school_owner' } as any);
+
       const result = await service.updateAdmin('school-1', 'admin-1', {
         firstName: 'Updated',
-      });
+      }, mockUser);
 
       expect(result).toBeDefined();
       expect(staffRepository.updateAdmin).toHaveBeenCalled();
@@ -194,8 +201,9 @@ describe('AdminService', () => {
       schoolRepository.findByIdOrSubdomain.mockResolvedValue(mockSchool as any);
       staffRepository.findAdminById.mockResolvedValue(null);
 
+      const mockUser = { id: 'user-1' } as any;
       await expect(
-        service.updateAdmin('school-1', 'invalid-admin', { firstName: 'Updated' })
+        service.updateAdmin('school-1', 'invalid-admin', { firstName: 'Updated' }, mockUser)
       ).rejects.toThrow(BadRequestException);
     });
   });
@@ -213,7 +221,10 @@ describe('AdminService', () => {
       staffRepository.findAdminById.mockResolvedValue(mockAdmin as any);
       staffRepository.deleteAdmin.mockResolvedValue(mockAdmin as any);
 
-      await service.deleteAdmin('school-1', 'admin-1');
+      const mockUser = { id: 'user-1' } as any;
+      (prisma.schoolAdmin.findFirst as jest.Mock).mockResolvedValue({ id: 'admin-req', role: 'school_owner' } as any);
+
+      await service.deleteAdmin('school-1', 'admin-1', mockUser);
 
       expect(staffRepository.deleteAdmin).toHaveBeenCalledWith('admin-1');
     });
@@ -225,7 +236,8 @@ describe('AdminService', () => {
       staffRepository.findAdminsBySchool.mockResolvedValue([principalAdmin] as any);
       (prisma.schoolAdmin.findFirst as jest.Mock).mockResolvedValue(principalAdmin as any);
 
-      await expect(service.deleteAdmin('school-1', 'admin-1')).rejects.toThrow(BadRequestException);
+      const mockUser = { id: 'user-1' } as any;
+      await expect(service.deleteAdmin('school-1', 'admin-1', mockUser)).rejects.toThrow(BadRequestException);
     });
   });
 });

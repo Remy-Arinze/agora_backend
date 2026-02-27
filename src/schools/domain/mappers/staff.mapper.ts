@@ -55,6 +55,7 @@ export class StaffMapper {
       employeeId: teacher.employeeId,
       subject: teacher.subject,
       isTemporary: teacher.isTemporary,
+      schoolType: teacher.schoolType,
       profileImage: teacher.profileImage,
       publicId: teacher.publicId,
       userId: teacher.userId, // Include userId for resend email functionality

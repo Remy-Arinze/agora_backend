@@ -217,6 +217,7 @@ model Teacher {
   employeeId   String?
   subject      String?
   profileImage String? // Cloudinary URL for teacher profile image
+  schoolType   String?  // "PRIMARY", "SECONDARY", "TERTIARY" - scopes teacher to a specific school type
   isTemporary  Boolean  @default(false)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -238,6 +239,7 @@ model Teacher {
   @@unique([userId, schoolId]) // A user can only be a teacher once per school, but can be teacher in multiple schools
   @@index([userId])
   @@index([schoolId])
+  @@index([schoolType])
   @@index([teacherId])
   @@index([publicId])
 }

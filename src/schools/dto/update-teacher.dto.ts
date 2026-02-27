@@ -32,5 +32,10 @@ export class UpdateTeacherDto {
   @IsString()
   profileImage?: string;
 
+  @ApiPropertyOptional({ description: 'School type (PRIMARY, SECONDARY, TERTIARY)' })
+  @IsOptional()
+  @IsString()
+  schoolType?: string;
+
   // Note: Email is not editable
 }
