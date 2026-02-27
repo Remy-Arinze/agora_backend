@@ -24,7 +24,7 @@ export class PermissionService implements OnModuleInit {
   constructor(
     private readonly prisma: PrismaService,
     private readonly emailService: EmailService
-  ) {}
+  ) { }
 
   async onModuleInit() {
     // Initialize default permissions on module startup
@@ -140,42 +140,9 @@ export class PermissionService implements OnModuleInit {
       const callerIsPrincipal = isPrincipalRole(callerAdmin.role);
 
       if (!callerIsPrincipal) {
-        // Non-principals need STAFF:ADMIN permission to modify other admins' permissions
-        const hasStaffAdmin = callerAdmin.permissions.some(
-          (sp) =>
-            sp.permission.resource === PermissionResource.STAFF &&
-            sp.permission.type === PermissionType.ADMIN
+        throw new ForbiddenException(
+          "Only Principal-level administrators can assign or modify permissions."
         );
-
-        if (!hasStaffAdmin) {
-          throw new ForbiddenException(
-            "You need STAFF:ADMIN permission to modify other administrators' permissions"
-          );
-        }
-
-        // Non-principals cannot give permissions they don't have themselves
-        const callerPermissionTypes = new Set(
-          callerAdmin.permissions.map((sp) => `${sp.permission.resource}:${sp.permission.type}`)
-        );
-
-        // Get the permissions being assigned
-        const permissionsToAssign = await this.prisma.permission.findMany({
-          where: { id: { in: permissionIds } },
-        });
-
-        for (const perm of permissionsToAssign) {
-          // ADMIN type can only be assigned by principals or those with ADMIN for that resource
-          if (perm.type === PermissionType.ADMIN) {
-            const hasResourceAdmin = callerPermissionTypes.has(
-              `${perm.resource}:${PermissionType.ADMIN}`
-            );
-            if (!hasResourceAdmin) {
-              throw new ForbiddenException(
-                `You cannot assign ${perm.resource}:ADMIN permission as you don't have it yourself`
-              );
-            }
-          }
-        }
       }
     }
 

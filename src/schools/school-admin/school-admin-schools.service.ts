@@ -749,25 +749,23 @@ export class SchoolAdminSchoolsService {
 
         // Extract primary class assignment for PRIMARY teachers
         let assignedClass: { id: string; name: string } | null = null;
-        if (teacher.schoolType === 'PRIMARY' || (!teacher.schoolType && schoolType === 'PRIMARY')) {
-          // Prefer isPrimary assignment, but fall back to ANY class assignment
-          // (older assignments might not have isPrimary set)
-          const classTeachers = teacher.classTeachers || [];
-          const primaryAssignment: any =
-            classTeachers.find((ct: any) => ct.isPrimary && (ct.classArmId || ct.classId)) ||
-            classTeachers.find((ct: any) => ct.classArmId || ct.classId);
-          if (primaryAssignment) {
-            if (primaryAssignment.classArm && primaryAssignment.classArm.classLevel) {
-              assignedClass = {
-                id: primaryAssignment.classArmId,
-                name: `${primaryAssignment.classArm.classLevel.name} ${primaryAssignment.classArm.name}`,
-              };
-            } else if (primaryAssignment.class) {
-              assignedClass = {
-                id: primaryAssignment.classId,
-                name: primaryAssignment.class.name || 'Unknown',
-              };
-            }
+        const classTeachers = teacher.classTeachers || [];
+        // Extract assignment if we have class teachers
+        const primaryAssignment: any =
+          classTeachers.find((ct: any) => ct.isPrimary && (ct.classArmId || ct.classId)) ||
+          classTeachers.find((ct: any) => ct.classArmId || ct.classId);
+
+        if (primaryAssignment) {
+          if (primaryAssignment.classArm && primaryAssignment.classArm.classLevel) {
+            assignedClass = {
+              id: primaryAssignment.classArmId,
+              name: `${primaryAssignment.classArm.classLevel.name} ${primaryAssignment.classArm.name}`,
+            };
+          } else if (primaryAssignment.class) {
+            assignedClass = {
+              id: primaryAssignment.classId,
+              name: primaryAssignment.class.name || 'Unknown',
+            };
           }
         }
 
