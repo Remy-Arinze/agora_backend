@@ -13,6 +13,7 @@ import { TimetableModule } from '../timetable/timetable.module';
 import { GradesModule } from '../grades/grades.module';
 import { EventsModule } from '../events/events.module';
 import { CloudinaryModule } from '../storage/cloudinary/cloudinary.module';
+import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { CloudinaryModule } from '../storage/cloudinary/cloudinary.module';
     forwardRef(() => GradesModule),
     forwardRef(() => EventsModule),
     CloudinaryModule,
+    SubscriptionsModule,
   ],
   controllers: [
     StudentMeController,
@@ -34,4 +36,4 @@ import { CloudinaryModule } from '../storage/cloudinary/cloudinary.module';
   providers: [StudentsService, StudentAdmissionService, CourseRegistrationService],
   exports: [StudentsService, StudentAdmissionService, CourseRegistrationService],
 })
-export class StudentsModule {}
+export class StudentsModule { }

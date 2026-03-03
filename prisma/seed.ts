@@ -58,7 +58,7 @@ function shortenSchoolName(schoolName: string): string {
     .replace(/\b(SCHOOL|ACADEMY|COLLEGE|UNIVERSITY|INSTITUTE|SECONDARY|PRIMARY|HIGH)\b/gi, '')
     .replace(/[^A-Z0-9]/g, '')
     .substring(0, 4);
-  
+
   if (cleaned.length < 3) {
     return schoolName
       .toUpperCase()
@@ -66,7 +66,7 @@ function shortenSchoolName(schoolName: string): string {
       .substring(0, 3)
       .padEnd(3, 'X');
   }
-  
+
   return cleaned;
 }
 
@@ -96,7 +96,7 @@ async function main() {
 
   // Check if user with phone exists (and it's not the same user)
   const existingByPhone = await prisma.user.findFirst({
-    where: { 
+    where: {
       phone: '+2348000000001',
       ...(existingByEmail ? { id: { not: existingByEmail.id } } : {}),
     },
@@ -164,7 +164,7 @@ async function main() {
   // This simulates the super admin school creation flow
   // ============================================
   console.log('\n🏫 Creating school with principal (Super Admin flow)...');
-  
+
   const schoolId = generateSchoolId();
   const principalId = generatePrincipalId();
   const principalPublicId = generatePublicId('Test Academy');
@@ -320,7 +320,7 @@ async function main() {
         firstName: 'John',
         lastName: 'Teacher',
         phone: '+2348000000003',
-          email: 'remyarinze+teacher@gmail.com',
+        email: 'remyarinze+teacher@gmail.com',
         employeeId: 'TCH-001',
       },
       create: {
@@ -331,7 +331,7 @@ async function main() {
         firstName: 'John',
         lastName: 'Teacher',
         phone: '+2348000000003',
-          email: 'remyarinze+teacher@gmail.com',
+        email: 'remyarinze+teacher@gmail.com',
         employeeId: 'TCH-001',
       },
     });
@@ -441,8 +441,8 @@ async function main() {
       sortOrder: 1,
     },
     {
-      slug: 'socrates',
-      name: 'Socrates',
+      slug: 'agora-ai',
+      name: 'Agora AI',
       description: "The Teacher's Copilot. AI-powered lesson planning, assessment creation, and grading assistance.",
       icon: '🤖',
       monthlyPrice: 0, // Included in Professional+
@@ -515,18 +515,142 @@ async function main() {
     console.log(`  ✅ Tool: ${tool.name}`);
   }
 
+  console.log('\n📊 Seeding Subscription Plans...');
+
+  const plans = [
+    {
+      tierCode: 'FREE',
+      name: 'Free',
+      description: 'Get started with the Agora core',
+      monthlyPrice: 0,
+      yearlyPrice: 0,
+      highlight: false,
+      cta: 'Current Plan',
+      accent: 'gray',
+      isPublic: true,
+      maxStudents: 100,
+      maxTeachers: 10,
+      maxAdmins: 2,
+      aiCredits: 0,
+      features: [
+        { text: '100 Students', included: true },
+        { text: '10 Teachers', included: true },
+        { text: '2 Admin Users', included: true },
+        { text: 'Core Management Platform', included: true },
+        { text: 'Agora AI Generation', included: false },
+        { text: 'Automated AI Grading', included: false },
+        { text: 'Detailed AI Analytics', included: false },
+      ],
+    },
+    {
+      tierCode: 'PRO',
+      name: 'Pro',
+      description: 'Unlock the power of Agora AI',
+      monthlyPrice: 15000,
+      yearlyPrice: 150000,
+      highlight: true,
+      cta: 'Upgrade to Pro',
+      accent: 'blue',
+      isPublic: true,
+      maxStudents: 500,
+      maxTeachers: 50,
+      maxAdmins: 10,
+      aiCredits: 5000,
+      features: [
+        { text: '500 Students', included: true },
+        { text: '50 Teachers', included: true },
+        { text: '10 Admin Users', included: true },
+        { text: 'Core Management Platform', included: true },
+        { text: 'Agora AI Assistant', included: true, isGlowing: true },
+        { text: '5,000 AI Credits/month', included: true },
+        { text: 'Automated Essay Grading', included: true },
+      ],
+    },
+    {
+      tierCode: 'PRO_PLUS',
+      name: 'Pro+',
+      description: 'Advanced features for scaling institutions',
+      monthlyPrice: 45000,
+      yearlyPrice: 450000,
+      highlight: false,
+      cta: 'Upgrade to Pro+',
+      accent: 'amber',
+      isPublic: true,
+      maxStudents: 2000,
+      maxTeachers: 200,
+      maxAdmins: 25,
+      aiCredits: 20000,
+      features: [
+        { text: '2,000 Students', included: true },
+        { text: '200 Teachers', included: true },
+        { text: '25 Admin Users', included: true },
+        { text: 'Core Management Platform', included: true },
+        { text: 'Agora AI Assistant', included: true },
+        { text: '20,000 AI Credits/month', included: true },
+        { text: 'Dedicated Support', included: true },
+      ],
+    }
+  ];
+
+  let freePlanId = null;
+
+  for (const plan of plans) {
+    let createdPlan = await prisma.subscriptionPlan.findFirst({
+      where: { tierCode: plan.tierCode as any, isPublic: true },
+    });
+
+    if (createdPlan) {
+      createdPlan = await prisma.subscriptionPlan.update({
+        where: { id: createdPlan.id },
+        data: {
+          name: plan.name,
+          description: plan.description,
+          monthlyPrice: plan.monthlyPrice,
+          yearlyPrice: plan.yearlyPrice,
+          features: plan.features as any,
+          highlight: plan.highlight,
+          cta: plan.cta,
+          accent: plan.accent,
+          isPublic: plan.isPublic
+        }
+      });
+    } else {
+      createdPlan = await prisma.subscriptionPlan.create({
+        data: {
+          tierCode: plan.tierCode as any,
+          name: plan.name,
+          description: plan.description,
+          monthlyPrice: plan.monthlyPrice,
+          yearlyPrice: plan.yearlyPrice,
+          features: plan.features as any,
+          highlight: plan.highlight,
+          cta: plan.cta,
+          accent: plan.accent,
+          isPublic: plan.isPublic
+        }
+      });
+    }
+    console.log(`  ✅ Plan: ${plan.name}`);
+    if (plan.tierCode === 'FREE') {
+      freePlanId = createdPlan.id;
+    }
+  }
+
   // Create FREE subscription for test school with basic bursary access
   console.log('\n📦 Setting up subscription for test school...');
-  
+
   const subscription = await prisma.subscription.upsert({
     where: { schoolId: school.id },
-    update: {},
+    update: {
+      planId: freePlanId
+    },
     create: {
       schoolId: school.id,
       tier: 'FREE',
-      maxStudents: -1,  // Unlimited
-      maxTeachers: -1,  // Unlimited
-      maxAdmins: 10,    // FREE tier allows 10 admins
+      planId: freePlanId,
+      maxStudents: 100,
+      maxTeachers: 10,
+      maxAdmins: 2,
       aiCredits: 0,
       aiCreditsUsed: 0,
     },

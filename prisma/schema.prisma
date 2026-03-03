@@ -163,6 +163,7 @@ model Student {
   transfers           Transfer[]
   personalResources   StudentResource[]
   courseRegistrations CourseRegistration[] // For TERTIARY: Course registrations (carry-overs, etc.)
+  assessmentSubmissions AssessmentSubmission[]
 
   @@index([uid])
   @@index([userId])
@@ -234,7 +235,9 @@ model Teacher {
   timetablePeriods TimetablePeriod[]
   subjectTeachers  SubjectTeacher[]
   curricula        Curriculum[]
+  curriculumProgress CurriculumItemProgress[]
   facultiesAsDean  Faculty[]         @relation("FacultyDean") // Faculties where this teacher is dean
+  assessments      Assessment[]
 
   @@unique([userId, schoolId]) // A user can only be a teacher once per school, but can be teacher in multiple schools
   @@index([userId])
@@ -313,7 +316,9 @@ model School {
   toolAccess          SchoolToolAccess[]
   profileEditTokens   SchoolProfileEditToken[]
   assessmentTemplates AssessmentTemplate[] // Assessment templates for this school
+  assessments         Assessment[]
   errors              ApplicationError[]
+  customPlans         SubscriptionPlan[] @relation("CustomPlanSchool")
 
   @@index([subdomain])
   @@index([schoolId])
@@ -343,6 +348,8 @@ model Class {
   TimetablePeriods TimetablePeriod[] @relation("TimetableClass")
   resources        ClassResource[]
   curricula        Curriculum[]
+  curriculumProgress CurriculumItemProgress[]
+  assessments        Assessment[]
 
   @@index([schoolId])
   @@index([type])
@@ -502,6 +509,8 @@ model ClassArm {
   timetablePeriods TimetablePeriod[]
   classTeachers    ClassTeacher[]
   resources        ClassResource[]   @relation("ClassArmResources")
+  curriculumProgress CurriculumItemProgress[]
+  assessments        Assessment[]
 
   @@unique([classLevelId, name, academicYear])
   @@index([classLevelId])
@@ -551,6 +560,7 @@ model Subject {
   curricula           Curriculum[] // Curricula for this subject
   grades              Grade[] // Grades for this subject
   assessmentTemplates AssessmentTemplate[] // Assessment templates for this subject
+  assessments         Assessment[]
 
   @@unique([schoolId, code, schoolType])
   @@index([schoolId])
@@ -1070,7 +1080,7 @@ model Curriculum {
   classLevelId String? // For PRIMARY/SECONDARY
   subjectId    String? // Link to Subject (nullable for migration)
   termId       String? // Link to Term (nullable for migration)
-  teacherId    String
+  teacherId    String?
   academicYear String
 
   // Legacy field - will be deprecated
@@ -1098,7 +1108,7 @@ model Curriculum {
   classLevel      ClassLevel?      @relation(fields: [classLevelId], references: [id], onDelete: Cascade)
   subjectRef      Subject?         @relation(fields: [subjectId], references: [id], onDelete: Cascade)
   term            Term?            @relation(fields: [termId], references: [id], onDelete: SetNull)
-  teacher         Teacher          @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  teacher         Teacher?         @relation(fields: [teacherId], references: [id], onDelete: SetNull)
   nerdcCurriculum NerdcCurriculum? @relation(fields: [nerdcCurriculumId], references: [id])
   items           CurriculumItem[]
 
@@ -1132,7 +1142,7 @@ model CurriculumItem {
   isCustomized  Boolean @default(false) // Was this modified from NERDC?
   originalTopic String? // What NERDC had (if customized)
 
-  // Progress tracking
+  // Progress tracking (Legacy - moved to CurriculumItemProgress)
   status       WeekStatus @default(PENDING)
   taughtAt     DateTime? // When this week was taught
   teacherNotes String? // Teacher's notes after teaching
@@ -1142,12 +1152,42 @@ model CurriculumItem {
   updatedAt DateTime @updatedAt
 
   curriculum Curriculum @relation(fields: [curriculumId], references: [id], onDelete: Cascade)
+  progress   CurriculumItemProgress[]
 
   @@unique([curriculumId, weekNumber])
   @@index([curriculumId])
   @@index([weekNumber])
   @@index([status])
   @@index([order])
+}
+
+model CurriculumItemProgress {
+  id               String   @id @default(cuid())
+  curriculumItemId String
+  classArmId       String?  // For primary/secondary where class arm is used
+  classId          String?  // For tertiary or classes without arms
+  teacherId        String   // Teacher who taught this
+  
+  status       WeekStatus @default(PENDING)
+  taughtAt     DateTime?
+  teacherNotes String?
+  completedBy  String? // Optional explicit user tracking
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  item       CurriculumItem @relation(fields: [curriculumItemId], references: [id], onDelete: Cascade)
+  classArm   ClassArm?      @relation(fields: [classArmId], references: [id], onDelete: Cascade)
+  class      Class?         @relation(fields: [classId], references: [id], onDelete: Cascade)
+  teacher    Teacher        @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  
+  @@unique([curriculumItemId, classArmId])
+  @@unique([curriculumItemId, classId])
+  @@index([curriculumItemId])
+  @@index([classArmId])
+  @@index([classId])
+  @@index([teacherId])
+  @@index([status])
 }
 
 model Event {
@@ -1294,9 +1334,9 @@ model CourseRegistration {
 
 enum SubscriptionTier {
   FREE
-  STARTER
-  PROFESSIONAL
-  ENTERPRISE
+  PRO
+  PRO_PLUS
+  CUSTOM
 }
 
 enum ToolStatus {
@@ -1328,10 +1368,38 @@ model Tool {
   @@index([isActive])
 }
 
+model SubscriptionPlan {
+  id             String           @id @default(cuid())
+  tierCode       SubscriptionTier @default(FREE)
+  name           String
+  description    String?
+  monthlyPrice   Decimal          @default(0)
+  yearlyPrice    Decimal          @default(0)
+  features       Json?            // Format: [{ text: string, included: boolean, isGlowing?: boolean }]
+  highlight      Boolean          @default(false)
+  cta            String           @default("Upgrade")
+  accent         String           @default("blue")
+  isPublic       Boolean          @default(true)
+  customSchoolId String?          @unique// Optional: Link to a specific school for private custom plans
+  maxStudents    Int              @default(-1) // -1 for unlimited
+  maxTeachers    Int              @default(-1)
+  maxAdmins      Int              @default(-1)
+  aiCredits      Int              @default(0)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  customSchool   School?          @relation("CustomPlanSchool", fields: [customSchoolId], references: [id], onDelete: Cascade)
+  subscriptions  Subscription[]
+
+  @@index([tierCode])
+  @@index([isPublic])
+}
+
 model Subscription {
   id              String           @id @default(cuid())
   schoolId        String           @unique
   tier            SubscriptionTier @default(FREE)
+  planId          String?
   startDate       DateTime         @default(now())
   endDate         DateTime?
   isActive        Boolean          @default(true)
@@ -1345,11 +1413,13 @@ model Subscription {
   updatedAt       DateTime         @updatedAt
 
   school          School                @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  plan            SubscriptionPlan?     @relation(fields: [planId], references: [id])
   toolAccess      SchoolToolAccess[]
   payments        SubscriptionPayment[]
   creditPurchases AiCreditPurchase[]
 
   @@index([schoolId])
+  @@index([planId])
   @@index([tier])
   @@index([isActive])
 }
@@ -1409,4 +1479,109 @@ model AiCreditPurchase {
 
   @@index([subscriptionId])
   @@index([reference])
+}
+
+model Assessment {
+  id          String   @id @default(cuid())
+  schoolId    String
+  classId     String?
+  classArmId  String?
+  subjectId   String
+  teacherId   String
+  title       String
+  description String?
+  type        String   // "QUIZ", "EXAM", "ASSIGNMENT"
+  status      String   @default("DRAFT") // "DRAFT", "PUBLISHED", "CLOSED"
+  dueDate     DateTime?
+  maxScore    Decimal  @default(100)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  school      School     @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  class       Class?     @relation(fields: [classId], references: [id], onDelete: SetNull)
+  classArm    ClassArm?  @relation(fields: [classArmId], references: [id], onDelete: SetNull)
+  subject     Subject    @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  teacher     Teacher    @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+
+  questions   AssessmentQuestion[]
+  submissions AssessmentSubmission[]
+
+  @@index([schoolId])
+  @@index([classId])
+  @@index([classArmId])
+  @@index([subjectId])
+  @@index([teacherId])
+  @@index([status])
+}
+
+model AssessmentQuestion {
+  id           String   @id @default(cuid())
+  assessmentId String
+  text         String
+  type         String   // "MULTIPLE_CHOICE", "SHORT_ANSWER", "ESSAY"
+  options      Json?    // Array of strings or objects for multiple choice
+  correctAnswer String? // Expected correct answer
+  points       Decimal  @default(1)
+  order        Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  assessment   Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  answers      AssessmentAnswer[]
+
+  @@index([assessmentId])
+  @@index([order])
+}
+
+model AssessmentSubmission {
+  id           String   @id @default(cuid())
+  assessmentId String
+  studentId    String
+  status       String   @default("SUBMITTED") // "SUBMITTED", "GRADED"
+  totalScore   Decimal? 
+  teacherFeedback String?
+  aiFeedback   String?
+  submittedAt  DateTime @default(now())
+  gradedAt     DateTime?
+
+  assessment   Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  student      Student    @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  answers      AssessmentAnswer[]
+
+  @@unique([assessmentId, studentId])
+  @@index([assessmentId])
+  @@index([studentId])
+  @@index([status])
+}
+
+model AssessmentAnswer {
+  id             String   @id @default(cuid())
+  submissionId   String
+  questionId     String
+  text           String?  // The student's answer text, if essay/short answer
+  selectedOption String?  // The option selected, if MCQ
+  score          Decimal? // Score awarded
+  isCorrect      Boolean? // True if MCQ and matches correct answer
+  aiFeedback     String?  // Feedback provided by AI
+  teacherFeedback String? // Feedback from teacher
+  gradedBy       String   @default("AUTO") // "AUTO", "AI", "TEACHER"
+
+  submission     AssessmentSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  question       AssessmentQuestion   @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([submissionId, questionId])
+  @@index([submissionId])
+  @@index([questionId])
+}
+
+model AssessmentGenerationLog {
+  id          String   @id @default(cuid())
+  schoolId    String
+  teacherId   String
+  prompt      String
+  tokensUsed  Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  @@index([schoolId])
+  @@index([teacherId])
 }

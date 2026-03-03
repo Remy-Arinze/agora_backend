@@ -20,37 +20,35 @@ export class SubscriptionsService {
   private readonly logger = new Logger(SubscriptionsService.name);
 
   // Tier limits configuration
-  // Students & Teachers are UNLIMITED on all tiers
-  // 3 tiers: FREE, STARTER, ENTERPRISE
   private readonly tierLimits: Record<
     SubscriptionTier,
     { maxStudents: number; maxTeachers: number; maxAdmins: number; aiCredits: number }
   > = {
-    [SubscriptionTier.FREE]: { maxStudents: -1, maxTeachers: -1, maxAdmins: 10, aiCredits: 0 },
-    [SubscriptionTier.STARTER]: { maxStudents: -1, maxTeachers: -1, maxAdmins: 50, aiCredits: 100 },
-    [SubscriptionTier.PROFESSIONAL]: {
-      maxStudents: -1,
-      maxTeachers: -1,
-      maxAdmins: 50,
-      aiCredits: 500,
-    }, // Deprecated - use STARTER or ENTERPRISE
-    [SubscriptionTier.ENTERPRISE]: {
-      maxStudents: -1,
-      maxTeachers: -1,
-      maxAdmins: -1,
-      aiCredits: -1,
-    }, // -1 = unlimited
-  };
+      [SubscriptionTier.FREE]: { maxStudents: 100, maxTeachers: 10, maxAdmins: 2, aiCredits: 0 },
+      [SubscriptionTier.PRO]: { maxStudents: 500, maxTeachers: 50, maxAdmins: 10, aiCredits: 5000 },
+      [SubscriptionTier.PRO_PLUS]: {
+        maxStudents: 2000,
+        maxTeachers: 200,
+        maxAdmins: 25,
+        aiCredits: 20000,
+      },
+      [SubscriptionTier.CUSTOM]: {
+        maxStudents: -1,
+        maxTeachers: -1,
+        maxAdmins: -1,
+        aiCredits: -1,
+      },
+    };
 
-  // Tools available per tier (3 tiers: FREE, STARTER, ENTERPRISE)
+  // Tools available per tier
   private readonly tierTools: Record<SubscriptionTier, string[]> = {
-    [SubscriptionTier.FREE]: ['bursary'], // Basic bursary only
-    [SubscriptionTier.STARTER]: ['prepmaster', 'socrates', 'bursary'], // All AI tools
-    [SubscriptionTier.PROFESSIONAL]: ['prepmaster', 'socrates', 'bursary'], // Deprecated - same as STARTER
-    [SubscriptionTier.ENTERPRISE]: ['prepmaster', 'socrates', 'rollcall', 'bursary'], // Everything + RollCall
+    [SubscriptionTier.FREE]: [], // Core platform only
+    [SubscriptionTier.PRO]: ['agora-ai'], // Agora AI included
+    [SubscriptionTier.PRO_PLUS]: ['agora-ai'], // Agora AI included
+    [SubscriptionTier.CUSTOM]: ['agora-ai'], // Custom plans
   };
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   /**
    * Get or create subscription for a school
@@ -236,6 +234,15 @@ export class SubscriptionsService {
       throw new NotFoundException('Subscription not found');
     }
 
+    // Check if unlimited
+    if (subscription.aiCredits === -1) {
+      return {
+        success: true,
+        creditsUsed: credits,
+        creditsRemaining: -1,
+      };
+    }
+
     const available = subscription.aiCredits - subscription.aiCreditsUsed;
 
     if (credits > available) {
@@ -264,6 +271,70 @@ export class SubscriptionsService {
       creditsUsed: credits,
       creditsRemaining: updated.aiCredits - updated.aiCreditsUsed,
     };
+  }
+
+  /**
+   * Check if school can add more students
+   */
+  async checkStudentLimit(
+    schoolId: string
+  ): Promise<{ canAdd: boolean; currentCount: number; maxAllowed: number; message?: string }> {
+    const subscription = await this.prisma.subscription.findUnique({
+      where: { schoolId },
+    });
+
+    const maxStudents = subscription?.maxStudents ?? this.tierLimits[SubscriptionTier.FREE].maxStudents;
+
+    if (maxStudents === -1) {
+      const currentCount = await this.prisma.student.count({ where: { schoolId } });
+      return { canAdd: true, currentCount, maxAllowed: -1 };
+    }
+
+    const currentCount = await this.prisma.student.count({ where: { schoolId } });
+
+    if (currentCount >= maxStudents) {
+      const tier = subscription?.tier ?? 'FREE';
+      return {
+        canAdd: false,
+        currentCount,
+        maxAllowed: maxStudents,
+        message: `Your ${tier} plan allows a maximum of ${maxStudents} students. Current: ${currentCount}. Please upgrade your subscription to add more.`,
+      };
+    }
+
+    return { canAdd: true, currentCount, maxAllowed: maxStudents };
+  }
+
+  /**
+   * Check if school can add more teachers
+   */
+  async checkTeacherLimit(
+    schoolId: string
+  ): Promise<{ canAdd: boolean; currentCount: number; maxAllowed: number; message?: string }> {
+    const subscription = await this.prisma.subscription.findUnique({
+      where: { schoolId },
+    });
+
+    const maxTeachers = subscription?.maxTeachers ?? this.tierLimits[SubscriptionTier.FREE].maxTeachers;
+
+    if (maxTeachers === -1) {
+      const currentCount = await this.prisma.teacher.count({ where: { schoolId } });
+      return { canAdd: true, currentCount, maxAllowed: -1 };
+    }
+
+    const currentCount = await this.prisma.teacher.count({ where: { schoolId } });
+
+    if (currentCount >= maxTeachers) {
+      const tier = subscription?.tier ?? 'FREE';
+      return {
+        canAdd: false,
+        currentCount,
+        maxAllowed: maxTeachers,
+        message: `Your ${tier} plan allows a maximum of ${maxTeachers} teachers. Current: ${currentCount}. Please upgrade your subscription to add more.`,
+      };
+    }
+
+    return { canAdd: true, currentCount, maxAllowed: maxTeachers };
   }
 
   /**

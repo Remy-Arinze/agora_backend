@@ -54,12 +54,12 @@ export class PaymentsService {
   private readonly secretKey: string | null;
   private readonly baseUrl = 'https://api.paystack.co';
 
-  // Pricing configuration (in Naira) - 3 tiers: FREE, STARTER, ENTERPRISE
+  // Pricing configuration (in Naira) - 3 tiers: FREE, PRO, PRO_PLUS
   private readonly pricing: Record<SubscriptionTier, { monthly: number; yearly: number }> = {
     [SubscriptionTier.FREE]: { monthly: 0, yearly: 0 },
-    [SubscriptionTier.STARTER]: { monthly: 15000, yearly: 150000 },
-    [SubscriptionTier.PROFESSIONAL]: { monthly: 15000, yearly: 150000 }, // Deprecated - same as STARTER
-    [SubscriptionTier.ENTERPRISE]: { monthly: 0, yearly: 0 }, // Custom pricing
+    [SubscriptionTier.PRO]: { monthly: 15000, yearly: 150000 },
+    [SubscriptionTier.PRO_PLUS]: { monthly: 45000, yearly: 450000 },
+    [SubscriptionTier.CUSTOM]: { monthly: 0, yearly: 0 },
   };
 
   constructor(
@@ -250,6 +250,16 @@ export class PaymentsService {
       return;
     }
 
+    // Update payment status
+    await this.prisma.subscriptionPayment.update({
+      where: { reference },
+      data: {
+        status: 'SUCCESS',
+        paidAt: new Date(),
+      },
+    });
+
+    // Handle upgrade via SubscriptionsService if possible, or directly if needed
     // Calculate end date
     const endDate = new Date();
     if (metadata.isYearly) {
@@ -258,40 +268,30 @@ export class PaymentsService {
       endDate.setMonth(endDate.getMonth() + 1);
     }
 
-    // Tier limits (3 tiers: FREE, STARTER, ENTERPRISE)
-    const tierLimits: Record<SubscriptionTier, { maxAdmins: number; aiCredits: number }> = {
-      [SubscriptionTier.FREE]: { maxAdmins: 10, aiCredits: 0 },
-      [SubscriptionTier.STARTER]: { maxAdmins: 50, aiCredits: 500 },
-      [SubscriptionTier.PROFESSIONAL]: { maxAdmins: 50, aiCredits: 500 }, // Deprecated
-      [SubscriptionTier.ENTERPRISE]: { maxAdmins: -1, aiCredits: -1 },
+    // Update subscription directly to ensure it matches the new core tiered logic
+    const tierLimits = {
+      [SubscriptionTier.FREE]: { maxStudents: 100, maxTeachers: 10, maxAdmins: 2, aiCredits: 0 },
+      [SubscriptionTier.PRO]: { maxStudents: 500, maxTeachers: 50, maxAdmins: 10, aiCredits: 5000 },
+      [SubscriptionTier.PRO_PLUS]: { maxStudents: 2000, maxTeachers: 200, maxAdmins: 25, aiCredits: 20000 },
+      [SubscriptionTier.CUSTOM]: { maxStudents: -1, maxTeachers: -1, maxAdmins: -1, aiCredits: -1 },
     };
 
-    const limits = tierLimits[metadata.tier];
+    const limits = tierLimits[metadata.tier] || tierLimits[SubscriptionTier.FREE];
 
-    await this.prisma.$transaction([
-      // Update payment status
-      this.prisma.subscriptionPayment.update({
-        where: { reference },
-        data: {
-          status: 'SUCCESS',
-          paidAt: new Date(),
-        },
-      }),
-
-      // Update subscription
-      this.prisma.subscription.update({
-        where: { id: payment.subscriptionId },
-        data: {
-          tier: metadata.tier,
-          endDate,
-          isActive: true,
-          maxAdmins: limits.maxAdmins,
-          aiCredits: limits.aiCredits,
-          aiCreditsUsed: 0, // Reset usage on upgrade
-          lastCreditReset: new Date(),
-        },
-      }),
-    ]);
+    await this.prisma.subscription.update({
+      where: { id: payment.subscriptionId },
+      data: {
+        tier: metadata.tier as any,
+        endDate,
+        isActive: true,
+        maxStudents: limits.maxStudents,
+        maxTeachers: limits.maxTeachers,
+        maxAdmins: limits.maxAdmins,
+        aiCredits: limits.aiCredits,
+        aiCreditsUsed: 0, // Reset usage on upgrade
+        lastCreditReset: new Date(),
+      },
+    });
 
     this.logger.log(`Subscription upgraded: ${payment.subscription.schoolId} -> ${metadata.tier}`);
   }

@@ -15,6 +15,7 @@ import { IsEnum, IsBoolean, IsOptional } from 'class-validator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PaymentsService } from './payments.service';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
+import { SubscriptionPlansService } from '../subscriptions/plans/plans.service';
 import { UserWithContext } from '../auth/types/user-with-context.type';
 import { SubscriptionTier } from '../subscriptions/dto/subscription.dto';
 
@@ -31,58 +32,39 @@ class InitializePaymentDto {
 export class PaymentsController {
   constructor(
     private readonly paymentsService: PaymentsService,
-    private readonly subscriptionsService: SubscriptionsService
-  ) {}
+    private readonly subscriptionsService: SubscriptionsService,
+    private readonly plansService: SubscriptionPlansService
+  ) { }
 
   /**
-   * Get available pricing plans
+   * Get available pricing plans (Fetched from dynamic subscription plans)
    */
   @Get('pricing')
-  getPricing() {
+  async getPricing() {
+    const plans = await this.plansService.getPublicPlans();
+    const publicTiers = [SubscriptionTier.FREE, SubscriptionTier.PRO, SubscriptionTier.PRO_PLUS];
+
     return {
       success: true,
-      data: {
-        FREE: {
-          monthly: 0,
-          yearly: 0,
-          features: ['50 Students', '5 Teachers', '2 Admins', 'Basic Bursary'],
-        },
-        STARTER: {
-          monthly: 15000,
-          yearly: 150000,
-          features: [
-            'Unlimited Students',
-            'Unlimited Teachers',
-            '5 Admins',
-            'PrepMaster',
-            'Full Bursary',
-            '100 AI Credits',
-          ],
-        },
-        PROFESSIONAL: {
-          monthly: 45000,
-          yearly: 450000,
-          features: [
-            'Unlimited Students',
-            'Unlimited Teachers',
-            '10 Admins',
-            'PrepMaster',
-            'Socrates',
-            'Full Bursary',
-            '500 AI Credits',
-          ],
-        },
-        ENTERPRISE: {
-          monthly: null,
-          yearly: null,
-          features: [
-            'Unlimited Everything',
-            'RollCall + Hardware',
-            'Priority Support',
-            'Custom Pricing',
-          ],
-        },
-      },
+      data: plans
+        .filter(plan => publicTiers.includes(plan.tierCode as SubscriptionTier))
+        .reduce((acc: any, plan) => {
+          acc[plan.tierCode] = {
+            id: plan.id,
+            name: plan.name,
+            monthly: plan.monthlyPrice,
+            yearly: plan.yearlyPrice,
+            features: (plan.features as any[] || []).map(f => f.text),
+            highlight: plan.highlight,
+            cta: plan.cta,
+            accent: plan.accent,
+            maxStudents: plan.maxStudents,
+            maxTeachers: plan.maxTeachers,
+            maxAdmins: plan.maxAdmins,
+            aiCredits: plan.aiCredits,
+          };
+          return acc;
+        }, {}),
     };
   }
 

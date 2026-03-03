@@ -16,6 +16,7 @@ import { AddTeacherDto } from '../../dto/add-teacher.dto';
 import { UpdateTeacherDto } from '../../dto/update-teacher.dto';
 import { CloudinaryService } from '../../../storage/cloudinary/cloudinary.service';
 import { ClassService } from '../../classes/class.service';
+import { SubscriptionsService } from '../../../subscriptions/subscriptions.service';
 import { isPrincipalRole } from '../../dto/permission.dto';
 import { UserWithContext } from '../../../auth/types/user-with-context.type';
 import { generateSecurePasswordHash } from '../../../common/utils/password.utils';
@@ -36,6 +37,7 @@ export class TeacherService {
     private readonly staffValidator: StaffValidatorService,
     private readonly cloudinaryService: CloudinaryService,
     private readonly classService: ClassService,
+    private readonly subscriptionsService: SubscriptionsService
   ) { }
 
   /**
@@ -46,6 +48,12 @@ export class TeacherService {
     const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
+    }
+
+    // Check teacher limit based on subscription tier
+    const teacherLimit = await this.subscriptionsService.checkTeacherLimit(school.id);
+    if (!teacherLimit.canAdd) {
+      throw new ForbiddenException(teacherLimit.message);
     }
 
     // Validate staff data

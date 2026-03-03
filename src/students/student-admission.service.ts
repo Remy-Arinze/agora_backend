@@ -1,8 +1,9 @@
-import { Injectable, BadRequestException, ConflictException } from '@nestjs/common';
+import { Injectable, BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { SchoolRepository } from '../schools/domain/repositories/school.repository';
 import { IdGeneratorService } from '../schools/shared/id-generator.service';
 import { AuthService } from '../auth/auth.service';
+import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { AddStudentDto } from '../schools/dto/add-student.dto';
 import { TermStatus, SessionStatus } from '@prisma/client';
 import { generateSecurePasswordHash } from '../common/utils/password.utils';
@@ -13,8 +14,9 @@ export class StudentAdmissionService {
     private readonly prisma: PrismaService,
     private readonly schoolRepository: SchoolRepository,
     private readonly idGenerator: IdGeneratorService,
-    private readonly authService: AuthService
-  ) {}
+    private readonly authService: AuthService,
+    private readonly subscriptionsService: SubscriptionsService
+  ) { }
 
   /**
    * Add a student to a school
@@ -27,6 +29,12 @@ export class StudentAdmissionService {
     const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
+    }
+
+    // Check student limit based on subscription tier
+    const studentLimit = await this.subscriptionsService.checkStudentLimit(school.id);
+    if (!studentLimit.canAdd) {
+      throw new ForbiddenException(studentLimit.message);
     }
 
     // Check if student email exists globally (in entire Agora system)
@@ -42,7 +50,7 @@ export class StudentAdmissionService {
         // Student already exists in Agora system
         throw new ConflictException(
           `A student with email ${studentData.email} already exists in the Agora system. ` +
-            `Please initiate a transfer instead of creating a new admission.`
+          `Please initiate a transfer instead of creating a new admission.`
         );
       }
     }
