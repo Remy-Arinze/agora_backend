@@ -74,6 +74,10 @@ export class CreateSubscriptionPlanDto {
 
 export class UpdateSubscriptionPlanDto {
     @IsOptional()
+    @IsEnum(SubscriptionTier)
+    tierCode?: SubscriptionTier;
+
+    @IsOptional()
     @IsString()
     name?: string;
 

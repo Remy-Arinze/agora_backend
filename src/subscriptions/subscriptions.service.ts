@@ -1,5 +1,7 @@
-import { Injectable, BadRequestException, NotFoundException, Logger } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, ForbiddenException, Logger } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { isPrincipalRole } from '../schools/dto/permission.dto';
+import { UserWithContext } from '../auth/types/user-with-context.type';
 import {
   SubscriptionDto,
   SubscriptionSummaryDto,
@@ -51,6 +53,27 @@ export class SubscriptionsService {
   constructor(private readonly prisma: PrismaService) { }
 
   /**
+   * Validate that the current user is a Principal of their school
+   */
+  async validatePrincipalAccess(user: UserWithContext): Promise<void> {
+    if (user.role !== 'SCHOOL_ADMIN' || !user.currentProfileId) {
+      // Super admins always have access to these endpoints for monitoring
+      if (user.role === 'SUPER_ADMIN') return;
+
+      throw new ForbiddenException('Only school admins can access this resource');
+    }
+
+    const admin = await this.prisma.schoolAdmin.findUnique({
+      where: { id: user.currentProfileId },
+      select: { role: true },
+    });
+
+    if (!admin || !isPrincipalRole(admin.role)) {
+      throw new ForbiddenException('Only school leaders (Owner, Principal, Head Teacher) can manage subscriptions');
+    }
+  }
+
+  /**
    * Get or create subscription for a school
    */
   async getOrCreateSubscription(schoolId: string): Promise<SubscriptionDto> {
@@ -65,11 +88,20 @@ export class SubscriptionsService {
 
     // Create FREE subscription if none exists
     if (!subscription) {
+      // Find the FREE plan in the database
+      const freePlan = await this.prisma.subscriptionPlan.findFirst({
+        where: { tierCode: SubscriptionTier.FREE },
+      });
+
       subscription = await this.prisma.subscription.create({
         data: {
           schoolId,
-          tier: 'FREE',
-          ...this.tierLimits[SubscriptionTier.FREE],
+          tier: SubscriptionTier.FREE,
+          planId: freePlan?.id,
+          maxStudents: freePlan?.maxStudents ?? this.tierLimits[SubscriptionTier.FREE].maxStudents,
+          maxTeachers: freePlan?.maxTeachers ?? this.tierLimits[SubscriptionTier.FREE].maxTeachers,
+          maxAdmins: freePlan?.maxAdmins ?? this.tierLimits[SubscriptionTier.FREE].maxAdmins,
+          aiCredits: freePlan?.aiCredits ?? this.tierLimits[SubscriptionTier.FREE].aiCredits,
         },
         include: {
           toolAccess: {
@@ -90,6 +122,33 @@ export class SubscriptionsService {
           },
         },
       });
+    }
+
+    // For existing subscriptions that might be missing a planId (migration side-effect),
+    // we link them to the appropriate tier plan if it exists.
+    if (subscription && !subscription.planId) {
+      const plan = await this.prisma.subscriptionPlan.findFirst({
+        where: { tierCode: subscription.tier },
+      });
+      if (plan) {
+        await this.prisma.subscription.update({
+          where: { id: subscription.id },
+          data: {
+            planId: plan.id,
+            // If the subscription was using default limits, we sync with the plan's current limits
+            maxStudents: plan.maxStudents,
+            maxTeachers: plan.maxTeachers,
+            maxAdmins: plan.maxAdmins,
+            aiCredits: plan.aiCredits,
+          },
+        });
+        // Update local object
+        subscription.planId = plan.id;
+        subscription.maxStudents = plan.maxStudents;
+        subscription.maxTeachers = plan.maxTeachers;
+        subscription.maxAdmins = plan.maxAdmins;
+        subscription.aiCredits = plan.aiCredits;
+      }
     }
 
     return this.mapToSubscriptionDto(subscription!);
@@ -224,6 +283,7 @@ export class SubscriptionsService {
   async useAiCredits(
     schoolId: string,
     credits: number,
+    userId: string,
     action?: string
   ): Promise<AiCreditsResultDto> {
     const subscription = await this.prisma.subscription.findUnique({
@@ -262,6 +322,16 @@ export class SubscriptionsService {
       },
     });
 
+    // Create usage log
+    await this.prisma.aiUsageLog.create({
+      data: {
+        schoolId,
+        userId,
+        action: action || 'unknown',
+        creditsUsed: credits,
+      },
+    });
+
     this.logger.log(
       `School ${schoolId} used ${credits} AI credits for ${action || 'unknown action'}`
     );
@@ -286,11 +356,15 @@ export class SubscriptionsService {
     const maxStudents = subscription?.maxStudents ?? this.tierLimits[SubscriptionTier.FREE].maxStudents;
 
     if (maxStudents === -1) {
-      const currentCount = await this.prisma.student.count({ where: { schoolId } });
+      const currentCount = await this.prisma.student.count({
+        where: { enrollments: { some: { schoolId } } },
+      });
       return { canAdd: true, currentCount, maxAllowed: -1 };
     }
 
-    const currentCount = await this.prisma.student.count({ where: { schoolId } });
+    const currentCount = await this.prisma.student.count({
+      where: { enrollments: { some: { schoolId } } },
+    });
 
     if (currentCount >= maxStudents) {
       const tier = subscription?.tier ?? 'FREE';
@@ -371,7 +445,29 @@ export class SubscriptionsService {
       };
     }
 
+
     return { canAdd: true, currentCount, maxAllowed: maxAdmins };
+  }
+
+  /**
+   * Get AI credit usage logs for a school
+   */
+  async getAiUsageLogs(schoolId: string, limit = 50) {
+    return this.prisma['aiUsageLog'].findMany({
+      where: { schoolId },
+      take: limit,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        user: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+          },
+        },
+      },
+    });
   }
 
   /**

@@ -1,0 +1,1 @@
+﻿src/schools/super-admin/super-admin-schools.service.ts(804,9): error TS2353: Object literal may only specify known properties, and 'rejectedAt' does not exist in type '(Without<SchoolUpdateInput, SchoolUncheckedUpdateInput> & SchoolUncheckedUpdateInput) | (Without<...> & SchoolUpdateInput)'.

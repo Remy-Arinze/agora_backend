@@ -23,14 +23,14 @@ export class SchoolAdminDto {
   @ApiProperty({ description: 'Admin role (stored as string to support custom roles)' })
   role: string;
 
-  @ApiProperty({ 
+  @ApiProperty({
     description: 'Account status - SHADOW means password not set, ACTIVE means password set',
     enum: ['SHADOW', 'ACTIVE', 'SUSPENDED', 'ARCHIVED'],
     required: false
   })
   accountStatus?: 'SHADOW' | 'ACTIVE' | 'SUSPENDED' | 'ARCHIVED';
 
-  @ApiProperty({ 
+  @ApiProperty({
     description: 'User ID for resending password emails',
     required: false
   })
@@ -88,6 +88,15 @@ export class SchoolDto {
 
   @ApiProperty()
   hasTertiary: boolean;
+
+  @ApiProperty({ description: 'Registration status: UNAPPROVED, VERIFIED, or REJECTED' })
+  registrationStatus: string;
+
+  @ApiProperty({ nullable: true })
+  rejectionReason: string | null;
+
+  @ApiProperty({ nullable: true })
+  registrationNote: string | null;
 
   @ApiProperty()
   createdAt: Date;

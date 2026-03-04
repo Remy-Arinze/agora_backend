@@ -11,6 +11,7 @@ import { StaffRepository } from '../domain/repositories/staff.repository';
 import { CreateClassDto, ClassType } from '../dto/create-class.dto';
 import { AssignTeacherToClassDto } from '../dto/assign-teacher-to-class.dto';
 import { ClassDto } from '../dto/class.dto';
+import { SchoolValidatorService } from '../shared/school-validator.service';
 
 /**
  * Service for managing classes/courses and teacher assignments
@@ -21,8 +22,9 @@ export class ClassService {
     private readonly prisma: PrismaService,
     private readonly schoolRepository: SchoolRepository,
     private readonly staffRepository: StaffRepository,
-    private readonly emailService: EmailService
-  ) {}
+    private readonly emailService: EmailService,
+    private readonly schoolValidator: SchoolValidatorService
+  ) { }
 
   // Access Prisma models using bracket notation for reserved keywords
   private get classModel() {
@@ -84,6 +86,7 @@ export class ClassService {
     if (!school) {
       throw new BadRequestException('School not found');
     }
+    await this.schoolValidator.validateSchoolActive(school.id);
 
     // Validate school type matches class type
     this.validateSchoolTypeForClass(school, classData.type);

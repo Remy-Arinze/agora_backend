@@ -1,6 +1,6 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import OpenAI from 'openai';
+import OpenAI, { AzureOpenAI } from 'openai';
 
 export interface GenerateFlashcardsOptions {
   topic: string;
@@ -101,13 +101,26 @@ export class AiService {
 
   constructor(private readonly configService: ConfigService) {
     const apiKey = this.configService.get<string>('OPENAI_API_KEY');
+    const azureApiKey = this.configService.get<string>('AZURE_OPENAI_API_KEY');
+    const azureEndpoint = this.configService.get<string>('AZURE_OPENAI_ENDPOINT');
+    const azureDeployment = this.configService.get<string>('AZURE_OPENAI_DEPLOYMENT');
+    const azureApiVersion = this.configService.get<string>('AZURE_OPENAI_API_VERSION');
+
     this.model = this.configService.get<string>('OPENAI_MODEL') || 'gpt-4o';
 
-    if (apiKey) {
+    if (azureApiKey && azureEndpoint && azureDeployment) {
+      this.openai = new AzureOpenAI({
+        apiKey: azureApiKey,
+        endpoint: azureEndpoint,
+        apiVersion: azureApiVersion || '2025-01-01-preview',
+        deployment: azureDeployment,
+      }) as any;
+      this.logger.log(`Azure OpenAI initialized with deployment: ${azureDeployment}`);
+    } else if (apiKey && apiKey !== 'your_openai_api_key_here') {
       this.openai = new OpenAI({ apiKey });
-      this.logger.log('OpenAI client initialized');
+      this.logger.log('Standard OpenAI client initialized');
     } else {
-      this.logger.warn('OPENAI_API_KEY not configured - AI features will be disabled');
+      this.logger.warn('AI services are not configured (neither OpenAI nor Azure)');
     }
   }
 

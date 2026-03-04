@@ -16,6 +16,7 @@ import {
   SessionType,
   TermDateDto,
 } from './dto/initialize-session.dto';
+import { SchoolValidatorService } from '../schools/shared/school-validator.service';
 import { AcademicSessionDto, TermDto, ActiveSessionDto } from './dto/session.dto';
 import { SessionStatus, TermStatus } from '@prisma/client';
 
@@ -30,7 +31,8 @@ export class SessionService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly schoolRepository: SchoolRepository,
-    private readonly emailService: EmailService
+    private readonly emailService: EmailService,
+    private readonly schoolValidator: SchoolValidatorService
   ) { }
 
   /**
@@ -44,6 +46,7 @@ export class SessionService {
     if (!school) {
       throw new BadRequestException('School not found');
     }
+    await this.schoolValidator.validateSchoolActive(school.id);
 
     // Check if there's an active session for this school type
     const activeSession = await this.prisma.academicSession.findFirst({
@@ -127,6 +130,7 @@ export class SessionService {
     if (!school) {
       throw new BadRequestException('School not found');
     }
+    await this.schoolValidator.validateSchoolActive(school.id);
 
     const session = await this.prisma.academicSession.findFirst({
       where: {
@@ -235,6 +239,7 @@ export class SessionService {
     if (!school) {
       throw new BadRequestException('School not found');
     }
+    await this.schoolValidator.validateSchoolActive(school.id);
 
     let session: any;
     let term: any;

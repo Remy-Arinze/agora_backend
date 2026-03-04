@@ -48,6 +48,9 @@ export class SchoolMapper {
       hasPrimary: school.hasPrimary,
       hasSecondary: school.hasSecondary,
       hasTertiary: school.hasTertiary,
+      registrationStatus: school.registrationStatus,
+      rejectionReason: school.rejectionReason,
+      registrationNote: school.registrationNote,
       createdAt: school.createdAt,
       admins:
         school.admins?.map((admin) => ({

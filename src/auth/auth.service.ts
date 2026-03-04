@@ -137,18 +137,6 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    // Check if user is shadow (cannot login)
-    if (user.accountStatus === 'SHADOW') {
-      throw new UnauthorizedException(
-        'Account not activated. Please verify your OTP to claim your account.',
-      );
-    }
-
-    const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
-    if (!isPasswordValid) {
-      throw new UnauthorizedException('Invalid credentials');
-    }
-
     // Determine school context based on login method and role
     let currentSchoolId: string | null = null;
     let currentPublicId: string | null = null;
@@ -198,6 +186,33 @@ export class AuthService {
           currentPublicId = user.studentProfile.publicId || null;
         }
       }
+    }
+
+    // Check school verification status
+    if (currentSchoolId) {
+      const school = await this.prisma.school.findUnique({
+        where: { id: currentSchoolId },
+        select: { registrationStatus: true },
+      });
+      if (school) {
+        if (school.registrationStatus === 'UNAPPROVED') {
+          throw new UnauthorizedException('Your school registration is unapproved and under review. Please wait for verification.');
+        } else if (school.registrationStatus === 'REJECTED') {
+          throw new UnauthorizedException('Your school registration was rejected. Please contact support for more information.');
+        }
+      }
+    }
+
+    // Check if user is shadow (cannot login)
+    if (user.accountStatus === 'SHADOW') {
+      throw new UnauthorizedException(
+        'Account not activated. Please verify your OTP to claim your account.',
+      );
+    }
+
+    const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
+    if (!isPasswordValid) {
+      throw new UnauthorizedException('Invalid credentials');
     }
 
     return {
@@ -633,6 +648,25 @@ export class AuthService {
     });
     if (!user) return;
     if (!user.email) return;
+
+    // Check school registration status
+    let currentSchoolId: string | null = null;
+    if (user.role === 'SCHOOL_ADMIN' && user.schoolAdmins && user.schoolAdmins.length > 0) {
+      currentSchoolId = user.schoolAdmins[0].schoolId;
+    } else if (user.role === 'TEACHER' && user.teacherProfiles && user.teacherProfiles.length > 0) {
+      currentSchoolId = user.teacherProfiles[0].schoolId;
+    }
+
+    if (currentSchoolId) {
+      const school = await this.prisma.school.findUnique({
+        where: { id: currentSchoolId },
+        select: { registrationStatus: true },
+      });
+      if (school && (school.registrationStatus === 'UNAPPROVED' || school.registrationStatus === 'REJECTED')) {
+        throw new BadRequestException('Password reset is not available for unapproved or rejected schools. Please contact support.');
+      }
+    }
+
     const name = this.getUserDisplayName(user);
     const { otpCode } = await this.passwordOtpService.create('RESET_PASSWORD', user.email, undefined);
     try {

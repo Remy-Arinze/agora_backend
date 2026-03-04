@@ -12,20 +12,20 @@ export enum AdminRole {
   ADMINISTRATOR = 'ADMINISTRATOR',
 }
 
-export class PrincipalDto {
-  @ApiProperty({ description: 'Principal first name' })
+export class SchoolOwnerDto {
+  @ApiProperty({ description: 'School owner first name' })
   @IsString()
   firstName: string;
 
-  @ApiProperty({ description: 'Principal last name' })
+  @ApiProperty({ description: 'School owner last name' })
   @IsString()
   lastName: string;
 
-  @ApiProperty({ description: 'Principal email' })
+  @ApiProperty({ description: 'School owner email' })
   @IsEmail()
   email: string;
 
-  @ApiProperty({ description: 'Principal phone number' })
+  @ApiProperty({ description: 'School owner phone number' })
   @IsString()
   phone: string;
 }
@@ -105,11 +105,10 @@ export class CreateSchoolDto {
     tertiary?: boolean;
   };
 
-  @ApiPropertyOptional({ description: 'Principal information' })
-  @IsOptional()
+  @ApiProperty({ description: 'School owner information' })
   @ValidateNested()
-  @Type(() => PrincipalDto)
-  principal?: PrincipalDto;
+  @Type(() => SchoolOwnerDto)
+  owner: SchoolOwnerDto;
 
   @ApiPropertyOptional({ description: 'Additional admins', type: [AdminDto] })
   @IsOptional()

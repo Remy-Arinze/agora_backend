@@ -1,4 +1,4 @@
-import { Injectable, ConflictException, BadRequestException } from '@nestjs/common';
+import { Injectable, ConflictException, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { AuthService } from '../../auth/auth.service';
 import { SchoolRepository } from '../domain/repositories/school.repository';
@@ -12,6 +12,7 @@ import { UpdateSchoolDto } from '../dto/update-school.dto';
 import { SchoolDto } from '../dto/school.dto';
 import { generateSecurePasswordHash } from '../../common/utils/password.utils';
 import { isPrincipalRole } from '../dto/permission.dto';
+import { EmailService } from '../../email/email.service';
 
 /**
  * Service for super admin school management operations
@@ -27,14 +28,15 @@ export class SuperAdminSchoolsService {
     private readonly schoolMapper: SchoolMapper,
     private readonly idGenerator: IdGeneratorService,
     private readonly schoolValidator: SchoolValidatorService,
-    private readonly staffValidator: StaffValidatorService
-  ) {}
+    private readonly staffValidator: StaffValidatorService,
+    private readonly emailService: EmailService
+  ) { }
 
   /**
    * Create a school with optional principal and admins
    */
   async createSchool(createSchoolDto: CreateSchoolDto): Promise<SchoolDto> {
-    const { principal, admins, levels, ...schoolData } = createSchoolDto;
+    const { owner, admins, levels, ...schoolData } = createSchoolDto;
 
     // Sanitize and validate school data
     const sanitizedSchoolData = this.sanitizeSchoolData(schoolData);
@@ -42,7 +44,7 @@ export class SuperAdminSchoolsService {
     // Generate subdomain if not provided
     if (!sanitizedSchoolData.subdomain) {
       sanitizedSchoolData.subdomain = this.generateSubdomainFromName(sanitizedSchoolData.name);
-      
+
       // Ensure uniqueness by appending a number if needed
       let baseSubdomain = sanitizedSchoolData.subdomain;
       let counter = 1;
@@ -69,13 +71,6 @@ export class SuperAdminSchoolsService {
         throw new BadRequestException('Invalid school email format');
       }
 
-      // Check if school email conflicts with principal or admin emails
-      if (principal && principal.email.toLowerCase().trim() === sanitizedSchoolData.email) {
-        throw new ConflictException(
-          'School email cannot be the same as principal email. The principal will receive their own account.'
-        );
-      }
-
       if (admins && admins.length > 0) {
         const conflictingAdmin = admins.find(
           admin => admin.email.toLowerCase().trim() === sanitizedSchoolData.email
@@ -88,22 +83,20 @@ export class SuperAdminSchoolsService {
       }
     }
 
-    // Sanitize principal data if provided
-    const sanitizedPrincipal = principal ? this.sanitizePrincipalData(principal) : null;
+    // Sanitize owner data
+    const sanitizedOwner = this.sanitizeOwnerData(owner);
 
     // Sanitize admins data if provided
-    const sanitizedAdmins = admins && admins.length > 0 
+    const sanitizedAdmins = admins && admins.length > 0
       ? admins.map(admin => this.sanitizeAdminData(admin))
       : null;
 
     // Generate unique school ID
     const schoolId = await this.idGenerator.generateSchoolId();
 
-    // Generate principal ID and public ID if principal is provided
-    const principalId = sanitizedPrincipal ? await this.idGenerator.generatePrincipalId() : null;
-    const principalPublicId = sanitizedPrincipal
-      ? await this.idGenerator.generatePublicId(sanitizedSchoolData.name, 'admin')
-      : null;
+    // Generate owner ID and public ID
+    const ownerId = await this.idGenerator.generatePrincipalId();
+    const ownerPublicId = await this.idGenerator.generatePublicId(sanitizedSchoolData.name, 'admin');
 
     // Generate admin IDs and public IDs for additional admins before transaction
     const adminIds: string[] = [];
@@ -121,11 +114,7 @@ export class SuperAdminSchoolsService {
       }
     }
 
-    // Generate School Owner ID and public ID if school email is provided
-    const schoolOwnerId = sanitizedSchoolData.email ? await this.idGenerator.generatePrincipalId() : null;
-    const schoolOwnerPublicId = sanitizedSchoolData.email
-      ? await this.idGenerator.generatePublicId(sanitizedSchoolData.name, 'admin')
-      : null;
+    // No longer generating owner ID from school email as it's separate
 
     // Generate default password for admins
     const defaultPassword = await generateSecurePasswordHash();
@@ -154,92 +143,41 @@ export class SuperAdminSchoolsService {
           publicId: string;
         }> = [];
 
-        // Create School Owner account if school email is provided
-        // This must be done before principal to ensure proper validation
-        if (sanitizedSchoolData.email) {
-          // Extract name from email or use school name
-          const emailParts = sanitizedSchoolData.email.split('@')[0];
-          const nameParts = emailParts.split(/[._-]/);
-          const ownerFirstName = nameParts[0] 
-            ? nameParts[0].charAt(0).toUpperCase() + nameParts[0].slice(1).toLowerCase()
-            : 'School';
-          const ownerLastName = nameParts.length > 1
-            ? nameParts[1].charAt(0).toUpperCase() + nameParts[1].slice(1).toLowerCase()
-            : 'Owner';
+        // Create owner (Primary School Admin)
+        const ownerData = await this.createAdminUser(
+          tx,
+          sanitizedOwner.email,
+          sanitizedOwner.phone,
+          defaultPassword
+        );
 
-          const schoolOwnerData = await this.createAdminUser(
-            tx,
-            sanitizedSchoolData.email,
-            sanitizedSchoolData.phone || '',
-            defaultPassword
-          );
+        // Validate owner role (using school_owner role consistently)
+        await this.staffValidator.validatePrincipalRole(newSchool.id, 'school_owner');
 
-          // Validate school owner role (should not conflict with existing principal roles)
-          await this.staffValidator.validatePrincipalRole(newSchool.id, 'school_owner');
+        // Create owner admin
+        const schoolOwner = await tx.schoolAdmin.create({
+          data: {
+            adminId: ownerId,
+            publicId: ownerPublicId,
+            firstName: sanitizedOwner.firstName,
+            lastName: sanitizedOwner.lastName,
+            email: sanitizedOwner.email,
+            phone: sanitizedOwner.phone,
+            role: 'school_owner',
+            userId: ownerData.user.id,
+            schoolId: newSchool.id,
+          },
+          include: { user: true, school: true },
+        });
 
-          // Create School Owner admin
-          const schoolOwner = await tx.schoolAdmin.create({
-            data: {
-              adminId: schoolOwnerId!,
-              publicId: schoolOwnerPublicId!,
-              firstName: ownerFirstName,
-              lastName: ownerLastName,
-              email: sanitizedSchoolData.email,
-              phone: sanitizedSchoolData.phone || '',
-              role: 'school_owner',
-              userId: schoolOwnerData.user.id,
-              schoolId: newSchool.id,
-            },
-            include: { user: true, school: true },
-          });
-
-          createdAdmins.push(schoolOwner);
-          emailQueue.push({
-            userId: schoolOwnerData.user.id,
-            email: sanitizedSchoolData.email,
-            name: `${ownerFirstName} ${ownerLastName}`,
-            role: 'School Owner',
-            publicId: schoolOwnerPublicId!,
-          });
-        }
-
-        // Create principal if provided
-        if (sanitizedPrincipal) {
-          const principalData = await this.createAdminUser(
-            tx,
-            sanitizedPrincipal.email,
-            sanitizedPrincipal.phone,
-            defaultPassword
-          );
-
-          // Validate principal role
-          await this.staffValidator.validatePrincipalRole(newSchool.id, 'principal');
-
-          // Create principal admin - use transaction client directly
-          const principalAdmin = await tx.schoolAdmin.create({
-            data: {
-              adminId: principalId!,
-              publicId: principalPublicId!,
-              firstName: sanitizedPrincipal.firstName,
-              lastName: sanitizedPrincipal.lastName,
-              email: sanitizedPrincipal.email,
-              phone: sanitizedPrincipal.phone,
-              role: 'principal',
-              userId: principalData.user.id,
-              schoolId: newSchool.id,
-            },
-            include: { user: true, school: true },
-          });
-
-          createdAdmins.push(principalAdmin);
-          emailQueue.push({
-            userId: principalData.user.id,
-            email: sanitizedPrincipal.email,
-            name: `${sanitizedPrincipal.firstName} ${sanitizedPrincipal.lastName}`,
-            role: 'Principal',
-            publicId: principalPublicId!,
-          });
-        }
+        createdAdmins.push(schoolOwner);
+        emailQueue.push({
+          userId: ownerData.user.id,
+          email: sanitizedOwner.email,
+          name: `${sanitizedOwner.firstName} ${sanitizedOwner.lastName}`,
+          role: 'School Owner',
+          publicId: ownerPublicId,
+        });
 
         // Create additional admins if provided
         if (sanitizedAdmins && sanitizedAdmins.length > 0) {
@@ -563,88 +501,6 @@ export class SuperAdminSchoolsService {
           },
         });
 
-        // Handle school owner if email changed
-        if (emailChanged) {
-          // Remove old school owner if it exists (school email changed, so old owner is no longer valid)
-          if (existingSchoolOwner) {
-            await tx.schoolAdmin.delete({
-              where: { id: existingSchoolOwner.id },
-            });
-          }
-
-          // If new email is provided, create new school owner account
-          if (newEmail) {
-            // Validate new email doesn't conflict with existing admins (query current state in transaction)
-            const currentAdmins = await tx.schoolAdmin.findMany({
-              where: { schoolId: id },
-              include: { user: true },
-            });
-
-            const conflictingAdmin = currentAdmins.find(
-              (admin) =>
-                admin.id !== existingSchoolOwner?.id &&
-                admin.email?.toLowerCase().trim() === newEmail
-            );
-
-            if (conflictingAdmin) {
-              throw new ConflictException(
-                `Email ${newEmail} is already used by another administrator (${conflictingAdmin.firstName} ${conflictingAdmin.lastName}).`
-              );
-            }
-
-            // Generate School Owner ID and public ID
-            const schoolOwnerId = await this.idGenerator.generatePrincipalId();
-            const schoolOwnerPublicId = await this.idGenerator.generatePublicId(updatedSchool.name, 'admin');
-
-            // Extract name from email or use school name
-            const emailParts = newEmail.split('@')[0];
-            const nameParts = emailParts.split(/[._-]/);
-            const ownerFirstName = nameParts[0]
-              ? nameParts[0].charAt(0).toUpperCase() + nameParts[0].slice(1).toLowerCase()
-              : 'School';
-            const ownerLastName = nameParts.length > 1
-              ? nameParts[1].charAt(0).toUpperCase() + nameParts[1].slice(1).toLowerCase()
-              : 'Owner';
-
-            // Generate default password
-            const defaultPassword = await generateSecurePasswordHash();
-
-            // Create or get user for new school owner
-            const schoolOwnerData = await this.createAdminUser(
-              tx,
-              newEmail,
-              sanitizedSchoolData.phone || existingSchool.phone || '',
-              defaultPassword
-            );
-
-            // Create new School Owner admin
-            const newSchoolOwner = await tx.schoolAdmin.create({
-              data: {
-                adminId: schoolOwnerId,
-                publicId: schoolOwnerPublicId,
-                firstName: ownerFirstName,
-                lastName: ownerLastName,
-                email: newEmail,
-                phone: sanitizedSchoolData.phone || existingSchool.phone || '',
-                role: 'school_owner',
-                userId: schoolOwnerData.user.id,
-                schoolId: updatedSchool.id,
-              },
-              include: { user: true, school: true },
-            });
-
-            emailQueue.push({
-              userId: schoolOwnerData.user.id,
-              email: newEmail,
-              name: `${ownerFirstName} ${ownerLastName}`,
-              role: 'school_owner',
-              publicId: schoolOwnerPublicId,
-            });
-          }
-          // If email is being removed (set to null/empty), old school owner is already deleted above
-          // No new school owner will be created
-        }
-
         // Return complete school data from transaction to avoid another query
         const completeSchool = await tx.school.findUnique({
           where: { id },
@@ -704,6 +560,152 @@ export class SuperAdminSchoolsService {
   }
 
   /**
+   * Get all pending school registrations
+   */
+  async findPendingSchools(): Promise<SchoolDto[]> {
+    const schools = await this.prisma.school.findMany({
+      where: { registrationStatus: 'UNAPPROVED' },
+      include: {
+        admins: {
+          where: { role: 'school_owner' },
+          include: { user: true }
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    return schools.map(s => this.schoolMapper.toDto(s));
+  }
+
+  /**
+   * Verify a pending school registration
+   */
+  async verifySchool(schoolId: string, adminId: string): Promise<SchoolDto> {
+    const school = await this.prisma.school.findUnique({
+      where: { id: schoolId },
+      include: {
+        admins: {
+          where: { role: 'school_owner' },
+          include: { user: true },
+        },
+      },
+    });
+
+    if (!school) {
+      // Will throw standard exception for not found
+      throw new BadRequestException('School not found');
+    }
+    if (school.registrationStatus === 'VERIFIED') throw new BadRequestException('School is already verified');
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      // 1. Mark school as verified and active
+      const updatedSchool = await tx.school.update({
+        where: { id: schoolId },
+        data: {
+          registrationStatus: 'VERIFIED',
+          isActive: true,
+          verifiedAt: new Date(),
+          verifiedBy: adminId,
+        },
+      });
+
+      // 2. Mark principal's user account as ACTIVE
+      const principalAdmin = school.admins[0];
+      if (principalAdmin && principalAdmin.userId) {
+        await tx.user.update({
+          where: { id: principalAdmin.userId },
+          data: { accountStatus: 'ACTIVE' },
+        });
+
+        // 3. Send password setup email to principal
+        await this.authService.sendPasswordResetForNewUser(
+          principalAdmin.userId,
+          principalAdmin.user.email!,
+          `${principalAdmin.firstName} ${principalAdmin.lastName}`,
+          'School Owner',
+          principalAdmin.publicId!,
+          updatedSchool.name,
+        );
+      }
+
+      return updatedSchool;
+    });
+
+    return this.findOne(result.id);
+  }
+
+  /**
+   * Activate a school
+   */
+  async activateSchool(schoolId: string): Promise<SchoolDto> {
+    await this.schoolValidator.validateSchoolExists(schoolId);
+
+    const school = await this.prisma.school.update({
+      where: { id: schoolId },
+      data: { isActive: true },
+    });
+
+    return this.findOne(school.id);
+  }
+
+  /**
+   * Deactivate a school
+   */
+  async deactivateSchool(schoolId: string): Promise<SchoolDto> {
+    await this.schoolValidator.validateSchoolExists(schoolId);
+
+    const school = await this.prisma.school.update({
+      where: { id: schoolId },
+      data: { isActive: false },
+    });
+
+    return this.findOne(school.id);
+  }
+
+  /**
+   * Reject a pending school registration
+   */
+  async rejectSchool(schoolId: string, reason: string): Promise<SchoolDto> {
+    const school = await this.prisma.school.findUnique({
+      where: { id: schoolId },
+      include: {
+        admins: {
+          where: { role: 'school_owner' },
+          include: { user: true }
+        },
+      }
+    });
+
+    if (!school) {
+      throw new NotFoundException('School not found');
+    }
+
+    if (school.registrationStatus === 'VERIFIED') {
+      throw new BadRequestException('Cannot reject a verified school');
+    }
+
+    const updatedSchool = await this.prisma.school.update({
+      where: { id: schoolId },
+      data: {
+        registrationStatus: 'REJECTED',
+        rejectionReason: reason,
+      },
+    });
+
+    // Notify the school
+    const principalAdmin = school.admins[0];
+    if (principalAdmin && principalAdmin.user?.email) {
+      await this.emailService.sendSchoolRejectedEmail(
+        principalAdmin.user.email,
+        updatedSchool.name,
+        `${principalAdmin.firstName} ${principalAdmin.lastName}`,
+        reason
+      );
+    }
+
+    return this.findOne(updatedSchool.id);
+  }
+
+  /**
    * Helper: Create or update admin user
    * Creates a new SHADOW user or updates existing user's password and phone
    */
@@ -750,10 +752,10 @@ export class SuperAdminSchoolsService {
    */
   private normalizeRoleName(role: string): string {
     if (!role) return 'Administrator';
-    
+
     // Trim and normalize
     const normalized = role.trim();
-    
+
     // If it's already a principal role (case-insensitive), return the canonical form
     if (isPrincipalRole(normalized)) {
       // Find the matching canonical form from PRINCIPAL_ROLES
@@ -762,7 +764,7 @@ export class SuperAdminSchoolsService {
       const match = principalRoles.find(r => r.toLowerCase() === lowerNormalized);
       return match || normalized.toLowerCase();
     }
-    
+
     // For non-principal roles, replace spaces with underscores and lowercase
     return normalized.toLowerCase().replace(/\s+/g, '_');
   }
@@ -795,7 +797,7 @@ export class SuperAdminSchoolsService {
   /**
    * Sanitize principal data
    */
-  private sanitizePrincipalData(data: any): any {
+  private sanitizeOwnerData(data: any): any {
     return {
       firstName: this.sanitizeString(data.firstName, 2, 50),
       lastName: this.sanitizeString(data.lastName, 2, 50),
@@ -827,13 +829,13 @@ export class SuperAdminSchoolsService {
 
     // Remove null bytes and control characters (except newlines and tabs)
     let sanitized = input.replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]/g, '');
-    
+
     // Trim whitespace
     sanitized = sanitized.trim();
-    
+
     // Remove HTML tags to prevent XSS
     sanitized = sanitized.replace(/<[^>]*>/g, '');
-    
+
     // Validate length
     if (minLength > 0 && sanitized.length < minLength) {
       throw new BadRequestException(`Input must be at least ${minLength} characters`);
@@ -841,7 +843,7 @@ export class SuperAdminSchoolsService {
     if (sanitized.length > maxLength) {
       throw new BadRequestException(`Input must be at most ${maxLength} characters`);
     }
-    
+
     return sanitized;
   }
 
@@ -855,17 +857,17 @@ export class SuperAdminSchoolsService {
 
     // Trim and lowercase
     const sanitized = email.trim().toLowerCase();
-    
+
     // Validate email format
     if (!this.isValidEmail(sanitized)) {
       throw new BadRequestException('Invalid email format');
     }
-    
+
     // Additional security: check for dangerous patterns
     if (sanitized.includes('..') || sanitized.includes('@.') || sanitized.includes('.@')) {
       throw new BadRequestException('Invalid email format');
     }
-    
+
     return sanitized;
   }
 
@@ -879,13 +881,13 @@ export class SuperAdminSchoolsService {
 
     // Remove all whitespace and special characters except + and digits
     let sanitized = phone.replace(/[^\d+]/g, '');
-    
+
     // Validate phone format
     const phoneRegex = /^\+?[1-9]\d{1,14}$/;
     if (!phoneRegex.test(sanitized)) {
       throw new BadRequestException('Invalid phone format');
     }
-    
+
     return sanitized;
   }
 
@@ -899,21 +901,21 @@ export class SuperAdminSchoolsService {
 
     // Convert to lowercase and replace spaces/special chars with hyphens
     let sanitized = subdomain.toLowerCase().trim();
-    
+
     // Remove all characters except lowercase letters, numbers, and hyphens
     sanitized = sanitized.replace(/[^a-z0-9-]/g, '-');
-    
+
     // Remove consecutive hyphens
     sanitized = sanitized.replace(/-+/g, '-');
-    
+
     // Remove leading and trailing hyphens
     sanitized = sanitized.replace(/^-+|-+$/g, '');
-    
+
     // Validate length
     if (sanitized.length < 3 || sanitized.length > 50) {
       throw new BadRequestException('Subdomain must be between 3 and 50 characters');
     }
-    
+
     return sanitized;
   }
 
@@ -927,27 +929,27 @@ export class SuperAdminSchoolsService {
 
     // Convert to lowercase and replace spaces/special chars with hyphens
     let subdomain = name.toLowerCase().trim();
-    
+
     // Remove all characters except lowercase letters, numbers, and hyphens
     subdomain = subdomain.replace(/[^a-z0-9-]/g, '-');
-    
+
     // Remove consecutive hyphens
     subdomain = subdomain.replace(/-+/g, '-');
-    
+
     // Remove leading and trailing hyphens
     subdomain = subdomain.replace(/^-+|-+$/g, '');
-    
+
     // Truncate to 50 characters
     subdomain = subdomain.substring(0, 50);
-    
+
     // Remove trailing hyphen if exists
     subdomain = subdomain.replace(/-+$/, '');
-    
+
     // Ensure minimum length
     if (subdomain.length < 3) {
       subdomain = subdomain + '-school';
     }
-    
+
     // Add timestamp suffix to ensure uniqueness if needed (will be checked later)
     return subdomain;
   }

@@ -66,12 +66,12 @@ export class EmailService {
   private getFrontendUrl(): string {
     const explicitFrontendUrl = this.configService.get<string>('FRONTEND_URL');
     const nodeEnv = this.configService.get<string>('NODE_ENV') || 'development';
-    
+
     // If FRONTEND_URL is explicitly set, use it
     if (explicitFrontendUrl) {
       return explicitFrontendUrl;
     }
-    
+
     // Otherwise, auto-detect based on environment
     return nodeEnv === 'production'
       ? 'https://agora-schools.com'
@@ -209,20 +209,19 @@ export class EmailService {
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
           ${this.getEmailHeaderHtml()}
           <div style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px;">
-            ${
-              isPasswordReset
-                ? `
+            ${isPasswordReset
+          ? `
             <h2 style="color: #1f2937; margin-top: 0;">Password Reset Request</h2>
             <p>Hello ${name},</p>
             <p>We received a request to reset your password for your <strong>${role}</strong> account on the Agora school space.</p>
             <p>If you didn't make this request, you can safely ignore this email. Your password will remain unchanged.</p>
             `
-                : `
+          : `
             <h2 style="color: #1f2937; margin-top: 0;">Welcome, ${name}!</h2>
             <p>Your account has been created${schoolName ? ` at <strong>${schoolName}</strong>` : ''} on the Agora school space as a <strong>${role}</strong>.</p>
             <p>To get started, please set your password using the link below.</p>
             `
-            }
+        }
             ${schoolsSection}
             ${studentUidSection}
             <div style="background-color: #fff; border: 1px solid #e5e7eb; border-radius: 6px; padding: 20px; margin: 25px 0;">
@@ -240,15 +239,14 @@ export class EmailService {
                 <strong>⏱️ Important:</strong> This link will expire in ${isPasswordReset ? '1 hour' : '24 hours'}. ${isPasswordReset ? 'For security reasons, password reset links expire quickly.' : 'Please set your password as soon as possible.'}
               </p>
             </div>
-            ${
-              isPasswordReset
-                ? `
+            ${isPasswordReset
+          ? `
             <p style="color: #6b7280; font-size: 14px; margin-top: 20px;">
               <strong>Security Tip:</strong> If you didn't request this password reset, please ignore this email. Your account remains secure, and no changes will be made.
             </p>
             `
-                : ''
-            }
+          : ''
+        }
             <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
             <p style="color: #9ca3af; font-size: 12px; text-align: center; margin: 0;">
               © ${new Date().getFullYear()} Agora school space. All rights reserved.
@@ -320,16 +318,15 @@ export class EmailService {
             <h2 style="color: #1f2937; margin-top: 0;">Password Successfully Changed</h2>
             <p>Hello ${name},</p>
             <p>Your password has been successfully changed${schoolName ? ` for your account at <strong>${schoolName}</strong>` : ''} on <strong>${new Date().toLocaleString()}</strong>.</p>
-            ${
-              publicId
-                ? `
+            ${publicId
+          ? `
             <div style="background-color: #eff6ff; border-left: 4px solid #3b82f6; padding: 15px; margin: 20px 0; border-radius: 4px;">
               <p style="margin: 0; color: #1e40af; font-weight: bold;">Your Public ID: <code style="background-color: white; padding: 4px 8px; border-radius: 4px; font-size: 16px;">${publicId}</code></p>
               <p style="margin: 10px 0 0 0; color: #1e40af; font-size: 14px;">You can log in using either your email address or this Public ID, along with your password.</p>
             </div>
             `
-                : ''
-            }
+          : ''
+        }
             <p>You can now log in to your account using your ${publicId ? 'email or Public ID' : 'email'}, along with your new password.</p>
             <div style="text-align: center; margin: 30px 0;">
               <a href="${loginUrl}" style="background-color: #3b82f6; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: bold;">Log In</a>
@@ -416,16 +413,15 @@ export class EmailService {
               <p style="margin: 0; color: #92400e; font-weight: bold;">Previous Role: ${oldRole}</p>
               <p style="margin: 10px 0 0 0; color: #92400e; font-weight: bold;">New Role: <span style="color: #059669;">${newRole}</span></p>
             </div>
-            ${
-              publicId
-                ? `
+            ${publicId
+          ? `
             <div style="background-color: #eff6ff; border-left: 4px solid #3b82f6; padding: 15px; margin: 20px 0; border-radius: 4px;">
               <p style="margin: 0; color: #1e40af; font-weight: bold;">Your Public ID: <code style="background-color: white; padding: 4px 8px; border-radius: 4px; font-size: 16px;">${publicId}</code></p>
               <p style="margin: 10px 0 0 0; color: #1e40af; font-size: 14px;">You can log in using either your email address or this Public ID, along with your password.</p>
             </div>
             `
-                : ''
-            }
+          : ''
+        }
             <p>You can now access your account with your new role permissions. Please log in using your ${publicId ? 'email or Public ID' : 'email'}, along with your password, to see the updated dashboard.</p>
             <div style="text-align: center; margin: 30px 0;">
               <a href="${loginUrl}" style="background-color: #3b82f6; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: bold;">Log In</a>
@@ -1624,5 +1620,189 @@ If you didn't request this code, please ignore this email or contact support imm
       html,
     });
     this.logger.log(`Password reset OTP email sent to ${email}`);
+  }
+
+  /**
+   * Send "Registration Received" email to a newly self-registered school
+   */
+  async sendRegistrationReceivedEmail(
+    email: string,
+    schoolName: string,
+    principalName: string,
+  ): Promise<void> {
+    const fromEmail =
+      this.configService.get<string>('MAIL_FROM') ||
+      this.configService.get<string>('SMTP_FROM') ||
+      this.configService.get<string>('MAIL_USER');
+
+    if (!fromEmail) {
+      throw new Error('Email configuration error: No FROM address');
+    }
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Registration Received</title>
+      </head>
+      <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+        ${this.getEmailHeaderHtml('Registration Received')}
+        <div style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px;">
+          <h2 style="color: #1f2937; margin-top: 0;">We've Received Your Registration</h2>
+          <p>Hello ${principalName},</p>
+          <p>Thank you for registering <strong>${schoolName}</strong> on Agora.</p>
+          <p>Your application has been received and is currently under review by our team. To ensure the quality of our platform, all new school accounts must be verified before they become fully active.</p>
+          <div style="background-color: #eff6ff; border-left: 4px solid #3b82f6; padding: 15px; margin: 20px 0; border-radius: 4px;">
+            <p style="margin: 0; color: #1e40af;"><strong>What's next?</strong></p>
+            <p style="margin: 5px 0 0; color: #1e40af;">You will receive another email once your school's account is verified. This email will contain a link to set your password and access your dashboard.</p>
+          </div>
+          <p style="color: #6b7280; font-size: 14px; margin-top: 30px;">
+            If you have any questions in the meantime, feel free to reply to this email.
+          </p>
+          <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
+          <p style="color: #9ca3af; font-size: 12px; text-align: center;">© ${new Date().getFullYear()} Agora school space.</p>
+        </div>
+      </body>
+      </html>
+    `;
+
+    await this.transporter.sendMail({
+      from: this.getFormattedFrom(),
+      replyTo: this.getReplyTo(),
+      to: email,
+      subject: 'Your Agora School Registration - Under Review',
+      headers: this.getEmailHeaders(),
+      html,
+    });
+    this.logger.log(`Registration received email sent to ${email}`);
+  }
+
+  /**
+   * Notify super admin about a new school registration
+   */
+  async sendNewRegistrationNotificationEmail(
+    adminEmail: string,
+    adminName: string,
+    schoolName: string,
+    principalEmail: string,
+    principalName: string,
+  ): Promise<void> {
+    const fromEmail =
+      this.configService.get<string>('MAIL_FROM') ||
+      this.configService.get<string>('SMTP_FROM') ||
+      this.configService.get<string>('MAIL_USER');
+
+    if (!fromEmail) return; // Silent return if not configured
+
+    const frontendUrl = this.getFrontendUrl();
+    const reviewUrl = `${frontendUrl}/dashboard/super-admin/schools?tab=pending`;
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>New School Registration</title>
+      </head>
+      <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+        ${this.getEmailHeaderHtml('New Registration')}
+        <div style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px;">
+          <h2 style="color: #1f2937; margin-top: 0;">New School Registration</h2>
+          <p>Hello ${adminName},</p>
+          <p>A new school has registered on the platform and is pending verification.</p>
+          <table style="width: 100%; border-collapse: collapse; margin: 20px 0; border: 1px solid #e5e7eb;">
+            <tr style="border-bottom: 1px solid #e5e7eb;">
+              <td style="padding: 10px; font-weight: bold; background-color: #f3f4f6; width: 30%;">School Name:</td>
+              <td style="padding: 10px; background-color: #fff;">${schoolName}</td>
+            </tr>
+            <tr style="border-bottom: 1px solid #e5e7eb;">
+              <td style="padding: 10px; font-weight: bold; background-color: #f3f4f6;">Principal:</td>
+              <td style="padding: 10px; background-color: #fff;">${principalName}</td>
+            </tr>
+            <tr>
+              <td style="padding: 10px; font-weight: bold; background-color: #f3f4f6;">Email:</td>
+              <td style="padding: 10px; background-color: #fff;">${principalEmail}</td>
+            </tr>
+          </table>
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${reviewUrl}" style="background-color: #10b981; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: bold;">Review Application</a>
+          </div>
+          <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
+          <p style="color: #9ca3af; font-size: 12px; text-align: center;">© ${new Date().getFullYear()} Agora school space.</p>
+        </div>
+      </body>
+      </html>
+    `;
+
+    await this.transporter.sendMail({
+      from: this.getFormattedFrom(),
+      replyTo: this.getReplyTo(),
+      to: adminEmail,
+      subject: `New School Registration: ${schoolName}`,
+      headers: this.getEmailHeaders(),
+      html,
+    });
+  }
+
+  /**
+   * Send rejection email to school
+   */
+  async sendSchoolRejectedEmail(
+    email: string,
+    schoolName: string,
+    principalName: string,
+    reason?: string,
+  ): Promise<void> {
+    const fromEmail =
+      this.configService.get<string>('MAIL_FROM') ||
+      this.configService.get<string>('SMTP_FROM') ||
+      this.configService.get<string>('MAIL_USER');
+
+    if (!fromEmail) return;
+
+    const reasonHtml = reason ?
+      `< div style = "background-color: #fef2f2; border-left: 4px solid #ef4444; padding: 15px; margin: 20px 0; border-radius: 4px;" >
+      <p style="margin: 0; color: #991b1b;" > <strong>Reason for rejection: </strong><br>${reason}</p >
+        </div>` : '';
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Registration Update</title>
+      </head>
+      <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+        ${this.getEmailHeaderHtml('Registration Update')}
+        <div style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px;">
+          <h2 style="color: #1f2937; margin-top: 0;">Update on Your Application</h2>
+          <p>Hello ${principalName},</p>
+          <p>Thank you for your interest in using Agora for <strong>${schoolName}</strong>.</p>
+          <p>After reviewing your application, we have decided not to proceed with verification at this time.</p>
+          ${reasonHtml}
+          <p>If you believe this is a mistake or if your situation has changed, you are welcome to apply again in the future.</p>
+          <p style="color: #6b7280; font-size: 14px; margin-top: 30px;">
+            Thank you again for your time and interest in Agora.
+          </p>
+          <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
+          <p style="color: #9ca3af; font-size: 12px; text-align: center;">© ${new Date().getFullYear()} Agora school space.</p>
+        </div>
+      </body>
+      </html>
+    `;
+
+    await this.transporter.sendMail({
+      from: this.getFormattedFrom(),
+      replyTo: this.getReplyTo(),
+      to: email,
+      subject: 'Update on Your Agora School Registration',
+      headers: this.getEmailHeaders(),
+      html,
+    });
+    this.logger.log(`School rejected email sent to ${email}`);
   }
 }

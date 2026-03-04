@@ -77,6 +77,7 @@ export class PaymentsController {
     @Request() req: { user: UserWithContext },
     @Body() dto: InitializePaymentDto
   ) {
+    await this.subscriptionsService.validatePrincipalAccess(req.user);
     const schoolId = req.user.currentSchoolId;
 
     if (!schoolId) {
@@ -114,7 +115,11 @@ export class PaymentsController {
    */
   @Get('verify/:reference')
   @UseGuards(JwtAuthGuard)
-  async verifyPayment(@Param('reference') reference: string) {
+  async verifyPayment(
+    @Request() req: { user: UserWithContext },
+    @Param('reference') reference: string
+  ) {
+    await this.subscriptionsService.validatePrincipalAccess(req.user);
     const result = await this.paymentsService.verifyPayment(reference);
 
     if (result.success) {

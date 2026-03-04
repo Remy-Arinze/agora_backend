@@ -26,7 +26,7 @@ export class AiController {
     /**
      * Internal helper to verify school has tokens and deduct them.
      */
-    private async checkAndDeductTokens(schoolId: string, tokensRequired: number, actionName: string) {
+    private async checkAndDeductTokens(schoolId: string, userId: string, tokensRequired: number, actionName: string) {
         if (!this.aiService.isConfigured()) {
             throw new BadRequestException('OpenAI is not configured. Please add OPENAI_API_KEY.');
         }
@@ -36,7 +36,7 @@ export class AiController {
             throw new BadRequestException('School does not have access to Agora AI tools. Please upgrade your subscription.');
         }
 
-        const result = await this.subscriptionsService.useAiCredits(schoolId, tokensRequired, actionName);
+        const result = await this.subscriptionsService.useAiCredits(schoolId, tokensRequired, userId, actionName);
         if (!result.success) {
             throw new BadRequestException(result.message);
         }
@@ -46,11 +46,12 @@ export class AiController {
     @Roles(UserRole.TEACHER, UserRole.SCHOOL_ADMIN)
     @ApiOperation({ summary: 'Generate a short quiz (Costs 5 credits)' })
     async generateQuiz(
+        @Request() req: any,
         @Param('schoolId') schoolId: string,
         @Body() dto: GenerateQuizDto
     ) {
         const creditsRequired = 5;
-        await this.checkAndDeductTokens(schoolId, creditsRequired, 'generate_quiz');
+        await this.checkAndDeductTokens(schoolId, req.user.id, creditsRequired, 'generate_quiz');
         return this.aiService.generateQuiz(dto);
     }
 
@@ -58,11 +59,12 @@ export class AiController {
     @Roles(UserRole.TEACHER, UserRole.SCHOOL_ADMIN)
     @ApiOperation({ summary: 'Generate a comprehensive assessment (Costs 15 credits)' })
     async generateAssessment(
+        @Request() req: any,
         @Param('schoolId') schoolId: string,
         @Body() dto: GenerateAssessmentDto
     ) {
         const creditsRequired = 15;
-        await this.checkAndDeductTokens(schoolId, creditsRequired, 'generate_assessment');
+        await this.checkAndDeductTokens(schoolId, req.user.id, creditsRequired, 'generate_assessment');
         return this.aiService.generateAssessmentQuestions(dto);
     }
 
@@ -70,11 +72,12 @@ export class AiController {
     @Roles(UserRole.TEACHER, UserRole.SCHOOL_ADMIN)
     @ApiOperation({ summary: 'Generate a lesson plan (Costs 10 credits)' })
     async generateLessonPlan(
+        @Request() req: any,
         @Param('schoolId') schoolId: string,
         @Body() dto: GenerateLessonPlanDto
     ) {
         const creditsRequired = 10;
-        await this.checkAndDeductTokens(schoolId, creditsRequired, 'generate_lesson_plan');
+        await this.checkAndDeductTokens(schoolId, req.user.id, creditsRequired, 'generate_lesson_plan');
         return this.aiService.generateLessonPlan(dto);
     }
 
@@ -82,11 +85,12 @@ export class AiController {
     @Roles(UserRole.TEACHER, UserRole.SCHOOL_ADMIN)
     @ApiOperation({ summary: 'Grade a student essay (Costs 3 credits per essay)' })
     async gradeEssay(
+        @Request() req: any,
         @Param('schoolId') schoolId: string,
         @Body() dto: GradeEssayDto
     ) {
         const creditsRequired = 3;
-        await this.checkAndDeductTokens(schoolId, creditsRequired, 'grade_essay');
+        await this.checkAndDeductTokens(schoolId, req.user.id, creditsRequired, 'grade_essay');
         return this.aiService.gradeEssay(dto);
     }
 }

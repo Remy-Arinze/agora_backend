@@ -131,6 +131,7 @@ model User {
   googleCalendarSyncs GoogleCalendarSync[]
   loginSessions       LoginSession[]
   errors              ApplicationError[]
+  aiUsageLogs         AiUsageLog[]
 
   @@index([email])
   @@index([phone])
@@ -297,6 +298,13 @@ model School {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  // Registration & Verification
+  registrationStatus String    @default("VERIFIED") // "UNAPPROVED" | "VERIFIED" | "REJECTED"
+  registrationNote   String?                         // Optional note from school during signup
+  verifiedAt         DateTime?                       // When verified by super admin
+  verifiedBy         String?                         // Super admin user ID who verified
+  rejectionReason    String?                         // If rejected, why
+
   admins              SchoolAdmin[]
   teachers            Teacher[]
   classes             Class[]
@@ -319,11 +327,13 @@ model School {
   assessments         Assessment[]
   errors              ApplicationError[]
   customPlans         SubscriptionPlan[] @relation("CustomPlanSchool")
+  aiUsageLogs         AiUsageLog[]
 
   @@index([subdomain])
   @@index([schoolId])
   @@index([isActive])
   @@index([isActive, createdAt])
+  @@index([registrationStatus])
 }
 
 model Class {
@@ -1574,14 +1584,18 @@ model AssessmentAnswer {
   @@index([questionId])
 }
 
-model AssessmentGenerationLog {
+model AiUsageLog {
   id          String   @id @default(cuid())
   schoolId    String
-  teacherId   String
-  prompt      String
-  tokensUsed  Int      @default(0)
+  userId      String
+  action      String   // e.g., "generate_quiz", "grade_essay"
+  creditsUsed Int      @default(0)
   createdAt   DateTime @default(now())
 
+  school      School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([schoolId])
-  @@index([teacherId])
+  @@index([userId])
+  @@index([createdAt])
 }
