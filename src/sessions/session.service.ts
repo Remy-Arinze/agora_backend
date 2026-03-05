@@ -1407,16 +1407,41 @@ export class SessionService {
       throw new NotFoundException('Term not found');
     }
 
+    // Guard: Block editing of COMPLETED or ARCHIVED terms
+    if (term.status === TermStatus.COMPLETED || term.status === TermStatus.ARCHIVED) {
+      throw new BadRequestException(
+        'Cannot modify dates of a completed or archived term. ' +
+        'Only ACTIVE or DRAFT terms can have their dates adjusted.'
+      );
+    }
+
+    const now = new Date();
+    const originalStart = new Date(term.startDate);
     const newStart = dto.startDate ? new Date(dto.startDate) : term.startDate;
     const newEnd = dto.endDate ? new Date(dto.endDate) : term.endDate;
 
+    // Validation 1: Start date must be before end date
     if (newStart >= newEnd) {
       throw new BadRequestException('Start date must be before end date');
     }
 
-    // Validate within session bounds
+    // Validation 2: Term dates must be within session dates
     if (newStart < term.academicSession.startDate || newEnd > term.academicSession.endDate) {
       throw new BadRequestException('Term dates must be within session dates');
+    }
+
+    // Validation 3: Start date adjustment restriction
+    // Only allow adjustment pre-term or up to 1 week after it has started
+    if (dto.startDate && newStart.getTime() !== originalStart.getTime()) {
+      const gracePeriodEnd = new Date(originalStart);
+      gracePeriodEnd.setDate(gracePeriodEnd.getDate() + 7);
+
+      if (now > gracePeriodEnd) {
+        throw new BadRequestException(
+          'Term start date can only be adjusted before the term starts or within the first week of the term. ' +
+          'This is to ensure the integrity of academic records and student progression.'
+        );
+      }
     }
 
     const updated = await this.prisma.term.update({
