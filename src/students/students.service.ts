@@ -14,6 +14,7 @@ import { TimetableService } from '../timetable/timetable.service';
 import { GradesService } from '../grades/grades.service';
 import { EventService } from '../events/event.service';
 import { CloudinaryService } from '../storage/cloudinary/cloudinary.service';
+import { safeResolvePath } from '../common/utils/path-traversal';
 
 @Injectable()
 export class StudentsService {
@@ -25,7 +26,7 @@ export class StudentsService {
     private readonly gradesService: GradesService,
     private readonly eventService: EventService,
     private readonly cloudinaryService: CloudinaryService
-  ) {}
+  ) { }
 
   async findAll(
     tenantId: string,
@@ -163,12 +164,12 @@ export class StudentsService {
       ...this.toDto(student),
       enrollment: student.enrollments[0]
         ? {
-            id: student.enrollments[0].id,
-            classLevel: student.enrollments[0].classLevel,
-            academicYear: student.enrollments[0].academicYear,
-            enrollmentDate: student.enrollments[0].enrollmentDate.toISOString(),
-            school: student.enrollments[0].school,
-          }
+          id: student.enrollments[0].id,
+          classLevel: student.enrollments[0].classLevel,
+          academicYear: student.enrollments[0].academicYear,
+          enrollmentDate: student.enrollments[0].enrollmentDate.toISOString(),
+          school: student.enrollments[0].school,
+        }
         : undefined,
     }));
     response.total = total;
@@ -228,12 +229,12 @@ export class StudentsService {
       ...this.toDto(student),
       enrollment: student.enrollments[0]
         ? {
-            id: student.enrollments[0].id,
-            classLevel: student.enrollments[0].classLevel,
-            academicYear: student.enrollments[0].academicYear,
-            enrollmentDate: student.enrollments[0].enrollmentDate.toISOString(),
-            school: student.enrollments[0].school,
-          }
+          id: student.enrollments[0].id,
+          classLevel: student.enrollments[0].classLevel,
+          academicYear: student.enrollments[0].academicYear,
+          enrollmentDate: student.enrollments[0].enrollmentDate.toISOString(),
+          school: student.enrollments[0].school,
+        }
         : undefined,
     };
   }
@@ -332,12 +333,12 @@ export class StudentsService {
       ...this.toDto(student),
       enrollment: student.enrollments[0]
         ? {
-            id: student.enrollments[0].id,
-            classLevel: student.enrollments[0].classLevel,
-            academicYear: student.enrollments[0].academicYear,
-            enrollmentDate: student.enrollments[0].enrollmentDate.toISOString(),
-            school: student.enrollments[0].school,
-          }
+          id: student.enrollments[0].id,
+          classLevel: student.enrollments[0].classLevel,
+          academicYear: student.enrollments[0].academicYear,
+          enrollmentDate: student.enrollments[0].enrollmentDate.toISOString(),
+          school: student.enrollments[0].school,
+        }
         : undefined,
     }));
   }
@@ -373,11 +374,11 @@ export class StudentsService {
       updatedAt: student.updatedAt.toISOString(),
       user: student.user
         ? {
-            id: student.user.id,
-            email: student.user.email,
-            phone: student.user.phone,
-            accountStatus: student.user.accountStatus,
-          }
+          id: student.user.id,
+          email: student.user.email,
+          phone: student.user.phone,
+          accountStatus: student.user.accountStatus,
+        }
         : undefined,
     };
   }
@@ -809,10 +810,10 @@ export class StudentsService {
           class: grade.enrollment.class,
           classArm: grade.enrollment.classArm
             ? {
-                id: grade.enrollment.classArm.id,
-                name: grade.enrollment.classArm.name,
-                classLevel: grade.enrollment.classArm.classLevel,
-              }
+              id: grade.enrollment.classArm.id,
+              name: grade.enrollment.classArm.name,
+              classLevel: grade.enrollment.classArm.classLevel,
+            }
             : null,
         },
         teacher: grade.teacher,
@@ -1343,7 +1344,10 @@ export class StudentsService {
       if (!fs.existsSync(resource.filePath)) {
         throw new NotFoundException('File not found on disk');
       }
-      const buffer = fs.readFileSync(resource.filePath);
+
+      // Prevent path traversal for local legacy files
+      const safePath = safeResolvePath(process.cwd(), resource.filePath);
+      const buffer = fs.readFileSync(safePath);
 
       return {
         buffer,
@@ -2399,12 +2403,12 @@ export class StudentsService {
       ...this.toDto(updatedStudent),
       enrollment: updatedStudent.enrollments[0]
         ? {
-            id: updatedStudent.enrollments[0].id,
-            classLevel: updatedStudent.enrollments[0].classLevel,
-            academicYear: updatedStudent.enrollments[0].academicYear,
-            enrollmentDate: updatedStudent.enrollments[0].enrollmentDate.toISOString(),
-            school: updatedStudent.enrollments[0].school,
-          }
+          id: updatedStudent.enrollments[0].id,
+          classLevel: updatedStudent.enrollments[0].classLevel,
+          academicYear: updatedStudent.enrollments[0].academicYear,
+          enrollmentDate: updatedStudent.enrollments[0].enrollmentDate.toISOString(),
+          school: updatedStudent.enrollments[0].school,
+        }
         : undefined,
     };
   }

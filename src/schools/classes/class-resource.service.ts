@@ -6,6 +6,7 @@ import { CloudinaryService } from '../../storage/cloudinary/cloudinary.service';
 import * as fs from 'fs';
 import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
+import { safeResolvePath } from '../../common/utils/path-traversal';
 
 @Injectable()
 export class ClassResourceService {
@@ -13,7 +14,7 @@ export class ClassResourceService {
     private readonly prisma: PrismaService,
     private readonly schoolRepository: SchoolRepository,
     private readonly cloudinaryService: CloudinaryService
-  ) {}
+  ) { }
 
   private get classModel() {
     return (this.prisma as any)['class'];
@@ -342,7 +343,10 @@ export class ClassResourceService {
       if (!fs.existsSync(resource.filePath)) {
         throw new NotFoundException('File not found on disk');
       }
-      const buffer = fs.readFileSync(resource.filePath);
+
+      // Prevent path traversal for local legacy files
+      const safePath = safeResolvePath(process.cwd(), resource.filePath);
+      const buffer = fs.readFileSync(safePath);
       return { buffer, resource };
     }
   }

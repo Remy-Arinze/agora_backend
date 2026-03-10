@@ -4,11 +4,29 @@ import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import helmet from 'helmet';
+import * as Sentry from '@sentry/nestjs';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const cookieParser = require('cookie-parser');
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
+
+  // Initialize Sentry before app creation
+  if (process.env.SENTRY_DSN) {
+    Sentry.init({
+      dsn: process.env.SENTRY_DSN,
+      environment: process.env.NODE_ENV || 'development',
+      tracesSampleRate: 1.0,
+      debug: false,
+      integrations: [
+        // Add more integrations if needed
+      ],
+    });
+    logger.log('🕵️ Sentry initialized');
+  } else {
+    logger.warn('⚠️ SENTRY_DSN not found. Error tracking disabled.');
+  }
+
   const app = await NestFactory.create(AppModule);
 
   // Removed global prefix - routes are directly accessible
