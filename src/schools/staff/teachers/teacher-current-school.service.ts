@@ -8,7 +8,7 @@ import { UserWithContext } from '../../../auth/types/user-with-context.type';
  */
 @Injectable()
 export class TeacherCurrentSchoolService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   /**
    * Get current teacher profile
@@ -21,9 +21,10 @@ export class TeacherCurrentSchoolService {
       throw new BadRequestException('Teacher profile not found in current context');
     }
 
-    // Find teacher by teacherId field (unique ID), not by database id
-    const teacher = await this.prisma.teacher.findUnique({
-      where: { teacherId: teacherIdFromJwt },
+    // Find teacher — try database id first (CUID, as stored by current auth),
+    // then fall back to teacherId field (formatted string like AG-TCH-xxx) for backward compat
+    let teacher = await this.prisma.teacher.findUnique({
+      where: { id: teacherIdFromJwt },
       include: {
         user: {
           select: {
@@ -46,9 +47,37 @@ export class TeacherCurrentSchoolService {
       },
     });
 
+    // Fallback: the profileId in the JWT might be the teacherId string (e.g. AG-TCH-xxx)
+    if (!teacher) {
+      teacher = await this.prisma.teacher.findUnique({
+        where: { teacherId: teacherIdFromJwt },
+        include: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+              phone: true,
+              accountStatus: true,
+            },
+          },
+          school: {
+            select: {
+              id: true,
+              name: true,
+              subdomain: true,
+              hasPrimary: true,
+              hasSecondary: true,
+              hasTertiary: true,
+            },
+          },
+        },
+      });
+    }
+
     if (!teacher) {
       throw new NotFoundException('Teacher profile not found');
     }
+
 
     if (teacher.schoolId !== schoolId) {
       throw new BadRequestException('Teacher does not belong to current school');
@@ -118,14 +147,20 @@ export class TeacherCurrentSchoolService {
       throw new BadRequestException('Teacher profile not found in current context');
     }
 
-    // Get teacher by teacherId field
-    const teacher = await this.prisma.teacher.findUnique({
-      where: { teacherId: teacherIdFromJwt },
+    // Get teacher — try database id first, then teacherId string for backward compat
+    let teacher = await this.prisma.teacher.findUnique({
+      where: { id: teacherIdFromJwt },
     });
+    if (!teacher) {
+      teacher = await this.prisma.teacher.findUnique({
+        where: { teacherId: teacherIdFromJwt },
+      });
+    }
 
     if (!teacher || teacher.schoolId !== schoolId) {
       throw new NotFoundException('Teacher not found in this school');
     }
+
 
     // Determine if classId is a ClassArm or Class
     const classArm = await this.prisma.classArm.findUnique({

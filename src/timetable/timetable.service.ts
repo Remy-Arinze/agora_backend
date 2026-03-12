@@ -22,7 +22,7 @@ export class TimetableService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly schoolRepository: SchoolRepository
-  ) {}
+  ) { }
 
   // Access Prisma models using bracket notation for reserved keywords
   private get timetablePeriodModel() {
@@ -179,45 +179,34 @@ export class TimetableService {
       targets = classArms.map((ca) => ({ classArmId: ca.id }));
     }
 
+    const periodsToCreate = [];
+
+    for (const target of targets) {
+      for (const periodDef of dto.periods) {
+        periodsToCreate.push({
+          dayOfWeek: periodDef.dayOfWeek,
+          startTime: periodDef.startTime,
+          endTime: periodDef.endTime,
+          type: periodDef.type || PeriodType.LESSON,
+          classId: target.classId || null,
+          classArmId: target.classArmId || null,
+          termId: dto.termId,
+        });
+      }
+    }
+
     let created = 0;
     let skipped = 0;
 
-    // Use a transaction for better performance and consistency
-    await this.prisma.$transaction(async (tx) => {
-      for (const target of targets) {
-        for (const periodDef of dto.periods) {
-          // Check if period already exists
-          const existing = await tx.timetablePeriod.findFirst({
-            where: {
-              termId: dto.termId,
-              classId: target.classId || null,
-              classArmId: target.classArmId || null,
-              dayOfWeek: periodDef.dayOfWeek,
-              startTime: periodDef.startTime,
-            },
-          });
+    if (periodsToCreate.length > 0) {
+      const result = await this.timetablePeriodModel.createMany({
+        data: periodsToCreate,
+        skipDuplicates: true,
+      });
 
-          if (existing) {
-            skipped++;
-            continue;
-          }
-
-          await tx.timetablePeriod.create({
-            data: {
-              dayOfWeek: periodDef.dayOfWeek,
-              startTime: periodDef.startTime,
-              endTime: periodDef.endTime,
-              type: periodDef.type || PeriodType.LESSON,
-              classId: target.classId || null,
-              classArmId: target.classArmId || null,
-              termId: dto.termId,
-            },
-          });
-
-          created++;
-        }
-      }
-    });
+      created = result.count;
+      skipped = periodsToCreate.length - created;
+    }
 
     return { created, skipped };
   }
@@ -1013,13 +1002,13 @@ export class TimetableService {
       // Include full teacher details for secondary school class detail pages
       teacher: period.teacher
         ? {
-            id: period.teacher.id,
-            firstName: period.teacher.firstName,
-            lastName: period.teacher.lastName,
-            email: period.teacher.email || '',
-            phone: period.teacher.phone || '',
-            profileImage: period.teacher.profileImage || null,
-          }
+          id: period.teacher.id,
+          firstName: period.teacher.firstName,
+          lastName: period.teacher.lastName,
+          email: period.teacher.email || '',
+          phone: period.teacher.phone || '',
+          profileImage: period.teacher.profileImage || null,
+        }
         : undefined,
       roomId: period.roomId,
       roomName: period.room?.name,

@@ -443,6 +443,7 @@ model Term {
   timetablePeriods    TimetablePeriod[]
   curricula           Curriculum[]
   courseRegistrations CourseRegistration[] // For TERTIARY: Course registrations for this term
+  assessments         Assessment[]
 
   @@unique([academicSessionId, number])
   @@index([academicSessionId])
@@ -1498,6 +1499,8 @@ model Assessment {
   classArmId  String?
   subjectId   String
   teacherId   String
+  termId      String?  // The academic term this assessment belongs to
+  academicYear String?
   title       String
   description String?
   type        String   // "QUIZ", "EXAM", "ASSIGNMENT"
@@ -1512,6 +1515,7 @@ model Assessment {
   classArm    ClassArm?  @relation(fields: [classArmId], references: [id], onDelete: SetNull)
   subject     Subject    @relation(fields: [subjectId], references: [id], onDelete: Cascade)
   teacher     Teacher    @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  term        Term?      @relation(fields: [termId], references: [id], onDelete: SetNull)
 
   questions   AssessmentQuestion[]
   submissions AssessmentSubmission[]
@@ -1521,6 +1525,7 @@ model Assessment {
   @@index([classArmId])
   @@index([subjectId])
   @@index([teacherId])
+  @@index([termId])
   @@index([status])
 }
 

@@ -30,6 +30,7 @@ import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { AiModule } from './ai/ai.module';
 import { PaymentsModule } from './payments/payments.module';
 import { ErrorsModule } from './operations/errors/errors.module';
+import { AssessmentsModule } from './assessments/assessments.module';
 import { APP_FILTER } from '@nestjs/core';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 
@@ -69,6 +70,7 @@ import { HttpExceptionFilter } from './common/filters/http-exception.filter';
     AiModule,
     PaymentsModule,
     ErrorsModule,
+    AssessmentsModule,
   ],
   controllers: [AppController],
   providers: [
