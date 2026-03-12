@@ -1,4 +1,4 @@
-import { Body, Controller, Post, UseGuards, Request, Param, BadRequestException } from '@nestjs/common';
+import { Body, Controller, Post, Get, Delete, UseGuards, Request, Param, BadRequestException, Query } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -92,5 +92,45 @@ export class AiController {
         const creditsRequired = 3;
         await this.checkAndDeductTokens(schoolId, req.user.id, creditsRequired, 'grade_essay');
         return this.aiService.gradeEssay(dto);
+    }
+
+    @Post('chat')
+    @Roles(UserRole.TEACHER, UserRole.SCHOOL_ADMIN, UserRole.STUDENT)
+    @ApiOperation({ summary: 'Generic AI assistant chat (Costs 2 credits per interaction)' })
+    async chat(
+        @Request() req: any,
+        @Param('schoolId') schoolId: string,
+        @Body() body: { messages: any[]; conversationId?: string }
+    ) {
+        const creditsRequired = 2; // Token cost per message pair
+        await this.checkAndDeductTokens(schoolId, req.user.id, creditsRequired, 'ai_chat');
+        return this.aiService.chat(body.messages, req.user.id, body.conversationId, schoolId);
+    }
+
+    @Get('history')
+    @Roles(UserRole.TEACHER, UserRole.SCHOOL_ADMIN, UserRole.STUDENT)
+    @ApiOperation({ summary: 'Get chat history' })
+    async getHistory(@Request() req: any) {
+        return this.aiService.getConversations(req.user.id);
+    }
+
+    @Get('history/:conversationId')
+    @Roles(UserRole.TEACHER, UserRole.SCHOOL_ADMIN, UserRole.STUDENT)
+    @ApiOperation({ summary: 'Get messages for a conversation' })
+    async getConversationMessages(
+        @Request() req: any,
+        @Param('conversationId') conversationId: string
+    ) {
+        return this.aiService.getConversationMessages(conversationId, req.user.id);
+    }
+
+    @Delete('history/:conversationId')
+    @Roles(UserRole.TEACHER, UserRole.SCHOOL_ADMIN, UserRole.STUDENT)
+    @ApiOperation({ summary: 'Delete a conversation' })
+    async deleteConversation(
+        @Request() req: any,
+        @Param('conversationId') conversationId: string
+    ) {
+        return this.aiService.deleteConversation(conversationId, req.user.id);
     }
 }

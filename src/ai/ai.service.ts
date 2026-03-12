@@ -1,5 +1,6 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { PrismaService } from '../database/prisma.service';
 import OpenAI, { AzureOpenAI } from 'openai';
 
 export interface GenerateFlashcardsOptions {
@@ -99,7 +100,10 @@ export class AiService {
   private openai: OpenAI | null = null;
   private readonly model: string;
 
-  constructor(private readonly configService: ConfigService) {
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly prisma: PrismaService
+  ) {
     const apiKey = this.configService.get<string>('OPENAI_API_KEY');
     const azureApiKey = this.configService.get<string>('AZURE_OPENAI_API_KEY');
     const azureEndpoint = this.configService.get<string>('AZURE_OPENAI_ENDPOINT');
@@ -490,6 +494,141 @@ Return as JSON: {"questions": [...]}`;
       this.logger.error(`Failed to generate assessment questions: ${error}`);
       throw new BadRequestException('Failed to generate questions. Please try again.');
     }
+  }
+
+  /**
+   * Generic chat with AI
+   */
+  async chat(messages: { role: 'user' | 'assistant' | 'system'; content: string }[], userId?: string, conversationId?: string, schoolId?: string): Promise<{ content: string; conversationId: string }> {
+    this.ensureConfigured();
+
+    try {
+      const response = await this.openai!.chat.completions.create({
+        model: this.model,
+        messages: [
+          {
+            role: 'system',
+            content: 'You are Agora AI, a helpful educational assistant for teachers in Nigeria. You are an expert in the NERDC curriculum and Nigerian educational standards. Provide clear, professional, and pedagogically sound advice and content.',
+          },
+          ...messages,
+        ],
+        temperature: 0.7,
+      });
+
+      const assistantContent = response.choices[0]?.message?.content || '';
+
+      let finalConversationId = conversationId;
+
+      if (userId) {
+        // If we have a userId, we should save the history
+        if (!finalConversationId) {
+          // Create a new conversation if none exists
+          const lastUserMessage = messages.slice().reverse().find(m => m.role === 'user');
+          const title = lastUserMessage?.content 
+            ? (lastUserMessage.content.substring(0, 40) + (lastUserMessage.content.length > 40 ? '...' : ''))
+            : 'New Chat';
+          
+          const conversation = await this.prisma.chatConversation.create({
+            data: {
+              userId,
+              schoolId,
+              title,
+              messages: {
+                create: messages.map(m => ({
+                  role: m.role,
+                  content: m.content
+                }))
+              }
+            }
+          });
+          finalConversationId = conversation.id;
+        }
+
+        // Save the assistant's response to the conversation
+        await this.prisma.chatMessage.create({
+          data: {
+            conversationId: finalConversationId!,
+            role: 'assistant',
+            content: assistantContent
+          }
+        });
+
+        // If it was an existing conversation, we also need to save the latest user message
+        // (Assuming the caller ONLY sent the new message or the whole history)
+        // Actually, the frontend usually sends the whole history. 
+        // For simplicity, let's assume we want to sync the latest message if not already saved.
+        // But the create above already saved the history.
+        // If finalConversationId existed, we only need to save the LATEST user message and assistant message.
+        if (conversationId) {
+           const lastMessage = messages[messages.length - 1];
+           if (lastMessage && lastMessage.role === 'user') {
+             await this.prisma.chatMessage.create({
+               data: {
+                 conversationId: finalConversationId!,
+                 role: 'user',
+                 content: lastMessage.content
+               }
+             });
+           }
+        }
+      }
+
+      return { 
+        content: assistantContent, 
+        conversationId: finalConversationId || '' 
+      };
+    } catch (error) {
+      this.logger.error(`AI Chat failed: ${error}`);
+      throw new BadRequestException('AI assistant is currently unavailable. Please try again later.');
+    }
+  }
+
+  async getConversations(userId: string) {
+    return this.prisma.chatConversation.findMany({
+      where: { userId },
+      orderBy: { updatedAt: 'desc' },
+      select: {
+        id: true,
+        title: true,
+        updatedAt: true,
+        _count: {
+          select: { messages: true }
+        }
+      }
+    });
+  }
+
+  async getConversationMessages(conversationId: string, userId: string) {
+    const conversation = await this.prisma.chatConversation.findUnique({
+      where: { id: conversationId },
+      include: {
+        messages: {
+          orderBy: { createdAt: 'asc' }
+        }
+      }
+    });
+
+    if (!conversation || conversation.userId !== userId) {
+      throw new BadRequestException('Conversation not found');
+    }
+
+    return conversation.messages;
+  }
+
+  async deleteConversation(conversationId: string, userId: string) {
+    const conversation = await this.prisma.chatConversation.findUnique({
+      where: { id: conversationId }
+    });
+
+    if (!conversation || conversation.userId !== userId) {
+      throw new BadRequestException('Conversation not found');
+    }
+
+    await this.prisma.chatConversation.delete({
+      where: { id: conversationId }
+    });
+
+    return { success: true };
   }
 }
 
