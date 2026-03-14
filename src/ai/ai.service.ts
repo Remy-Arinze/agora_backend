@@ -497,10 +497,92 @@ Return as JSON: {"questions": [...]}`;
   }
 
   /**
+   * Create vector embedding for text
+   */
+  async createEmbedding(text: string): Promise<number[]> {
+    this.ensureConfigured();
+    try {
+      const response = await this.openai!.embeddings.create({
+        model: 'text-embedding-3-small',
+        input: text.substring(0, 8192), // OpenAI limit
+      });
+      return response.data[0].embedding;
+    } catch (error) {
+      this.logger.error(`Embedding failed: ${error}`);
+      throw new BadRequestException('Failed to process context for search');
+    }
+  }
+
+  /**
+   * Find relevant context chunks using vector similarity
+   */
+  async findRelevantContext(query: string, schoolId: string, role: string, limit: number = 5): Promise<string> {
+    try {
+      const embedding = await this.createEmbedding(query);
+      const vectorString = `[${embedding.join(',')}]`;
+
+      // We use queryRaw because Prisma doesn't support vector operators natively yet
+      // The <=> operator is for cosine distance in pgvector
+      const chunks: any[] = await this.prisma.$queryRawUnsafe(`
+        SELECT content
+        FROM "KnowledgeChunk"
+        WHERE "schoolId" = $1
+        AND (
+          (metadata->'permissions'->'roles')::jsonb ? $2
+          OR (metadata->'permissions'->'isPublic')::boolean = true
+        )
+        ORDER BY embedding <=> $3::vector
+        LIMIT $4
+      `, schoolId, role, vectorString, limit);
+
+      if (!chunks || chunks.length === 0) return '';
+
+      return chunks.map(c => c.content).join('\n---\n');
+    } catch (error) {
+      this.logger.error(`Context retrieval failed: ${error}`);
+      return ''; // Fallback to no context rather than crashing
+    }
+  }
+
+  /**
    * Generic chat with AI
    */
-  async chat(messages: { role: 'user' | 'assistant' | 'system'; content: string }[], userId?: string, conversationId?: string, schoolId?: string): Promise<{ content: string; conversationId: string }> {
+  async chat(
+    messages: { role: 'user' | 'assistant' | 'system'; content: string }[], 
+    userId?: string, 
+    conversationId?: string, 
+    schoolId?: string
+  ): Promise<{ content: string; conversationId: string }> {
     this.ensureConfigured();
+
+    let contextText = '';
+    let userRole = 'USER';
+
+    // If we have a school ID and user, try to get context
+    if (schoolId && userId) {
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { role: true }
+      });
+      if (user) {
+        userRole = user.role;
+        const lastUserMessage = messages.slice().reverse().find(m => m.role === 'user');
+        if (lastUserMessage) {
+          contextText = await this.findRelevantContext(lastUserMessage.content, schoolId, userRole);
+        }
+      }
+    }
+
+    const systemPrompt = `
+      You are the Agora School OS Assistant. 
+      Context about the school: ${contextText || 'No specific context found.'}
+      
+      User Role: ${userRole}
+      Rules:
+      - Only answer based on the provided context.
+      - If the user asks something outside school context, try to relate it to how it helps the school.
+      - Never reveal data the user doesn't have access to based on their role.
+    `;
 
     try {
       const response = await this.openai!.chat.completions.create({
@@ -508,7 +590,7 @@ Return as JSON: {"questions": [...]}`;
         messages: [
           {
             role: 'system',
-            content: 'You are Agora AI, a helpful educational assistant for teachers in Nigeria. You are an expert in the NERDC curriculum and Nigerian educational standards. Provide clear, professional, and pedagogically sound advice and content.',
+            content: systemPrompt,
           },
           ...messages,
         ],

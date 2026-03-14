@@ -5,6 +5,8 @@ import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { AiService } from './ai.service';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
+import { KnowledgeIndexingService } from './knowledge-indexing.service';
+import { PrismaService } from '../database/prisma.service';
 import {
     GenerateQuizDto,
     GenerateAssessmentDto,
@@ -20,7 +22,9 @@ import { UserRole } from '@prisma/client';
 export class AiController {
     constructor(
         private readonly aiService: AiService,
-        private readonly subscriptionsService: SubscriptionsService
+        private readonly subscriptionsService: SubscriptionsService,
+        private readonly indexingService: KnowledgeIndexingService,
+        private readonly prisma: PrismaService
     ) { }
 
     /**
@@ -132,5 +136,30 @@ export class AiController {
         @Param('conversationId') conversationId: string
     ) {
         return this.aiService.deleteConversation(conversationId, req.user.id);
+    }
+
+    @Post('index-school')
+    @Roles(UserRole.SCHOOL_ADMIN, UserRole.SUPER_ADMIN)
+    @ApiOperation({ summary: 'Trigger knowledge indexing for the school' })
+    async indexSchool(@Param('schoolId') schoolId: string) {
+        const students = await this.prisma.student.findMany({
+            where: { enrollments: { some: { schoolId } } },
+            select: { id: true }
+        });
+
+        for (const s of students) {
+            await this.indexingService.indexStudent(s.id);
+        }
+
+        const classes = await this.prisma.class.findMany({
+            where: { schoolId },
+            select: { id: true }
+        });
+
+        for (const c of classes) {
+            await this.indexingService.indexClass(c.id);
+        }
+
+        return { success: true, message: `Indexed ${students.length} students and ${classes.length} classes` };
     }
 }

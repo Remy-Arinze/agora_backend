@@ -329,6 +329,7 @@ model School {
   errors              ApplicationError[]
   customPlans         SubscriptionPlan[] @relation("CustomPlanSchool")
   aiUsageLogs         AiUsageLog[]
+  knowledgeChunks     KnowledgeChunk[]
 
   @@index([subdomain])
   @@index([schoolId])
@@ -1634,4 +1635,18 @@ model ChatMessage {
 
   @@index([conversationId])
   @@index([createdAt])
+}
+
+model KnowledgeChunk {
+  id        String   @id @default(cuid())
+  schoolId  String
+  content   String   @db.Text
+  metadata  Json     // Stores entity type, ID, and permission rules
+  embedding Unsupported("vector(1536)")?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId])
 }
