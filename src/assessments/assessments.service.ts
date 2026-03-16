@@ -117,7 +117,7 @@ export class AssessmentsService {
         let totalScore = 0;
         const answers = dto.answers.map(ans => {
             const question = assessment.questions.find(q => q.id === ans.questionId);
-            let isCorrect = null;
+            let isCorrect: boolean | null = null;
             let score = 0;
 
             if (question && question.type === 'MULTIPLE_CHOICE') {

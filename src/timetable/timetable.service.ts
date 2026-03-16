@@ -179,7 +179,7 @@ export class TimetableService {
       targets = classArms.map((ca) => ({ classArmId: ca.id }));
     }
 
-    const periodsToCreate = [];
+    const periodsToCreate: any[] = [];
 
     for (const target of targets) {
       for (const periodDef of dto.periods) {
