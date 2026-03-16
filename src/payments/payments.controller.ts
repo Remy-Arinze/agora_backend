@@ -26,6 +26,9 @@ class InitializePaymentDto {
   @IsBoolean()
   @IsOptional()
   isYearly?: boolean;
+
+  @IsOptional()
+  callbackUrl?: string;
 }
 
 @Controller('payments')
@@ -105,6 +108,7 @@ export class PaymentsController {
       subscriptionId: subscription.id,
       tier: dto.tier,
       isYearly: dto.isYearly || false,
+      callbackUrl: dto.callbackUrl,
     });
 
     return result;

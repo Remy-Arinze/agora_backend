@@ -11,6 +11,7 @@ export interface InitializePaymentOptions {
   subscriptionId: string;
   tier: SubscriptionTier;
   isYearly: boolean;
+  callbackUrl?: string;
   metadata?: Record<string, any>;
 }
 
@@ -117,7 +118,7 @@ export class PaymentsService {
           amount: amountInKobo,
           reference,
           currency: 'NGN',
-          callback_url: `${this.configService.get('APP_URL')}/dashboard/school/subscription/callback`,
+          callback_url: options.callbackUrl || `${this.configService.get('APP_URL')}/payment/callback`,
           metadata: {
             schoolId,
             subscriptionId,
