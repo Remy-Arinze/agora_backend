@@ -1,27 +1,42 @@
 trigger:
-  - main
+  branches:
+    include:
+      - master
+      - staging
 
 pool:
   vmImage: 'ubuntu-latest'
 
+# ──────────────────────────────────────────────
+# Conditional variables: set targets based on branch
+# ──────────────────────────────────────────────
 variables:
   azureSubscription: 'agora-current-sc'
-  apiAppName: 'agora-api-dev'
+
+  # Dev environment (master branch)
+  ${{ if eq(variables['Build.SourceBranchName'], 'master') }}:
+    apiAppName: 'agora-api-dev'
+    environmentName: 'Dev'
+
+  # Staging environment (staging branch)
+  ${{ if eq(variables['Build.SourceBranchName'], 'staging') }}:
+    apiAppName: 'agora-api-stg'
+    environmentName: 'Staging'
 
 stages:
 - stage: Backend
-  displayName: 'Deploy Backend (API)'
+  displayName: 'Deploy Backend to $(environmentName)'
   jobs:
   - job: BuildAndDeployAPI
+    displayName: 'Build & Deploy API to $(environmentName)'
     steps:
     - task: NodeTool@0
       inputs:
         versionSpec: '20.x'
-    
+
     - script: npm install
       displayName: 'Install Dependencies'
 
-    # ⚠️ Check this path: update it if your schema.prisma moved during the repo split
     - script: npx prisma generate --schema=prisma/schema.prisma
       displayName: 'Generate Prisma Client'
 
@@ -41,7 +56,13 @@ stages:
         fi
       displayName: 'Disable Strict TypeScript Checks'
 
-    - script: npm run build
+    - script: |
+        echo "=== DEPLOYMENT INFO ==="
+        echo "Environment: $(environmentName)"
+        echo "Target App:  $(apiAppName)"
+        echo "Branch:      $(Build.SourceBranchName)"
+        echo "========================"
+        npm run build
       displayName: 'Build NestJS'
       env:
         NODE_OPTIONS: '--max-old-space-size=4096'
@@ -52,7 +73,7 @@ stages:
     - bash: |
         ROOT=$(Build.SourcesDirectory)
         DEPLOY_DIR=$ROOT/deploy_api
-        
+
         echo "Preparing deployment package at $DEPLOY_DIR..."
         rm -rf $DEPLOY_DIR
         mkdir -p $DEPLOY_DIR/dist
@@ -69,7 +90,7 @@ stages:
 
         echo "Copying node_modules..."
         cp -r -L $ROOT/node_modules $DEPLOY_DIR/
-        
+
         echo "Artifact assembly complete."
       displayName: 'Assemble Deployment Package'
 
