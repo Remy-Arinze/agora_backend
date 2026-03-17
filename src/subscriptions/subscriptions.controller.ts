@@ -14,7 +14,7 @@ import { UserWithContext } from '../auth/types/user-with-context.type';
 @Controller('subscriptions')
 @UseGuards(JwtAuthGuard)
 export class SubscriptionsController {
-  constructor(private readonly subscriptionsService: SubscriptionsService) {}
+  constructor(private readonly subscriptionsService: SubscriptionsService) { }
 
   /**
    * Get current school's subscription
@@ -23,6 +23,7 @@ export class SubscriptionsController {
   async getMySubscription(
     @Request() req: { user: UserWithContext }
   ): Promise<{ success: boolean; data: SubscriptionDto }> {
+    await this.subscriptionsService.validatePrincipalAccess(req.user);
     const schoolId = req.user.currentSchoolId;
 
     if (!schoolId) {
@@ -61,6 +62,28 @@ export class SubscriptionsController {
     return {
       success: true,
       data: summary,
+    };
+  }
+
+  /**
+   * Get AI usage history for a school (Principal only)
+   */
+  @Get('ai-usage')
+  async getAiUsageHistory(
+    @Request() req: { user: UserWithContext }
+  ): Promise<{ success: boolean; data: any[] }> {
+    await this.subscriptionsService.validatePrincipalAccess(req.user);
+    const schoolId = req.user.currentSchoolId;
+
+    if (!schoolId) {
+      return { success: false, data: [] };
+    }
+
+    const logs = await this.subscriptionsService.getAiUsageLogs(schoolId);
+
+    return {
+      success: true,
+      data: logs,
     };
   }
 
@@ -144,7 +167,12 @@ export class SubscriptionsController {
       };
     }
 
-    const result = await this.subscriptionsService.useAiCredits(schoolId, dto.credits, dto.action);
+    const result = await this.subscriptionsService.useAiCredits(
+      schoolId,
+      dto.credits,
+      req.user.id,
+      dto.action || 'manual_deduction'
+    );
 
     return {
       success: result.success,

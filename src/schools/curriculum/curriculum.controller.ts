@@ -26,6 +26,7 @@ import {
   UpdateCurriculumDto,
   RejectCurriculumDto,
   MarkWeekCompleteDto,
+  MarkWeekInProgressDto,
   SkipWeekDto,
 } from './dto/create-curriculum.dto';
 import { CurriculumDto, CurriculumSummaryDto, TimetableSubjectDto } from './dto/curriculum.dto';
@@ -51,7 +52,7 @@ export class CurriculumController {
   constructor(
     private readonly curriculumService: CurriculumService,
     private readonly nerdcService: NerdcCurriculumService
-  ) {}
+  ) { }
 
   // ============================================
   // NERDC Template Endpoints
@@ -368,6 +369,7 @@ export class CurriculumController {
       curriculumId,
       parseInt(weekNumber, 10),
       dto.notes,
+      dto.classId,
       user
     );
     return ResponseDto.ok(data, 'Week marked as complete');
@@ -384,12 +386,14 @@ export class CurriculumController {
     @Param('schoolId') schoolId: string,
     @Param('curriculumId') curriculumId: string,
     @Param('weekNumber') weekNumber: string,
+    @Body() dto: MarkWeekInProgressDto,
     @CurrentUser() user: UserWithContext
   ): Promise<ResponseDto<any>> {
     const data = await this.curriculumService.markWeekInProgress(
       schoolId,
       curriculumId,
       parseInt(weekNumber, 10),
+      dto.classId,
       user
     );
     return ResponseDto.ok(data, 'Week marked as in progress');
@@ -414,6 +418,7 @@ export class CurriculumController {
       curriculumId,
       parseInt(weekNumber, 10),
       dto.reason,
+      dto.classId,
       user
     );
     return ResponseDto.ok(data, 'Week skipped');

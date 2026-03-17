@@ -163,6 +163,11 @@ export class CreateCurriculumDto {
   @IsOptional()
   nerdcCurriculumId?: string;
 
+  @ApiPropertyOptional({ example: 'clx1234567890', description: 'Specific teacher ID (if assigned)' })
+  @IsString()
+  @IsOptional()
+  teacherId?: string;
+
   @ApiProperty({
     description: 'Curriculum items',
     type: [CreateCurriculumItemDto],
@@ -218,10 +223,10 @@ export class BulkGenerateCurriculumDto {
   @IsString({ each: true })
   subjectIds: string[];
 
-  @ApiProperty({ example: 'clx1234567890', description: 'Teacher ID' })
+  @ApiPropertyOptional({ example: 'clx1234567890', description: 'Teacher ID' })
   @IsString()
-  @IsNotEmpty()
-  teacherId: string;
+  @IsOptional()
+  teacherId?: string;
 }
 
 export class UpdateCurriculumDto {
@@ -280,6 +285,11 @@ export class MarkWeekCompleteDto {
   @IsString()
   @IsOptional()
   notes?: string;
+
+  @ApiPropertyOptional({ description: 'Class ID or Class Arm ID for progress tracking' })
+  @IsString()
+  @IsOptional()
+  classId?: string;
 }
 
 export class MarkWeekInProgressDto {
@@ -287,6 +297,11 @@ export class MarkWeekInProgressDto {
   @IsString()
   @IsOptional()
   notes?: string;
+
+  @ApiPropertyOptional({ description: 'Class ID or Class Arm ID for progress tracking' })
+  @IsString()
+  @IsOptional()
+  classId?: string;
 }
 
 export class SkipWeekDto {
@@ -294,4 +309,9 @@ export class SkipWeekDto {
   @IsString()
   @IsNotEmpty()
   reason: string;
+
+  @ApiPropertyOptional({ description: 'Class ID or Class Arm ID for progress tracking' })
+  @IsString()
+  @IsOptional()
+  classId?: string;
 }

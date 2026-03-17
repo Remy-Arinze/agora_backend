@@ -201,6 +201,27 @@ export class TransfersController {
     return ResponseDto.ok(data, 'Incoming transfers retrieved successfully');
   }
 
+  @Get('recently-accepted')
+  @RequirePermission(PermissionResource.TRANSFERS, PermissionType.READ)
+  @ApiOperation({ summary: 'List recently accepted (completed) transfers to this school' })
+  @ApiQuery({ name: 'page', type: Number, required: false })
+  @ApiQuery({ name: 'limit', type: Number, required: false })
+  @ApiResponse({ status: 200, description: 'Recently accepted transfers retrieved successfully' })
+  async getRecentlyAcceptedTransfers(
+    @Param('schoolId') schoolId: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string
+  ): Promise<ResponseDto<any>> {
+    const pageNum = page ? parseInt(page, 10) : 1;
+    const limitNum = limit ? parseInt(limit, 10) : 20;
+    const data = await this.transfersService.getRecentlyAcceptedTransfers(
+      schoolId,
+      pageNum,
+      limitNum
+    );
+    return ResponseDto.ok(data, 'Recently accepted transfers retrieved successfully');
+  }
+
   @Post('incoming/:transferId/complete')
   @RequirePermission(PermissionResource.TRANSFERS, PermissionType.ADMIN)
   @ApiOperation({ summary: 'Complete transfer - migrate student data' })

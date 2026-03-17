@@ -32,7 +32,7 @@ export class CurriculumService {
     private readonly schoolRepository: SchoolRepository,
     private readonly staffRepository: StaffRepository,
     private readonly nerdcService: NerdcCurriculumService
-  ) {}
+  ) { }
 
   // ============================================
   // Timetable-Driven Subject Discovery
@@ -251,7 +251,14 @@ export class CurriculumService {
     );
 
     // Get teacher from context
-    const teacher = await this.getTeacherFromContext(user, schoolId);
+    const isAdmin = user.role === 'SCHOOL_ADMIN' || user.role === 'SUPER_ADMIN';
+    let teacher: any = null;
+
+    if (!isAdmin) {
+      teacher = await this.getTeacherFromContext(user, schoolId);
+    } else if (createDto.teacherId) {
+      teacher = await (this.prisma as any).teacher.findUnique({ where: { id: createDto.teacherId } });
+    }
 
     // Validate subject is in timetable (for PRIMARY/SECONDARY)
     if (classLevelId && createDto.subjectId) {
@@ -292,14 +299,14 @@ export class CurriculumService {
         subjectId: createDto.subjectId || null,
         subject: createDto.subject || null,
         termId: createDto.termId,
-        teacherId: teacher.id,
+        teacherId: teacher?.id || null,
         academicYear:
           createDto.academicYear ||
           term?.academicSession?.name ||
           new Date().getFullYear().toString(),
         nerdcCurriculumId: createDto.nerdcCurriculumId || null,
         isNerdcBased: !!createDto.nerdcCurriculumId,
-        status: 'DRAFT',
+        status: isAdmin ? 'APPROVED' : 'DRAFT',
         items: {
           create: createDto.items.map((item, index) => ({
             weekNumber: item.weekNumber || item.week || index + 1,
@@ -373,11 +380,16 @@ export class CurriculumService {
     }
 
     // Get teacher
-    const teacher = dto.teacherId
-      ? await (this.prisma as any).teacher.findUnique({ where: { id: dto.teacherId } })
-      : await this.getTeacherFromContext(user, schoolId);
+    const isAdmin = user.role === 'SCHOOL_ADMIN' || user.role === 'SUPER_ADMIN';
+    let teacher: any = null;
 
-    if (!teacher || teacher.schoolId !== school.id) {
+    if (!isAdmin) {
+      teacher = await this.getTeacherFromContext(user, schoolId);
+    } else if (dto.teacherId) {
+      teacher = await (this.prisma as any).teacher.findUnique({ where: { id: dto.teacherId } });
+    }
+
+    if (teacher && teacher.schoolId !== schoolId) {
       throw new ForbiddenException('Teacher not found in this school');
     }
 
@@ -439,28 +451,39 @@ export class CurriculumService {
         status: 'PENDING',
       }));
     } else {
-      // No NERDC template found - create a helpful skeleton with subject-specific placeholders
-      items = Array.from({ length: 13 }, (_, i) => ({
-        weekNumber: i + 1,
-        topic:
-          i === 0
+      items = Array.from({ length: 13 }, (_, i) => {
+        const isIntro = i === 0;
+        const isMidTerm = i === 6;
+        const isEndTerm = i === 12;
+
+        return {
+          weekNumber: i + 1,
+          topic: isIntro
             ? `Introduction to ${subject.name}`
-            : i === 6
+            : isMidTerm
               ? 'Mid-Term Review and Assessment'
-              : i === 12
+              : isEndTerm
                 ? 'Revision and End of Term Examination'
                 : `${subject.name} - Week ${i + 1} Topic`,
-        subTopics: [],
-        objectives:
-          i === 0
+          subTopics: isMidTerm || isEndTerm ? [] : [`Understanding core concepts for week ${i + 1}`, `Practical applications of week ${i + 1} topics`],
+          objectives: isIntro
             ? [`Introduce key concepts of ${subject.name}`, 'Set expectations for the term']
-            : [],
-        activities: [],
-        resources: [],
-        assessment: i === 6 ? 'Mid-term assessment' : i === 12 ? 'End of term examination' : null,
-        order: i,
-        status: 'PENDING',
-      }));
+            : isMidTerm
+              ? ['Review topics covered in weeks 1-6', 'Assess student progress']
+              : isEndTerm
+                ? ['Review all topics covered this term', 'Prepare for final examination']
+                : ['Understand the core concepts presented this week', 'Apply knowledge to practical exercises'],
+          activities: isMidTerm
+            ? ['Revision exercises', 'Mid-Term Test']
+            : isEndTerm
+              ? ['Comprehensive revision', 'Final Examination']
+              : ['Class discussion', 'Group exercises', 'Take-home assignment'],
+          resources: isMidTerm || isEndTerm ? ['Assessment papers', 'Revision notes'] : ['Textbook chapter', 'Worksheet', 'Visual aids'],
+          assessment: isMidTerm ? 'Mid-term assessment' : isEndTerm ? 'End of term examination' : 'Weekly Quiz',
+          order: i,
+          status: 'PENDING',
+        };
+      });
     }
 
     // Create curriculum
@@ -470,11 +493,11 @@ export class CurriculumService {
         classLevelId: dto.classLevelId,
         subjectId: dto.subjectId,
         termId: dto.termId,
-        teacherId: teacher.id,
+        teacherId: teacher?.id || null,
         academicYear: term.academicSession?.name || new Date().getFullYear().toString(),
         nerdcCurriculumId,
         isNerdcBased: !!nerdcCurriculumId,
-        status: 'DRAFT',
+        status: isAdmin ? 'APPROVED' : 'DRAFT',
         items: {
           create: items,
         },
@@ -972,6 +995,7 @@ export class CurriculumService {
     curriculumId: string,
     weekNumber: number,
     notes: string | undefined,
+    classId: string | undefined,
     user: UserWithContext
   ): Promise<CurriculumItemDto> {
     const curriculum = await this.getCurriculumById(schoolId, curriculumId, user);
@@ -1003,6 +1027,41 @@ export class CurriculumService {
       throw new NotFoundException(`Week ${weekNumber} not found in curriculum`);
     }
 
+    if (classId) {
+      const classArm = await (this.prisma as any).classArm.findUnique({ where: { id: classId } });
+      const targetClassArmId = classArm ? classId : null;
+      const targetClassId = !classArm ? classId : null;
+
+      const existingProgress = await (this.prisma as any).curriculumItemProgress.findFirst({
+        where: { curriculumItemId: item.id, classArmId: targetClassArmId, classId: targetClassId },
+      });
+
+      if (existingProgress) {
+        await (this.prisma as any).curriculumItemProgress.update({
+          where: { id: existingProgress.id },
+          data: {
+            status: 'COMPLETED',
+            taughtAt: new Date(),
+            teacherNotes: notes || null,
+            completedBy: teacher.id,
+          },
+        });
+      } else {
+        await (this.prisma as any).curriculumItemProgress.create({
+          data: {
+            curriculumItemId: item.id,
+            classArmId: targetClassArmId,
+            classId: targetClassId,
+            teacherId: teacher.id,
+            status: 'COMPLETED',
+            taughtAt: new Date(),
+            teacherNotes: notes || null,
+            completedBy: teacher.id,
+          },
+        });
+      }
+    }
+
     const updated = await (this.prisma as any).curriculumItem.update({
       where: { id: item.id },
       data: {
@@ -1023,6 +1082,7 @@ export class CurriculumService {
     schoolId: string,
     curriculumId: string,
     weekNumber: number,
+    classId: string | undefined,
     user: UserWithContext
   ): Promise<CurriculumItemDto> {
     const curriculum = await this.getCurriculumById(schoolId, curriculumId, user);
@@ -1037,6 +1097,35 @@ export class CurriculumService {
 
     if (!item) {
       throw new NotFoundException(`Week ${weekNumber} not found in curriculum`);
+    }
+
+    if (classId) {
+      const classArm = await (this.prisma as any).classArm.findUnique({ where: { id: classId } });
+      const targetClassArmId = classArm ? classId : null;
+      const targetClassId = !classArm ? classId : null;
+
+      const existingProgress = await (this.prisma as any).curriculumItemProgress.findFirst({
+        where: { curriculumItemId: item.id, classArmId: targetClassArmId, classId: targetClassId },
+      });
+
+      if (existingProgress) {
+        await (this.prisma as any).curriculumItemProgress.update({
+          where: { id: existingProgress.id },
+          data: {
+            status: 'IN_PROGRESS',
+          },
+        });
+      } else {
+        await (this.prisma as any).curriculumItemProgress.create({
+          data: {
+            curriculumItemId: item.id,
+            classArmId: targetClassArmId,
+            classId: targetClassId,
+            teacherId: teacher.id,
+            status: 'IN_PROGRESS',
+          },
+        });
+      }
     }
 
     const updated = await (this.prisma as any).curriculumItem.update({
@@ -1057,6 +1146,7 @@ export class CurriculumService {
     curriculumId: string,
     weekNumber: number,
     reason: string,
+    classId: string | undefined,
     user: UserWithContext
   ): Promise<CurriculumItemDto> {
     const curriculum = await this.getCurriculumById(schoolId, curriculumId, user);
@@ -1071,6 +1161,39 @@ export class CurriculumService {
 
     if (!item) {
       throw new NotFoundException(`Week ${weekNumber} not found in curriculum`);
+    }
+
+    if (classId) {
+      const classArm = await (this.prisma as any).classArm.findUnique({ where: { id: classId } });
+      const targetClassArmId = classArm ? classId : null;
+      const targetClassId = !classArm ? classId : null;
+
+      const existingProgress = await (this.prisma as any).curriculumItemProgress.findFirst({
+        where: { curriculumItemId: item.id, classArmId: targetClassArmId, classId: targetClassId },
+      });
+
+      if (existingProgress) {
+        await (this.prisma as any).curriculumItemProgress.update({
+          where: { id: existingProgress.id },
+          data: {
+            status: 'SKIPPED',
+            teacherNotes: reason,
+            completedBy: teacher.id,
+          },
+        });
+      } else {
+        await (this.prisma as any).curriculumItemProgress.create({
+          data: {
+            curriculumItemId: item.id,
+            classArmId: targetClassArmId,
+            classId: targetClassId,
+            teacherId: teacher.id,
+            status: 'SKIPPED',
+            teacherNotes: reason,
+            completedBy: teacher.id,
+          },
+        });
+      }
     }
 
     const updated = await (this.prisma as any).curriculumItem.update({

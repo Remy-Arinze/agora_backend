@@ -29,6 +29,18 @@ export class TermDto {
   @ApiProperty()
   academicSessionId: string;
 
+  @ApiProperty({
+    required: false,
+    description: 'Current week number (computed from term start date). Only present for ACTIVE terms.',
+  })
+  currentWeek?: number;
+
+  @ApiProperty({
+    required: false,
+    description: 'Total number of weeks in this term (computed from start/end dates).',
+  })
+  totalWeeks?: number;
+
   @ApiProperty()
   createdAt: Date;
 }

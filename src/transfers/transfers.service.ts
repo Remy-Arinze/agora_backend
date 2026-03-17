@@ -1016,6 +1016,184 @@ export class TransfersService {
   }
 
   /**
+   * List recently accepted (completed) transfers to this school.
+   * Used for the "Recently accepted students" section with full details:
+   * target class, source school/class, and performance from previous school.
+   */
+  async getRecentlyAcceptedTransfers(schoolId: string, page = 1, limit = 20) {
+    const skip = (page - 1) * limit;
+
+    const [transfers, total] = await Promise.all([
+      this.prisma.transfer.findMany({
+        where: {
+          toSchoolId: schoolId,
+          status: TransferStatus.COMPLETED,
+          completedAt: { not: null },
+        },
+        orderBy: { completedAt: 'desc' },
+        skip,
+        take: limit,
+        include: {
+          student: {
+            select: {
+              id: true,
+              uid: true,
+              firstName: true,
+              middleName: true,
+              lastName: true,
+              dateOfBirth: true,
+              profileImage: true,
+              user: {
+                select: {
+                  email: true,
+                  phone: true,
+                },
+              },
+            },
+          },
+          fromSchool: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+        },
+      }),
+      this.prisma.transfer.count({
+        where: {
+          toSchoolId: schoolId,
+          status: TransferStatus.COMPLETED,
+          completedAt: { not: null },
+        },
+      }),
+    ]);
+
+    if (transfers.length === 0) {
+      return {
+        items: [],
+        meta: {
+          total: 0,
+          page,
+          limit,
+          totalPages: 0,
+          hasNextPage: false,
+          hasPrevPage: false,
+        },
+      };
+    }
+
+    const studentIds = [...new Set(transfers.map((t) => t.studentId))];
+    const fromSchoolIds = [...new Set(transfers.map((t) => t.fromSchoolId))];
+
+    // Target enrollments (current school, active) with grades
+    const targetEnrollments = await this.prisma.enrollment.findMany({
+      where: {
+        studentId: { in: studentIds },
+        schoolId,
+        isActive: true,
+      },
+      include: {
+        grades: {
+          select: {
+            score: true,
+            maxScore: true,
+          },
+        },
+        classArm: {
+          select: { name: true },
+        },
+      },
+    });
+    const targetByStudent = new Map<string, (typeof targetEnrollments)[0]>(
+      targetEnrollments.map((e) => [e.studentId, e])
+    );
+
+    // Source enrollments (from school, inactive) - most recently updated is the one we deactivated
+    const sourceEnrollments = await this.prisma.enrollment.findMany({
+      where: {
+        studentId: { in: studentIds },
+        schoolId: { in: fromSchoolIds },
+        isActive: false,
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+    const sourceByStudentAndSchool = new Map<string, (typeof sourceEnrollments)[0]>();
+    for (const e of sourceEnrollments) {
+      const key = `${e.studentId}:${e.schoolId}`;
+      if (!sourceByStudentAndSchool.has(key)) {
+        sourceByStudentAndSchool.set(key, e);
+      }
+    }
+
+    const items = transfers.map((transfer) => {
+      const target = targetByStudent.get(transfer.studentId);
+      const source = sourceByStudentAndSchool.get(
+        `${transfer.studentId}:${transfer.fromSchoolId}`
+      );
+
+      let gradeCount = 0;
+      let totalScore = 0;
+      let totalMax = 0;
+      if (target?.grades?.length) {
+        gradeCount = target.grades.length;
+        for (const g of target.grades) {
+          totalScore += g.score.toNumber();
+          totalMax += g.maxScore.toNumber();
+        }
+      }
+      const averagePercentage =
+        totalMax > 0 ? Math.round((totalScore / totalMax) * 100) : null;
+
+      return {
+        id: transfer.id,
+        completedAt: transfer.completedAt,
+        student: {
+          id: transfer.student.id,
+          uid: transfer.student.uid,
+          firstName: transfer.student.firstName,
+          middleName: transfer.student.middleName,
+          lastName: transfer.student.lastName,
+          dateOfBirth: transfer.student.dateOfBirth,
+          profileImage: transfer.student.profileImage,
+          email: transfer.student.user?.email,
+          phone: transfer.student.user?.phone,
+        },
+        fromSchool: transfer.fromSchool,
+        targetEnrollment: target
+          ? {
+              id: target.id,
+              classLevel: target.classLevel,
+              academicYear: target.academicYear,
+              classArmName: target.classArm?.name ?? null,
+            }
+          : null,
+        sourceEnrollment: source
+          ? {
+              classLevel: source.classLevel,
+              academicYear: source.academicYear,
+            }
+          : null,
+        performanceSummary: {
+          gradeCount,
+          averagePercentage,
+        },
+      };
+    });
+
+    return {
+      items,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+        hasNextPage: page * limit < total,
+        hasPrevPage: page > 1,
+      },
+    };
+  }
+
+  /**
    * Revoke TAC (if not used)
    */
   async revokeTac(schoolId: string, transferId: string) {

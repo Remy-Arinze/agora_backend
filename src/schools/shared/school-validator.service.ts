@@ -1,4 +1,4 @@
-import { Injectable, ConflictException, BadRequestException } from '@nestjs/common';
+import { Injectable, ConflictException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 
 /**
@@ -7,7 +7,7 @@ import { PrismaService } from '../../database/prisma.service';
  */
 @Injectable()
 export class SchoolValidatorService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   /**
    * Validate that a subdomain is unique
@@ -34,6 +34,29 @@ export class SchoolValidatorService {
 
     if (!school) {
       throw new BadRequestException('School not found');
+    }
+  }
+
+  /**
+   * Validate that a school is active
+   */
+  async validateSchoolActive(schoolId: string): Promise<void> {
+    const school = await this.prisma.school.findFirst({
+      where: {
+        OR: [{ id: schoolId }, { subdomain: schoolId }],
+      },
+    });
+
+    if (!school) {
+      throw new BadRequestException('School not found');
+    }
+
+    if (!school.isActive) {
+      throw new ForbiddenException('School is inactive. Please contact system administrator.');
+    }
+
+    if (school.registrationStatus === 'UNAPPROVED') {
+      throw new ForbiddenException('School registration is pending approval.');
     }
   }
 

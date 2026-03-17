@@ -11,13 +11,15 @@ import { Request, Response } from 'express';
 import { ModuleRef } from '@nestjs/core';
 import { ErrorsService, CreateErrorDto } from '../../operations/errors/errors.service';
 import { ErrorSeverity } from '@prisma/client';
+import * as Sentry from '@sentry/nestjs';
+import { Scope } from '@sentry/nestjs';
 
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger(HttpExceptionFilter.name);
   private errorsService: ErrorsService | null = null;
 
-  constructor(private readonly moduleRef: ModuleRef) {}
+  constructor(private readonly moduleRef: ModuleRef) { }
 
   private async getErrorsService(): Promise<ErrorsService | null> {
     if (!this.errorsService) {
@@ -137,6 +139,35 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
       // Extract userId from request
       const userId = user?.id;
+
+      // --- Sentry Integration ---
+      // Capture the error in Sentry with full context
+      Sentry.withScope((scope) => {
+        // Tag with school and user IDs for easier filtering
+        if (schoolId) scope.setTag('schoolId', schoolId);
+        if (userId) {
+          scope.setUser({ id: userId, email: user?.email });
+        }
+
+        // Add request details to the scope
+        scope.setContext('request', {
+          method: request.method,
+          url: request.url,
+          query: request.query,
+          headers: request.headers,
+        });
+
+        // Set severity based on status code
+        if (statusCode >= 500) {
+          scope.setLevel('error');
+        } else if (statusCode >= 400) {
+          scope.setLevel('warning');
+        }
+
+        // Capture the exception
+        Sentry.captureException(exception);
+      });
+      // --- End Sentry Integration ---
 
       // Determine error type
       let errorType = 'UnknownError';

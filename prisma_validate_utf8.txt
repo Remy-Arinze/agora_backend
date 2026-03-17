@@ -1,0 +1,96 @@
+﻿Environment variables loaded from .env
+Prisma schema loaded from prisma\schema.prisma
+node.exe : 
+At line:1 char:1
++ & "C:\Program 
+Files\nodejs/node.exe" 
+"C:\Users\pc\AppData\Roaming\npm ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSp 
+   ecified: (:String) [], RemoteEx  
+  ception
+    + FullyQualifiedErrorId : Nativ 
+   eCommandError
+ 
+Error: Prisma schema validation - 
+(validate wasm)
+Error code: P1012
+[1;91merror[0m: [1mError 
+validating field `classArm` in 
+model `CurriculumItemProgress`: The 
+relation field `classArm` on model 
+`CurriculumItemProgress` is missing 
+an opposite relation field on the 
+model `ClassArm`. Either run 
+`prisma format` or add it 
+manually.[0m
+  [1;94m-->[0m  
+[4mprisma\schema.prisma:1170[0m
+[1;94m   | [0m
+[1;94m1169 | [0m  item       
+CurriculumItem @relation(fields: 
+[curriculumItemId], references: 
+[id], onDelete: Cascade)
+[1;94m1170 | [0m  [1;91mclassArm 
+  ClassArm?      @relation(fields: 
+[classArmId], references: [id], 
+onDelete: Cascade)
+[0m
+[1;94m1171 | [0m  class      
+Class?         @relation(fields: 
+[classId], references: [id], 
+onDelete: Cascade)
+[1;94m   | [0m
+[1;91merror[0m: [1mError 
+validating field `class` in model 
+`CurriculumItemProgress`: The 
+relation field `class` on model 
+`CurriculumItemProgress` is missing 
+an opposite relation field on the 
+model `Class`. Either run `prisma 
+format` or add it manually.[0m
+  [1;94m-->[0m  
+[4mprisma\schema.prisma:1171[0m
+[1;94m   | [0m
+[1;94m1170 | [0m  classArm   
+ClassArm?      @relation(fields: 
+[classArmId], references: [id], 
+onDelete: Cascade)
+[1;94m1171 | [0m  [1;91mclass    
+  Class?         @relation(fields: 
+[classId], references: [id], 
+onDelete: Cascade)
+[0m
+[1;94m1172 | [0m  teacher    
+Teacher        @relation(fields: 
+[teacherId], references: [id], 
+onDelete: Cascade)
+[1;94m   | [0m
+[1;91merror[0m: [1mError 
+validating field `teacher` in model 
+`CurriculumItemProgress`: The 
+relation field `teacher` on model 
+`CurriculumItemProgress` is missing 
+an opposite relation field on the 
+model `Teacher`. Either run `prisma 
+format` or add it manually.[0m
+  [1;94m-->[0m  
+[4mprisma\schema.prisma:1172[0m
+[1;94m   | [0m
+[1;94m1171 | [0m  class      
+Class?         @relation(fields: 
+[classId], references: [id], 
+onDelete: Cascade)
+[1;94m1172 | [0m  [1;91mteacher  
+  Teacher        @relation(fields: 
+[teacherId], references: [id], 
+onDelete: Cascade)
+[0m
+[1;94m1173 | [0m  
+[1;94m   | [0m
+
+Validation Error Count: 3
+[Context: validate]
+
+Prisma CLI Version : 5.22.0

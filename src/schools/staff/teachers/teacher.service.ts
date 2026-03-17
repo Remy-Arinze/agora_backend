@@ -3,6 +3,7 @@ import {
   ConflictException,
   BadRequestException,
   NotFoundException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma.service';
 import { AuthService } from '../../../auth/auth.service';
@@ -14,6 +15,10 @@ import { StaffValidatorService } from '../../shared/staff-validator.service';
 import { AddTeacherDto } from '../../dto/add-teacher.dto';
 import { UpdateTeacherDto } from '../../dto/update-teacher.dto';
 import { CloudinaryService } from '../../../storage/cloudinary/cloudinary.service';
+import { ClassService } from '../../classes/class.service';
+import { SubscriptionsService } from '../../../subscriptions/subscriptions.service';
+import { isPrincipalRole } from '../../dto/permission.dto';
+import { UserWithContext } from '../../../auth/types/user-with-context.type';
 import { generateSecurePasswordHash } from '../../../common/utils/password.utils';
 
 /**
@@ -30,8 +35,10 @@ export class TeacherService {
     private readonly staffMapper: StaffMapper,
     private readonly idGenerator: IdGeneratorService,
     private readonly staffValidator: StaffValidatorService,
-    private readonly cloudinaryService: CloudinaryService
-  ) {}
+    private readonly cloudinaryService: CloudinaryService,
+    private readonly classService: ClassService,
+    private readonly subscriptionsService: SubscriptionsService
+  ) { }
 
   /**
    * Add a teacher to a school
@@ -41,6 +48,12 @@ export class TeacherService {
     const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
+    }
+
+    // Check teacher limit based on subscription tier
+    const teacherLimit = await this.subscriptionsService.checkTeacherLimit(school.id);
+    if (!teacherLimit.canAdd) {
+      throw new ForbiddenException(teacherLimit.message);
     }
 
     // Validate staff data
@@ -98,6 +111,7 @@ export class TeacherService {
             profileImage: teacherData.profileImage || null,
             isTemporary: teacherData.isTemporary || false,
             employeeId: teacherData.employeeId || null,
+            schoolType: teacherData.schoolType || null,
             userId: teacherUser.id,
             schoolId: school.id,
           },
@@ -122,6 +136,7 @@ export class TeacherService {
     });
 
     // Send password reset email
+    let emailFailed = false;
     try {
       await this.authService.sendPasswordResetForNewUser(
         result.user.id,
@@ -132,6 +147,7 @@ export class TeacherService {
         result.teacher.school.name
       );
     } catch (error) {
+      emailFailed = true;
       console.error('Failed to send password reset email to teacher:', error);
     }
 
@@ -171,7 +187,48 @@ export class TeacherService {
       }
     }
 
-    return this.staffMapper.toTeacherDto(result.teacher);
+    // For PRIMARY schools: assign teacher to class arm if classArmId was provided
+    if (teacherData.classArmId && result.teacher.id) {
+      // Check if the class arm already has a primary teacher before assigning
+      const existingPrimaryTeacher = await this.prisma.classTeacher.findFirst({
+        where: {
+          classArmId: teacherData.classArmId,
+          isPrimary: true,
+        },
+        include: { teacher: { select: { firstName: true, lastName: true } } },
+      });
+
+      if (existingPrimaryTeacher) {
+        const teacherName = `${existingPrimaryTeacher.teacher.firstName} ${existingPrimaryTeacher.teacher.lastName}`;
+        console.warn(
+          `Class arm ${teacherData.classArmId} already has a primary teacher (${teacherName}). Skipping assignment.`,
+        );
+        // Teacher was created successfully — return with a warning flag
+        const teacherDto = this.staffMapper.toTeacherDto(result.teacher);
+        return {
+          data: teacherDto,
+          emailFailed,
+          classAssignmentSkipped: true,
+          classAssignmentReason: `This class already has a teacher assigned (${teacherName}). Please unassign them first.`,
+        };
+      }
+
+      try {
+        await this.classService.assignTeacherToClass(school.id, teacherData.classArmId, {
+          teacherId: result.teacher.id,
+          isPrimary: true,
+        });
+      } catch (error) {
+        console.error(
+          `Failed to assign teacher ${result.teacher.id} to class arm ${teacherData.classArmId}:`,
+          error,
+        );
+        // Don't fail teacher creation — the assignment can be done manually later
+      }
+    }
+
+    const teacherDto = this.staffMapper.toTeacherDto(result.teacher);
+    return { data: teacherDto, emailFailed };
   }
 
   /**
@@ -211,6 +268,7 @@ export class TeacherService {
       subject: updateData.subject,
       isTemporary: updateData.isTemporary,
       profileImage: updateData.profileImage,
+      schoolType: updateData.schoolType,
     });
 
     return this.staffMapper.toTeacherDto(updatedTeacher);
@@ -284,9 +342,11 @@ export class TeacherService {
   }
 
   /**
-   * Delete a teacher
+   * Delete a teacher with role-hierarchy authorization.
+   *
+   * Only school_owner and principal-level roles can delete teachers.
    */
-  async deleteTeacher(schoolId: string, teacherId: string): Promise<void> {
+  async deleteTeacher(schoolId: string, teacherId: string, requestingUser: UserWithContext): Promise<void> {
     // Validate school exists
     const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
     if (!school) {
@@ -297,6 +357,26 @@ export class TeacherService {
     const teacher = await this.staffRepository.findTeacherById(teacherId);
     if (!teacher || teacher.schoolId !== school.id) {
       throw new BadRequestException('Teacher not found in this school');
+    }
+
+    // Get the requesting admin's profile in this school
+    const requestingAdmin = await this.prisma.schoolAdmin.findFirst({
+      where: { userId: requestingUser.id, schoolId: school.id },
+    });
+
+    if (!requestingAdmin) {
+      throw new ForbiddenException('You do not have an admin profile in this school');
+    }
+
+    const requestingRole = (requestingAdmin.role || '').toLowerCase().trim();
+    const isRequestingSchoolOwner = requestingRole === 'school_owner';
+    const isRequestingPrincipalLevel = isPrincipalRole(requestingAdmin.role);
+
+    // Only school_owner and principal-level roles can delete teachers
+    if (!isRequestingSchoolOwner && !isRequestingPrincipalLevel) {
+      throw new ForbiddenException(
+        'Only school owners and principal-level administrators can delete teachers'
+      );
     }
 
     await this.staffRepository.deleteTeacher(teacherId);

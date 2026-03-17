@@ -2,8 +2,10 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { ErrorSeverity, ErrorStatus, Prisma } from '@prisma/client';
 import { createHash } from 'crypto';
+import * as Sentry from '@sentry/nestjs';
 
 export interface ErrorContext {
+  [key: string]: any; // To satisfy Sentry's Context type
   method?: string;
   path?: string;
   query?: any;
@@ -48,7 +50,7 @@ export interface ErrorStats {
 export class ErrorsService {
   private readonly logger = new Logger(ErrorsService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   /**
    * Generate a unique error ID
@@ -112,20 +114,42 @@ export class ErrorsService {
       .replace(/\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\b/g, '[TIMESTAMP]')
       .replace(/\b\d+\b/g, '[NUMBER]');
 
-    return createHash('md5')
+    return createHash('sha256')
       .update(`${errorType}:${normalizedMessage}`)
       .digest('hex')
-      .substring(0, 16);
+      .substring(0, 32);
   }
 
   /**
-   * Capture an error and store it in the database
+   * Capture an error and store it in the database and Sentry
    */
   async captureError(dto: CreateErrorDto): Promise<void> {
     try {
       const errorId = this.generateErrorId();
       const errorHash = this.generateErrorHash(dto.errorType, dto.message);
       const severity = dto.severity || this.determineSeverity(dto.errorType);
+
+      // --- Sentry Integration ---
+      Sentry.withScope((scope) => {
+        if (dto.schoolId) scope.setTag('schoolId', dto.schoolId);
+        if (dto.userId) {
+          scope.setUser({ id: dto.userId });
+        }
+        scope.setTag('errorType', dto.errorType);
+        scope.setContext('errorContext', dto.context || {});
+
+        // Map severity to Sentry levels
+        if (severity === ErrorSeverity.CRITICAL || severity === ErrorSeverity.HIGH) {
+          scope.setLevel('error');
+        } else {
+          scope.setLevel('warning');
+        }
+
+        Sentry.captureException(new Error(`${dto.errorType}: ${dto.message}`), {
+          extra: { errorId, ...dto.context },
+        });
+      });
+      // --- End Sentry Integration ---
 
       // Check if a similar error already exists (same errorType + normalized message)
       const existingError = await this.prisma.applicationError.findFirst({

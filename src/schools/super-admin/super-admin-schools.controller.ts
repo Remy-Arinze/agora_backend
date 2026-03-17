@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Delete, Patch, Body, Param, UseGuards, Query } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Patch, Body, Param, UseGuards, Query, Req } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { SuperAdminSchoolsService } from './super-admin-schools.service';
 import { CreateSchoolDto } from '../dto/create-school.dto';
@@ -16,7 +16,7 @@ import { Roles } from '../../common/decorators/roles.decorator';
 @Roles('SUPER_ADMIN')
 @ApiBearerAuth()
 export class SuperAdminSchoolsController {
-  constructor(private readonly superAdminSchoolsService: SuperAdminSchoolsService) {}
+  constructor(private readonly superAdminSchoolsService: SuperAdminSchoolsService) { }
 
   @Post()
   @ApiOperation({ summary: 'Create a new school (Super Admin only)' })
@@ -47,6 +47,18 @@ export class SuperAdminSchoolsController {
     return ResponseDto.ok(data, 'Schools retrieved successfully');
   }
 
+  @Get('pending')
+  @ApiOperation({ summary: 'Get all pending school registrations (Super Admin only)' })
+  @ApiResponse({
+    status: 200,
+    description: 'List of pending schools',
+    type: ResponseDto<SchoolDto[]>,
+  })
+  async getPendingSchools(): Promise<ResponseDto<SchoolDto[]>> {
+    const data = await this.superAdminSchoolsService.findPendingSchools();
+    return ResponseDto.ok(data, 'Pending schools retrieved successfully');
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get school by ID (Super Admin only)' })
   @ApiResponse({
@@ -58,6 +70,60 @@ export class SuperAdminSchoolsController {
   async findOne(@Param('id') id: string): Promise<ResponseDto<SchoolDto>> {
     const data = await this.superAdminSchoolsService.findOne(id);
     return ResponseDto.ok(data, 'School retrieved successfully');
+  }
+
+  @Patch(':id/verify')
+  @ApiOperation({ summary: 'Verify a pending school registration (Super Admin only)' })
+  @ApiResponse({
+    status: 200,
+    description: 'School verified successfully',
+    type: ResponseDto<SchoolDto>,
+  })
+  async verifySchool(
+    @Param('id') id: string,
+    @Req() req: any,
+  ): Promise<ResponseDto<SchoolDto>> {
+    const data = await this.superAdminSchoolsService.verifySchool(id, req.user.id);
+    return ResponseDto.ok(data, 'School verified successfully');
+  }
+
+  @Patch(':id/reject')
+  @ApiOperation({ summary: 'Reject a pending school registration (Super Admin only)' })
+  @ApiResponse({
+    status: 200,
+    description: 'School rejected successfully',
+    type: ResponseDto<SchoolDto>,
+  })
+  async rejectSchool(
+    @Param('id') id: string,
+    @Body('reason') reason: string,
+  ): Promise<ResponseDto<SchoolDto>> {
+    const data = await this.superAdminSchoolsService.rejectSchool(id, reason);
+    return ResponseDto.ok(data, 'School rejected successfully');
+  }
+
+  @Patch(':id/activate')
+  @ApiOperation({ summary: 'Activate a school (Super Admin only)' })
+  @ApiResponse({
+    status: 200,
+    description: 'School activated successfully',
+    type: ResponseDto<SchoolDto>,
+  })
+  async activateSchool(@Param('id') id: string): Promise<ResponseDto<SchoolDto>> {
+    const data = await this.superAdminSchoolsService.activateSchool(id);
+    return ResponseDto.ok(data, 'School activated successfully');
+  }
+
+  @Patch(':id/deactivate')
+  @ApiOperation({ summary: 'Deactivate a school (Super Admin only)' })
+  @ApiResponse({
+    status: 200,
+    description: 'School deactivated successfully',
+    type: ResponseDto<SchoolDto>,
+  })
+  async deactivateSchool(@Param('id') id: string): Promise<ResponseDto<SchoolDto>> {
+    const data = await this.superAdminSchoolsService.deactivateSchool(id);
+    return ResponseDto.ok(data, 'School deactivated successfully');
   }
 
   @Patch(':id')

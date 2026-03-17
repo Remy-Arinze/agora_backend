@@ -3,9 +3,9 @@ import { IsString, IsOptional, IsEnum, IsInt, Min, IsBoolean, IsDateString } fro
 // Enums matching Prisma schema
 export enum SubscriptionTier {
   FREE = 'FREE',
-  STARTER = 'STARTER',
-  PROFESSIONAL = 'PROFESSIONAL',
-  ENTERPRISE = 'ENTERPRISE',
+  PRO = 'PRO',
+  PRO_PLUS = 'PRO_PLUS',
+  CUSTOM = 'CUSTOM',
 }
 
 export enum ToolStatus {

@@ -3,15 +3,23 @@ import { PrismaService } from '../../database/prisma.service';
 import { AdminService } from './admins/admin.service';
 import { TeacherService } from './teachers/teacher.service';
 import { StaffBulkImportRowDto, StaffImportSummaryDto } from '../dto/staff-bulk-import.dto';
+import { UserWithContext } from '../../auth/types/user-with-context.type';
 import * as XLSX from 'xlsx';
+
+import {
+  sanitizeString,
+  sanitizeOptionalString,
+  sanitizeEmail,
+  sanitizePhone,
+} from '../../common/utils/sanitize.util';
 
 @Injectable()
 export class StaffImportService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly adminService: AdminService,
-    private readonly teacherService: TeacherService
-  ) {}
+    private readonly teacherService: TeacherService,
+  ) { }
 
   /**
    * Bulk import staff from CSV/Excel file
@@ -19,7 +27,9 @@ export class StaffImportService {
    */
   async bulkImportStaff(
     schoolId: string,
-    file: Express.Multer.File
+    file: Express.Multer.File,
+    requestingUser: UserWithContext,
+    schoolType?: string
   ): Promise<StaffImportSummaryDto> {
     if (!file) {
       throw new BadRequestException('File is required');
@@ -65,29 +75,51 @@ export class StaffImportService {
       errors: [],
     };
 
+    // ... (in the bulk processing loop)
+
     // Helper function to safely convert any value to trimmed string
-    const toTrimmedString = (value: any): string => {
+    const toTrimmedString = (value: unknown): string => {
       if (value === null || value === undefined) return '';
       return String(value).trim();
     };
 
+    // Helper to capitalize words
+    const capitalizeWords = (str: string) => {
+      if (!str) return str;
+      return str
+        .toLowerCase()
+        .split(' ')
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ');
+    };
+
+    // For PRIMARY schools, fetch all active class arms for matching
+    const activeClassArms = schoolType === 'PRIMARY'
+      ? await this.prisma.classArm.findMany({
+        where: { isActive: true, classLevel: { schoolId } },
+        include: { classLevel: true },
+      })
+      : [];
+
     // Process each row
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
-      const rowNumber = i + 2; // +2 because Excel is 1-indexed and has header
+      const rowNumber = i + 2;
 
       try {
-        // Normalize all fields to strings (Excel may parse phone numbers as numbers)
-        const type = toTrimmedString(row.type).toLowerCase();
-        const firstName = toTrimmedString(row.firstName);
-        const lastName = toTrimmedString(row.lastName);
-        const email = toTrimmedString(row.email);
-        const phone = toTrimmedString(row.phone);
-        const role = toTrimmedString(row.role);
-        const subject = toTrimmedString(row.subject);
-        const employeeId = toTrimmedString(row.employeeId);
+        const typeRaw = toTrimmedString(row.type).toLowerCase();
+        const type = (typeRaw === 'teacher' || typeRaw === 'admin') ? typeRaw : undefined;
 
-        // Validate required fields
+        // Sanitize and format
+        const firstName = capitalizeWords(sanitizeString(toTrimmedString(row.firstName), 50));
+        const lastName = capitalizeWords(sanitizeString(toTrimmedString(row.lastName), 50));
+        const email = sanitizeEmail(toTrimmedString(row.email)) || toTrimmedString(row.email).toLowerCase();
+        const phone = sanitizePhone(toTrimmedString(row.phone)) || toTrimmedString(row.phone);
+
+        const role = sanitizeOptionalString(toTrimmedString(row.role), 100);
+        const subject = sanitizeOptionalString(toTrimmedString(row.subject), 100);
+        const employeeId = sanitizeOptionalString(toTrimmedString(row.employeeId), 50);
+
         if (!type || !firstName || !lastName || !email || !phone) {
           summary.errors.push({
             row: rowNumber,
@@ -97,7 +129,6 @@ export class StaffImportService {
           continue;
         }
 
-        // Validate type
         if (type !== 'teacher' && type !== 'admin') {
           summary.errors.push({
             row: rowNumber,
@@ -107,7 +138,6 @@ export class StaffImportService {
           continue;
         }
 
-        // Validate admin-specific requirements
         if (type === 'admin' && !role) {
           summary.errors.push({
             row: rowNumber,
@@ -117,67 +147,73 @@ export class StaffImportService {
           continue;
         }
 
-        // Process based on type
         if (type === 'teacher') {
           try {
-            // Safely convert isTemporary to boolean
             let isTemporary = false;
-            if (
-              row.isTemporary !== undefined &&
-              row.isTemporary !== null &&
-              row.isTemporary !== ''
-            ) {
-              if (typeof row.isTemporary === 'boolean') {
-                isTemporary = row.isTemporary;
-              } else if (typeof row.isTemporary === 'string') {
+            if (row.isTemporary != null && row.isTemporary !== '') {
+              if (typeof row.isTemporary === 'boolean') isTemporary = row.isTemporary;
+              else if (typeof row.isTemporary === 'string')
                 isTemporary = row.isTemporary.trim().toLowerCase() === 'true';
-              } else {
-                isTemporary = Boolean(row.isTemporary);
-              }
+              else isTemporary = Boolean(row.isTemporary);
             }
 
-            // Look up subject by name to get the ID for SubjectTeacher relationship
-            let subjectIds: string[] | undefined;
+            let subjectIds: string[] = [];
+            let classArmId: string | undefined;
+
             if (subject) {
-              const foundSubject = await this.prisma.subject.findFirst({
-                where: {
-                  schoolId,
-                  name: {
-                    equals: subject,
-                    mode: 'insensitive', // Case-insensitive match
-                  },
-                  isActive: true,
-                },
-                select: { id: true },
-              });
+              if (schoolType === 'PRIMARY') {
+                // Heuristic match for Primary Class Arm
+                const normalizedSubject = subject.toLowerCase().replace(/[\s_-]+/g, '');
+                const matchedArm = activeClassArms.find(arm => {
+                  const fullName = `${arm.classLevel.name}${arm.name}`.toLowerCase().replace(/[\s_-]+/g, '');
+                  return fullName === normalizedSubject || arm.id === subject;
+                });
 
-              if (foundSubject) {
-                subjectIds = [foundSubject.id];
+                if (matchedArm) {
+                  classArmId = matchedArm.id;
+                }
               } else {
-                // Log warning but continue - subject might be added later
-                console.warn(
-                  `Subject "${subject}" not found for school ${schoolId}, row ${rowNumber}. Teacher will be created without subject assignment.`
-                );
+                // Support comma-separated subjects for SECONDARY/TERTIARY
+                const subjectNames = subject.split(',').map((s: string) => s.trim()).filter(Boolean);
+                if (subjectNames.length > 0) {
+                  const dbSubjects = await this.prisma.subject.findMany({
+                    where: {
+                      schoolId,
+                      name: { in: subjectNames, mode: 'insensitive' },
+                      isActive: true,
+                    },
+                    select: { id: true, name: true },
+                  });
+                  subjectIds = dbSubjects.map((s: any) => s.id);
+
+                  if (dbSubjects.length < subjectNames.length) {
+                    const missing = subjectNames.filter((name: string) =>
+                      !dbSubjects.some((sd: any) => sd.name.toLowerCase() === name.toLowerCase())
+                    );
+                    console.warn(`Row ${rowNumber}: Subjects not found: ${missing.join(', ')}`);
+                  }
+                }
               }
             }
 
+            // Create the teacher (classArmId is passed in the DTO;
+            // addTeacher handles the ClassTeacher assignment automatically)
             const result = await this.teacherService.addTeacher(schoolId, {
               firstName,
               lastName,
               email,
               phone,
-              subject: subject || undefined, // Keep legacy field for display
-              subjectIds, // Pass subject IDs for SubjectTeacher creation
+              subject: subject || undefined,
+              subjectIds: subjectIds.length > 0 ? subjectIds : undefined,
               employeeId: employeeId || undefined,
               isTemporary,
+              schoolType,
+              classArmId: classArmId || undefined,
             });
 
             summary.successCount++;
-            // Extract publicId from result (could be in result.publicId or result.teacher.publicId)
-            const publicId = (result as any)?.publicId || (result as any)?.teacher?.publicId;
-            if (publicId) {
-              summary.generatedPublicIds.push(publicId);
-            }
+            const publicId = (result as any)?.publicId || (result as any)?.data?.publicId;
+            if (publicId) summary.generatedPublicIds.push(publicId);
           } catch (error: any) {
             summary.errors.push({
               row: rowNumber,
@@ -192,15 +228,13 @@ export class StaffImportService {
               lastName,
               email,
               phone,
-              role,
-            });
+              role: role || '',
+              schoolType,
+            }, requestingUser);
 
             summary.successCount++;
-            // Extract publicId from result (could be in result.publicId or result.admin.publicId)
-            const publicId = (result as any)?.publicId || (result as any)?.admin?.publicId;
-            if (publicId) {
-              summary.generatedPublicIds.push(publicId);
-            }
+            const publicId = (result as any)?.publicId || (result as any)?.data?.publicId;
+            if (publicId) summary.generatedPublicIds.push(publicId);
           } catch (error: any) {
             summary.errors.push({
               row: rowNumber,

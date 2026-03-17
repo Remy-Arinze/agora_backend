@@ -4,6 +4,7 @@ import {
   NotFoundException,
   ConflictException,
 } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../database/prisma.service';
 import { SchoolRepository } from '../schools/domain/repositories/school.repository';
 import {
@@ -21,7 +22,7 @@ export class TimetableService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly schoolRepository: SchoolRepository
-  ) {}
+  ) { }
 
   // Access Prisma models using bracket notation for reserved keywords
   private get timetablePeriodModel() {
@@ -123,7 +124,7 @@ export class TimetableService {
   }
 
   /**
-   * Create master schedule (empty slots for all class arms)
+   * Create master schedule (empty slots for specific classes or all class arms)
    */
   async createMasterSchedule(
     schoolId: string,
@@ -144,50 +145,67 @@ export class TimetableService {
       throw new NotFoundException('Term not found');
     }
 
-    // Get all active class arms for the school
-    const classArms = await this.prisma.classArm.findMany({
-      where: {
-        classLevel: {
-          schoolId: school.id,
+    let targets: Array<{ classId?: string; classArmId?: string }> = [];
+
+    if (dto.classId) {
+      // Validate class exists
+      const classData = await this.prisma.class.findUnique({
+        where: { id: dto.classId },
+      });
+      if (!classData || classData.schoolId !== school.id) {
+        throw new NotFoundException('Class not found');
+      }
+      targets.push({ classId: dto.classId });
+    } else if (dto.classArmId) {
+      // Validate class arm exists
+      const classArm = await this.prisma.classArm.findUnique({
+        where: { id: dto.classArmId },
+        include: { classLevel: true },
+      });
+      if (!classArm || classArm.classLevel.schoolId !== school.id) {
+        throw new NotFoundException('Class arm not found');
+      }
+      targets.push({ classArmId: dto.classArmId });
+    } else {
+      // Fallback: Get all active class arms for the school
+      const classArms = await this.prisma.classArm.findMany({
+        where: {
+          classLevel: {
+            schoolId: school.id,
+          },
+          isActive: true,
         },
-        isActive: true,
-      },
-    });
+      });
+      targets = classArms.map((ca) => ({ classArmId: ca.id }));
+    }
+
+    const periodsToCreate: any[] = [];
+
+    for (const target of targets) {
+      for (const periodDef of dto.periods) {
+        periodsToCreate.push({
+          dayOfWeek: periodDef.dayOfWeek,
+          startTime: periodDef.startTime,
+          endTime: periodDef.endTime,
+          type: periodDef.type || PeriodType.LESSON,
+          classId: target.classId || null,
+          classArmId: target.classArmId || null,
+          termId: dto.termId,
+        });
+      }
+    }
 
     let created = 0;
     let skipped = 0;
 
-    // Create periods for each class arm
-    for (const classArm of classArms) {
-      for (const periodDef of dto.periods) {
-        // Check if period already exists
-        const existing = await this.timetablePeriodModel.findFirst({
-          where: {
-            termId: dto.termId,
-            classArmId: classArm.id,
-            dayOfWeek: periodDef.dayOfWeek,
-            startTime: periodDef.startTime,
-          },
-        });
+    if (periodsToCreate.length > 0) {
+      const result = await this.timetablePeriodModel.createMany({
+        data: periodsToCreate,
+        skipDuplicates: true,
+      });
 
-        if (existing) {
-          skipped++;
-          continue;
-        }
-
-        await this.timetablePeriodModel.create({
-          data: {
-            dayOfWeek: periodDef.dayOfWeek,
-            startTime: periodDef.startTime,
-            endTime: periodDef.endTime,
-            type: periodDef.type || PeriodType.LESSON,
-            classArmId: classArm.id,
-            termId: dto.termId,
-          },
-        });
-
-        created++;
-      }
+      created = result.count;
+      skipped = periodsToCreate.length - created;
     }
 
     return { created, skipped };
@@ -942,6 +960,28 @@ export class TimetableService {
   }
 
   /**
+   * Automatically delete timetables older than 1 year
+   * Runs daily at midnight
+   */
+  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
+  async handleAutoDeletion() {
+    const oneYearAgo = new Date();
+    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+
+    const deleted = await this.timetablePeriodModel.deleteMany({
+      where: {
+        createdAt: {
+          lt: oneYearAgo,
+        },
+      },
+    });
+
+    if (deleted.count > 0) {
+      console.log(`[TimetableService] Auto-deleted ${deleted.count} timetable periods older than 1 year.`);
+    }
+  }
+
+  /**
    * Map Prisma period to DTO
    */
   private mapToPeriodDto(period: any): TimetablePeriodDto {
@@ -962,13 +1002,13 @@ export class TimetableService {
       // Include full teacher details for secondary school class detail pages
       teacher: period.teacher
         ? {
-            id: period.teacher.id,
-            firstName: period.teacher.firstName,
-            lastName: period.teacher.lastName,
-            email: period.teacher.email || '',
-            phone: period.teacher.phone || '',
-            profileImage: period.teacher.profileImage || null,
-          }
+          id: period.teacher.id,
+          firstName: period.teacher.firstName,
+          lastName: period.teacher.lastName,
+          email: period.teacher.email || '',
+          phone: period.teacher.phone || '',
+          profileImage: period.teacher.profileImage || null,
+        }
         : undefined,
       roomId: period.roomId,
       roomName: period.room?.name,

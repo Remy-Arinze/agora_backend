@@ -58,7 +58,7 @@ function shortenSchoolName(schoolName: string): string {
     .replace(/\b(SCHOOL|ACADEMY|COLLEGE|UNIVERSITY|INSTITUTE|SECONDARY|PRIMARY|HIGH)\b/gi, '')
     .replace(/[^A-Z0-9]/g, '')
     .substring(0, 4);
-  
+
   if (cleaned.length < 3) {
     return schoolName
       .toUpperCase()
@@ -66,7 +66,7 @@ function shortenSchoolName(schoolName: string): string {
       .substring(0, 3)
       .padEnd(3, 'X');
   }
-  
+
   return cleaned;
 }
 
@@ -96,7 +96,7 @@ async function main() {
 
   // Check if user with phone exists (and it's not the same user)
   const existingByPhone = await prisma.user.findFirst({
-    where: { 
+    where: {
       phone: '+2348000000001',
       ...(existingByEmail ? { id: { not: existingByEmail.id } } : {}),
     },
@@ -159,260 +159,7 @@ async function main() {
   }
   console.log('✅ Created/Updated Super Admin:', superAdmin.email, '(Jeremy Arinze)');
 
-  // ============================================
-  // STEP 2: Super Admin creates school WITH principal
-  // This simulates the super admin school creation flow
-  // ============================================
-  console.log('\n🏫 Creating school with principal (Super Admin flow)...');
-  
-  const schoolId = generateSchoolId();
-  const principalId = generatePrincipalId();
-  const principalPublicId = generatePublicId('Test Academy');
 
-  // Create school and principal in transaction (like super admin service does)
-  const { school, principal } = await prisma.$transaction(async (tx) => {
-    // Create school
-    const newSchool = await tx.school.upsert({
-      where: { id: 'test-school-1' },
-      update: {
-        schoolId: schoolId,
-      },
-      create: {
-        id: 'test-school-1',
-        schoolId: schoolId,
-        name: 'Test Academy',
-        subdomain: 'testacademy',
-        address: '123 Education Street',
-        city: 'Lagos',
-        state: 'Lagos',
-        country: 'Nigeria',
-        phone: '+2348000000100',
-        email: 'info@testacademy.com',
-      },
-    });
-
-    // Create principal user (like super admin service does)
-    // Using Gmail alias: remyarinze+admin@gmail.com
-    let principalUser = await tx.user.findFirst({
-      where: {
-        OR: [
-          { email: 'remyarinze+admin@gmail.com' },
-          { phone: '+2348000000002' },
-        ],
-      },
-    });
-
-    if (!principalUser) {
-      principalUser = await tx.user.create({
-        data: {
-          email: 'remyarinze+admin@gmail.com',
-          phone: '+2348000000002',
-          passwordHash: hashedPassword,
-          accountStatus: 'ACTIVE', // ACTIVE for seed, normally SHADOW
-          role: 'SCHOOL_ADMIN',
-        },
-      });
-    } else {
-      principalUser = await tx.user.update({
-        where: { id: principalUser.id },
-        data: {
-          email: 'remyarinze+admin@gmail.com',
-          phone: '+2348000000002',
-          passwordHash: hashedPassword,
-          accountStatus: 'ACTIVE',
-          role: 'SCHOOL_ADMIN',
-        },
-      });
-    }
-
-    // Create principal admin record
-    const principalAdmin = await tx.schoolAdmin.upsert({
-      where: {
-        userId_schoolId: {
-          userId: principalUser.id,
-          schoolId: newSchool.id,
-        },
-      },
-      update: {
-        adminId: principalId,
-        publicId: principalPublicId,
-        role: 'Principal',
-        firstName: 'School',
-        lastName: 'Administrator',
-        phone: '+2348000000002',
-        email: 'remyarinze+admin@gmail.com',
-      },
-      create: {
-        adminId: principalId,
-        publicId: principalPublicId,
-        userId: principalUser.id,
-        schoolId: newSchool.id,
-        firstName: 'School',
-        lastName: 'Administrator',
-        phone: '+2348000000002',
-        email: 'remyarinze+admin@gmail.com',
-        role: 'Principal',
-      },
-    });
-
-    return { school: newSchool, principal: principalAdmin };
-  });
-
-  console.log('✅ Created School:', school.name);
-  console.log('✅ Created Principal:', principal.email);
-
-  // ============================================
-  // STEP 3: Principal adds teacher to school
-  // This simulates the principal adding teacher flow
-  // ============================================
-  console.log('\n👨‍🏫 Adding teacher to school (Principal flow)...');
-
-  const teacherId = generateTeacherId();
-  const teacherPublicId = generatePublicId(school.name);
-
-  // Create teacher (like teacher service does)
-  const { teacher, teacherProfile } = await prisma.$transaction(async (tx) => {
-    // Find or create teacher user
-    // Using Gmail alias: remyarinze+teacher@gmail.com
-    let teacherUser = await tx.user.findFirst({
-      where: {
-        OR: [
-          { email: 'remyarinze+teacher@gmail.com' },
-          { phone: '+2348000000003' },
-        ],
-      },
-    });
-
-    if (!teacherUser) {
-      teacherUser = await tx.user.create({
-        data: {
-          email: 'remyarinze+teacher@gmail.com',
-          phone: '+2348000000003',
-          passwordHash: hashedPassword,
-          accountStatus: 'ACTIVE', // ACTIVE for seed, normally SHADOW
-          role: 'TEACHER',
-        },
-      });
-    } else {
-      teacherUser = await tx.user.update({
-        where: { id: teacherUser.id },
-        data: {
-          email: 'remyarinze+teacher@gmail.com',
-          phone: '+2348000000003',
-          passwordHash: hashedPassword,
-          accountStatus: 'ACTIVE',
-          role: 'TEACHER',
-        },
-      });
-    }
-
-    // Create teacher record
-    const newTeacher = await tx.teacher.upsert({
-      where: {
-        userId_schoolId: {
-          userId: teacherUser.id,
-          schoolId: school.id,
-        },
-      },
-      update: {
-        teacherId: teacherId,
-        publicId: teacherPublicId,
-        firstName: 'John',
-        lastName: 'Teacher',
-        phone: '+2348000000003',
-          email: 'remyarinze+teacher@gmail.com',
-        employeeId: 'TCH-001',
-      },
-      create: {
-        teacherId: teacherId,
-        publicId: teacherPublicId,
-        userId: teacherUser.id,
-        schoolId: school.id,
-        firstName: 'John',
-        lastName: 'Teacher',
-        phone: '+2348000000003',
-          email: 'remyarinze+teacher@gmail.com',
-        employeeId: 'TCH-001',
-      },
-    });
-
-    return { teacher: teacherUser, teacherProfile: newTeacher };
-  });
-
-  console.log('✅ Created Teacher:', teacher.email);
-
-  // Create Student
-  // Using Gmail alias: remyarinze+student@gmail.com
-  let student = await prisma.user.findFirst({
-    where: {
-      OR: [
-        { email: 'remyarinze+student@gmail.com' },
-        { phone: '+2348000000005' },
-      ],
-    },
-  });
-
-  if (student) {
-    student = await prisma.user.update({
-      where: { id: student.id },
-      data: {
-        email: 'remyarinze+student@gmail.com',
-        phone: '+2348000000005',
-        passwordHash: hashedPassword,
-        accountStatus: 'ACTIVE',
-        role: 'STUDENT',
-      },
-    });
-  } else {
-    student = await prisma.user.create({
-      data: {
-        email: 'remyarinze+student@gmail.com',
-        phone: '+2348000000005',
-        passwordHash: hashedPassword,
-        accountStatus: 'ACTIVE',
-        role: 'STUDENT',
-      },
-    });
-  }
-
-  const studentProfile = await prisma.student.upsert({
-    where: { userId: student.id },
-    update: {},
-    create: {
-      userId: student.id,
-      uid: 'AGO-LAG-2025-0001',
-      firstName: 'Alice',
-      lastName: 'Student',
-      dateOfBirth: new Date('2010-05-15'),
-      profileLocked: false,
-    },
-  });
-
-  // Note: Parent role has been removed from the system
-  // Student guardianship can be managed through the admin interface if needed
-
-  // Create Enrollment
-  const existingEnrollment = await prisma.enrollment.findFirst({
-    where: {
-      studentId: studentProfile.id,
-      schoolId: school.id,
-      termId: null,
-    },
-  });
-
-  if (!existingEnrollment) {
-    await prisma.enrollment.create({
-      data: {
-        studentId: studentProfile.id,
-        schoolId: school.id,
-        classLevel: 'Grade 5',
-        academicYear: '2024-2025',
-        enrollmentDate: new Date(),
-        isActive: true,
-      },
-    });
-  }
-  console.log('✅ Created Student:', student.email);
 
   // Fetch the created records to get public IDs for display (already have them from transactions)
 
@@ -441,8 +188,8 @@ async function main() {
       sortOrder: 1,
     },
     {
-      slug: 'socrates',
-      name: 'Socrates',
+      slug: 'agora-ai',
+      name: 'Agora AI',
       description: "The Teacher's Copilot. AI-powered lesson planning, assessment creation, and grading assistance.",
       icon: '🤖',
       monthlyPrice: 0, // Included in Professional+
@@ -515,44 +262,128 @@ async function main() {
     console.log(`  ✅ Tool: ${tool.name}`);
   }
 
-  // Create FREE subscription for test school with basic bursary access
-  console.log('\n📦 Setting up subscription for test school...');
-  
-  const subscription = await prisma.subscription.upsert({
-    where: { schoolId: school.id },
-    update: {},
-    create: {
-      schoolId: school.id,
-      tier: 'FREE',
-      maxStudents: -1,  // Unlimited
-      maxTeachers: -1,  // Unlimited
-      maxAdmins: 10,    // FREE tier allows 10 admins
-      aiCredits: 0,
-      aiCreditsUsed: 0,
-    },
-  });
+  console.log('\n📊 Seeding Subscription Plans...');
 
-  // Grant basic bursary access to FREE tier
-  const bursaryTool = await prisma.tool.findUnique({ where: { slug: 'bursary' } });
-  if (bursaryTool) {
-    await prisma.schoolToolAccess.upsert({
-      where: {
-        schoolId_toolId: {
-          schoolId: school.id,
-          toolId: bursaryTool.id,
-        },
-      },
-      update: {},
-      create: {
-        schoolId: school.id,
-        toolId: bursaryTool.id,
-        subscriptionId: subscription.id,
-        status: 'ACTIVE',
-        activatedAt: new Date(),
-      },
+  const plans = [
+    {
+      tierCode: 'FREE',
+      name: 'Free',
+      description: 'Get started with the Agora core',
+      monthlyPrice: 0,
+      yearlyPrice: 0,
+      highlight: false,
+      cta: 'Current Plan',
+      accent: 'gray',
+      isPublic: true,
+      maxStudents: 100,
+      maxTeachers: 10,
+      maxAdmins: 2,
+      aiCredits: 0,
+      features: [
+        { text: '100 Students', included: true },
+        { text: '10 Teachers', included: true },
+        { text: '2 Admin Users', included: true },
+        { text: 'Core Management Platform', included: true },
+        { text: 'Agora AI Generation', included: false },
+        { text: 'Automated AI Grading', included: false },
+        { text: 'Detailed AI Analytics', included: false },
+      ],
+    },
+    {
+      tierCode: 'PRO',
+      name: 'Pro',
+      description: 'Unlock the power of Agora AI',
+      monthlyPrice: 15000,
+      yearlyPrice: 150000,
+      highlight: true,
+      cta: 'Upgrade to Pro',
+      accent: 'blue',
+      isPublic: true,
+      maxStudents: 500,
+      maxTeachers: 50,
+      maxAdmins: 10,
+      aiCredits: 5000,
+      features: [
+        { text: '500 Students', included: true },
+        { text: '50 Teachers', included: true },
+        { text: '10 Admin Users', included: true },
+        { text: 'Core Management Platform', included: true },
+        { text: 'Agora AI Assistant', included: true, isGlowing: true },
+        { text: '5,000 AI Credits/month', included: true },
+        { text: 'Automated Essay Grading', included: true },
+      ],
+    },
+    {
+      tierCode: 'PRO_PLUS',
+      name: 'Pro+',
+      description: 'Advanced features for scaling institutions',
+      monthlyPrice: 45000,
+      yearlyPrice: 450000,
+      highlight: false,
+      cta: 'Upgrade to Pro+',
+      accent: 'amber',
+      isPublic: true,
+      maxStudents: 2000,
+      maxTeachers: 200,
+      maxAdmins: 25,
+      aiCredits: 20000,
+      features: [
+        { text: '2,000 Students', included: true },
+        { text: '200 Teachers', included: true },
+        { text: '25 Admin Users', included: true },
+        { text: 'Core Management Platform', included: true },
+        { text: 'Agora AI Assistant', included: true },
+        { text: '20,000 AI Credits/month', included: true },
+        { text: 'Dedicated Support', included: true },
+      ],
+    }
+  ];
+
+  let freePlanId = null;
+
+  for (const plan of plans) {
+    let createdPlan = await prisma.subscriptionPlan.findFirst({
+      where: { tierCode: plan.tierCode as any, isPublic: true },
     });
-    console.log('  ✅ Granted Bursary Pro access to test school');
+
+    if (createdPlan) {
+      createdPlan = await prisma.subscriptionPlan.update({
+        where: { id: createdPlan.id },
+        data: {
+          name: plan.name,
+          description: plan.description,
+          monthlyPrice: plan.monthlyPrice,
+          yearlyPrice: plan.yearlyPrice,
+          features: plan.features as any,
+          highlight: plan.highlight,
+          cta: plan.cta,
+          accent: plan.accent,
+          isPublic: plan.isPublic
+        }
+      });
+    } else {
+      createdPlan = await prisma.subscriptionPlan.create({
+        data: {
+          tierCode: plan.tierCode as any,
+          name: plan.name,
+          description: plan.description,
+          monthlyPrice: plan.monthlyPrice,
+          yearlyPrice: plan.yearlyPrice,
+          features: plan.features as any,
+          highlight: plan.highlight,
+          cta: plan.cta,
+          accent: plan.accent,
+          isPublic: plan.isPublic
+        }
+      });
+    }
+    console.log(`  ✅ Plan: ${plan.name}`);
+    if (plan.tierCode === 'FREE') {
+      freePlanId = createdPlan.id;
+    }
   }
+
+
 
   console.log('\n🎉 Seeding completed!\n');
   console.log('📋 Test Login Credentials:\n');
@@ -560,18 +391,6 @@ async function main() {
   console.log('  Email: remyarinze@gmail.com');
   console.log('  Name: Jeremy Arinze');
   console.log('  Password: Test1234!\n');
-  console.log('School Admin (Principal):');
-  console.log('  Email: remyarinze+admin@gmail.com');
-  console.log(`  Public ID: ${principal.publicId} (for public ID login)`);
-  console.log('  Password: Test1234!\n');
-  console.log('Teacher:');
-  console.log('  Email: remyarinze+teacher@gmail.com');
-  console.log(`  Public ID: ${teacherProfile.publicId} (for public ID login)`);
-  console.log('  Password: Test1234!\n');
-  console.log('Student:');
-  console.log('  Email: remyarinze+student@gmail.com');
-  console.log('  Password: Test1234!\n');
-  console.log('Note: All emails use Gmail aliases pointing to remyarinze@gmail.com');
 }
 
 main()

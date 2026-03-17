@@ -12,6 +12,10 @@ import { SuperAdminSchoolsService } from './super-admin/super-admin-schools.serv
 import { SchoolAdminSchoolsController } from './school-admin/school-admin-schools.controller';
 import { SchoolAdminSchoolsService } from './school-admin/school-admin-schools.service';
 
+// Public Registration
+import { SchoolRegistrationController } from './public/school-registration.controller';
+import { SchoolRegistrationService } from './public/school-registration.service';
+
 // Staff
 import { StaffController } from './staff/staff.controller';
 import { AdminService } from './staff/admins/admin.service';
@@ -67,6 +71,7 @@ import { CloudinaryModule } from '../storage/cloudinary/cloudinary.module';
     // New architecture controllers
     SuperAdminSchoolsController,
     SchoolAdminSchoolsController,
+    SchoolRegistrationController,
     StaffController,
     TeacherController,
     ClassController,
@@ -79,6 +84,7 @@ import { CloudinaryModule } from '../storage/cloudinary/cloudinary.module';
     // New architecture services
     SuperAdminSchoolsService,
     SchoolAdminSchoolsService,
+    SchoolRegistrationService,
     AdminService,
     TeacherService,
     TeacherSubjectsService,
@@ -119,4 +125,4 @@ import { CloudinaryModule } from '../storage/cloudinary/cloudinary.module';
     StaffValidatorService,
   ],
 })
-export class SchoolsModule {}
+export class SchoolsModule { }

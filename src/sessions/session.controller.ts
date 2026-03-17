@@ -1,10 +1,11 @@
-import { Controller, Get, Post, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { SessionService } from './session.service';
 import {
   InitializeSessionDto,
   CreateTermDto,
   MigrateStudentsDto,
+  UpdateTermDatesDto,
 } from './dto/initialize-session.dto';
 import { AcademicSessionDto, TermDto, ActiveSessionDto } from './dto/session.dto';
 import { ResponseDto } from '../common/dto/response.dto';
@@ -19,7 +20,7 @@ import { PermissionResource, PermissionType } from '../schools/dto/permission.dt
 @UseGuards(JwtAuthGuard, SchoolDataAccessGuard, PermissionGuard)
 @ApiBearerAuth()
 export class SessionController {
-  constructor(private readonly sessionService: SessionService) {}
+  constructor(private readonly sessionService: SessionService) { }
 
   @Post('initialize')
   @RequirePermission(PermissionResource.SESSIONS, PermissionType.WRITE)
@@ -124,6 +125,24 @@ export class SessionController {
   ): Promise<ResponseDto<AcademicSessionDto[]>> {
     const data = await this.sessionService.getSessions(schoolId, schoolType);
     return ResponseDto.ok(data, 'Sessions retrieved successfully');
+  }
+
+  @Patch(':sessionId/terms/:termId')
+  @RequirePermission(PermissionResource.SESSIONS, PermissionType.WRITE)
+  @ApiOperation({ summary: 'Update term dates and half-term break dates' })
+  @ApiResponse({
+    status: 200,
+    description: 'Term dates updated successfully',
+    type: TermDto,
+  })
+  async updateTermDates(
+    @Param('schoolId') schoolId: string,
+    @Param('sessionId') sessionId: string,
+    @Param('termId') termId: string,
+    @Body() dto: UpdateTermDatesDto
+  ): Promise<ResponseDto<TermDto>> {
+    const data = await this.sessionService.updateTermDates(schoolId, sessionId, termId, dto);
+    return ResponseDto.ok(data, 'Term dates updated successfully');
   }
 
   @Post('end-term')
