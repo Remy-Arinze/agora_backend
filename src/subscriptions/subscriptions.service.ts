@@ -500,7 +500,7 @@ export class SubscriptionsService {
   /**
    * Sync tool access based on subscription tier
    */
-  private async syncToolAccessForTier(
+  async syncToolAccessForTier(
     schoolId: string,
     subscriptionId: string,
     tier: SubscriptionTier

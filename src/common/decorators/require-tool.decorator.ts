@@ -6,7 +6,7 @@ export const TOOL_KEY = 'requiredTool';
  * Decorator to require access to a specific tool
  * Use this to protect routes that require tool access
  *
- * @param toolSlug The tool slug (e.g., 'prepmaster', 'socrates', 'rollcall', 'bursary')
+ * @param toolSlug The tool slug (e.g., 'agora-ai', 'rollcall')
  *
  * @example
  * ```typescript
