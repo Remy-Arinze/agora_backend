@@ -7,7 +7,7 @@ trigger:
 pool:
   vmImage: 'ubuntu-latest'
 
-# ──────────────────────────────────────────────
+# ────────────────────────────────────────────
 # Conditional variables: set targets based on branch
 # ──────────────────────────────────────────────
 variables:
