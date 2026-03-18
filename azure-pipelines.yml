@@ -7,19 +7,19 @@ trigger:
 pool:
   vmImage: 'ubuntu-latest'
 
-# ──────────────────────────────────────────────
+# ────────────────────────────────────────────
 # Conditional variables: set targets based on branch
 # ──────────────────────────────────────────────
 variables:
-  azureSubscription: 'agora-current-sc'
-
   # Dev environment (master branch)
   ${{ if eq(variables['Build.SourceBranchName'], 'master') }}:
+    azureSubscription: 'agora-current-sc'
     apiAppName: 'agora-api-dev'
     environmentName: 'Dev'
 
   # Staging environment (staging branch)
   ${{ if eq(variables['Build.SourceBranchName'], 'staging') }}:
+    azureSubscription: 'agora-current-sc-stg'
     apiAppName: 'agora-api-stg'
     environmentName: 'Staging'
 
@@ -73,7 +73,6 @@ stages:
     - bash: |
         ROOT=$(Build.SourcesDirectory)
         DEPLOY_DIR=$ROOT/deploy_api
-
         echo "Preparing deployment package at $DEPLOY_DIR..."
         rm -rf $DEPLOY_DIR
         mkdir -p $DEPLOY_DIR/dist
