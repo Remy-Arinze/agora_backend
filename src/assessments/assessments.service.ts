@@ -97,7 +97,10 @@ export class AssessmentsService {
         return this.prisma.assessment.findMany({
             where: {
                 schoolId,
-                classId,
+                OR: [
+                    { classId },
+                    { classArmId: classId }
+                ],
                 ...(termId ? { termId } : {}),
             },
             orderBy: { createdAt: 'desc' },
