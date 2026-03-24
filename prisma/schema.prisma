@@ -1629,6 +1629,7 @@ model ChatMessage {
   conversationId String
   role           String   // "user", "assistant", "system"
   content        String   @db.Text
+  toolEvents     Json?    // Optional: stores structured tool execution history
   createdAt      DateTime @default(now())
 
   conversation ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)

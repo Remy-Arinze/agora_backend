@@ -1,10 +1,11 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../database/prisma.service';
+import { PrismaClient, Prisma } from '@prisma/client';
 import OpenAI, { AzureOpenAI } from 'openai';
 import { Response } from 'express';
 
-// ─── Interfaces ───────────────────────────────────────────────────────────────
+// ??? Interfaces ???????????????????????????????????????????????????????????????
 
 export interface GenerateFlashcardsOptions {
   topic: string;
@@ -93,13 +94,13 @@ export interface GenerateQuestionsOptions {
   curriculum?: string;
 }
 
-// ─── SSE Event Types ───────────────────────────────────────────�    },
-  },
+// Agora Chat Tools (Hybrid RAG: SQL + Semantic)
+const AGORA_TOOLS: Array<{ type: 'function'; function: { name: string; description: string; parameters: object } }> = [
   {
     type: 'function',
     function: {
       name: 'execute_sql',
-      description: 'Run a read-only SQL query to get counts, facts, or specific filtered records from the school database. Use for questions like "How many...", "Who is...", or list-based queries.',
+      description: 'Run a read-only SQL query to get counts, facts, or specific filtered records from the school database. Available tables: Student, Teacher, Class, ClassArm, Subject, Enrollment, Grade, Attendance. Use for quantitative questions like "How many...", "List all...", or "Find the student with ID...". ALWAYS filter by schoolId.',
       parameters: {
         type: 'object',
         properties: {
@@ -113,7 +114,7 @@ export interface GenerateQuestionsOptions {
     type: 'function',
     function: {
       name: 'search_semantic',
-      description: 'Perform a semantic vector search for information within the school knowledge base. Use for open-ended questions, summaries, or finding similar concepts.',
+      description: 'Perform a semantic vector search for information within the school knowledge base. Use for open-ended questions, summaries, or finding similar concepts in handbooks or policies.',
       parameters: {
         type: 'object',
         properties: {
@@ -121,15 +122,6 @@ export interface GenerateQuestionsOptions {
           limit: { type: 'number', description: 'Max number of results to return, default 5' },
         },
         required: ['query'],
-      },
-    },
-  },
-];
-, description: 'The grade/class level' },
-          questionCount: { type: 'number', description: 'Number of questions, default 20' },
-          difficulty: { type: 'string', enum: ['easy', 'medium', 'hard', 'mixed'] },
-        },
-        required: ['topic', 'subject', 'gradeLevel'],
       },
     },
   },
@@ -147,7 +139,106 @@ export interface GenerateQuestionsOptions {
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'grade_essay',
+      description: 'Grade a student essay based on a prompt and optional rubric. Returns score, feedback, strengths, and areas for improvement.',
+      parameters: {
+        type: 'object',
+        properties: {
+          essay: { type: 'string', description: 'The full text of the student essay' },
+          prompt: { type: 'string', description: 'The prompt or question the student was answering' },
+          subject: { type: 'string', description: 'The subject of the essay' },
+          gradeLevel: { type: 'string', description: 'The grade level of the student' },
+          rubric: { type: 'string', description: 'Optional grading rubric or criteria' },
+          maxScore: { type: 'number', description: 'Maximum possible score, default 100' },
+        },
+        required: ['essay', 'prompt', 'subject', 'gradeLevel'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'generate_lesson_plan',
+      description: 'Generate a detailed lesson plan. Use this tool even if optional details are missing; LOIS will infer them from context.',
+      parameters: {
+        type: 'object',
+        properties: {
+          topic: { type: 'string', description: 'The lesson topic' }, 
+          subject: { type: 'string', description: 'The academic subject' }, 
+          gradeLevel: { type: 'string', description: 'e.g., JSS 1, SS 3' },
+          objectives: { type: 'array', items: { type: 'string' } }, 
+          duration: { type: 'number', description: 'Duration in minutes' },
+        },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'generate_quiz',
+      description: 'Generate quick quiz questions. Use this tool for ALL quiz requests to ensure the interactive builder appears.',
+      parameters: {
+        type: 'object',
+        properties: {
+          topic: { type: 'string', description: 'The quiz topic' }, 
+          subject: { type: 'string', description: 'The academic subject' }, 
+          gradeLevel: { type: 'string', description: 'e.g., JSS 1' },
+          questionCount: { type: 'number' }, 
+          difficulty: { type: 'string', enum: ['easy', 'medium', 'hard'] },
+        },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'generate_flashcards',
+      description: 'Create study flashcards for a topic.',
+      parameters: {
+        type: 'object',
+        properties: {
+          topic: { type: 'string' }, subject: { type: 'string' }, gradeLevel: { type: 'string' }, count: { type: 'number' },
+        },
+        required: ['topic', 'subject', 'gradeLevel'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'generate_summary',
+      description: 'Generate a study summary for a topic.',
+      parameters: {
+        type: 'object',
+        properties: {
+          topic: { type: 'string' }, subject: { type: 'string' }, gradeLevel: { type: 'string' },
+        },
+        required: ['topic', 'subject', 'gradeLevel'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'generate_assessment',
+      description: 'Generate formal assessment questions. MANDATORY: ALWAYS use this tool if the user wants to create an assessment/exam so they can access the full-screen editor.',
+      parameters: {
+        type: 'object',
+        properties: {
+          topic: { type: 'string', description: 'Assessment topic' }, 
+          subject: { type: 'string', description: 'The academic subject' }, 
+          gradeLevel: { type: 'string', description: 'e.g., SS 2' },
+          questionCount: { type: 'number' }, 
+          difficulty: { type: 'string', enum: ['easy', 'medium', 'hard', 'mixed'] },
+        },
+      },
+    },
+  },
 ];
+
 
 /**
  * AI Service - Wrapper around OpenAI for all AI-powered features
@@ -159,11 +250,17 @@ export class AiService {
   private openai: OpenAI | null = null;
   private embeddingsClient: OpenAI | null = null;
   private readonly model: string;
+  private readOnlyPrisma: PrismaClient;
 
   constructor(
     private readonly configService: ConfigService,
     private readonly prisma: PrismaService
   ) {
+    const readOnlyUrl = this.configService.get<string>('READONLY_DATABASE_URL') || this.configService.get<string>('DATABASE_URL') || this.configService.get<string>('DB_URL');
+    this.readOnlyPrisma = new PrismaClient({
+      datasources: { db: { url: readOnlyUrl } }
+    });
+
     const apiKey = this.configService.get<string>('OPENAI_API_KEY');
     const azureApiKey = this.configService.get<string>('AZURE_OPENAI_API_KEY');
     const azureEndpoint = this.configService.get<string>('AZURE_OPENAI_ENDPOINT');
@@ -227,13 +324,13 @@ export class AiService {
     }
   }
 
-  // ─── SSE Helper ─────────────────────────────────────────────────────────────
+  // ??? SSE Helper ?????????????????????????????????????????????????????????????
 
-  private sendSSE(res: Response, event: SSEEvent): void {
+  private sendSSE(res: Response, event: { event: string; data: unknown }): void {
     res.write(`event: ${event.event}\ndata: ${JSON.stringify(event.data)}\n\n`);
   }
 
-  // ─── Advanced RAG Pipeline ──────────────────────────────────────────────────
+  // ??? Advanced RAG Pipeline ??????????????????????????????????????????????????
 
   /**
    * Create vector embedding for text
@@ -244,8 +341,8 @@ export class AiService {
       throw new BadRequestException('Embeddings client is not configured.');
     }
     try {
-      const modelName = this.configService.get<string>('AZURE_OPENAI_EMBEDDIGN_MODEL_NAME') 
-        || this.configService.get<string>('AZURE_OPENAI_EMBEDDING_MODEL_NAME') 
+      const modelName = this.configService.get<string>('AZURE_OPENAI_EMBEDDIGN_MODEL_NAME')
+        || this.configService.get<string>('AZURE_OPENAI_EMBEDDING_MODEL_NAME')
         || 'text-embedding-3-small';
 
       const response = await this.embeddingsClient.embeddings.create({
@@ -304,19 +401,19 @@ export class AiService {
 
       const contextParts = relevantChunks.map((c, i) => {
         const sourceLabel = c.metadata?.type === 'student_progress'
-          ? '📊 Student Performance'
+          ? '?? Student Performance'
           : c.metadata?.type === 'curriculum'
-            ? '📚 Curriculum Plan'
+            ? '?? Curriculum Plan'
             : c.metadata?.type === 'assessment'
-              ? '📝 Teacher Assessment'
+              ? '?? Teacher Assessment'
               : c.metadata?.type === 'class_info'
-                 ? 'ℹ️ Class Info'
-                 : c.metadata?.type === 'school_info'
-                   ? '🏫 School Profile'
-                   : c.metadata?.type === 'teacher_info'
-                     ? '👨‍🏫 Teacher Profile'
-                     : '📄 School Knowledge';
-        return `[Source ${i + 1}: ${sourceLabel} — ${sources[i].relevance}% relevance]\n${c.content}`;
+                ? '?? Class Info'
+                : c.metadata?.type === 'school_info'
+                  ? '?? School Profile'
+                  : c.metadata?.type === 'teacher_info'
+                    ? '????? Teacher Profile'
+                    : '?? School Knowledge';
+        return `[Source ${i + 1}: ${sourceLabel} ? ${sources[i].relevance}% relevance]\n${c.content}`;
       });
 
       return {
@@ -329,7 +426,7 @@ export class AiService {
     }
   }
 
-  // ─── System Prompt Builder ──────────────────────────────────────────────────
+  // ??? System Prompt Builder ??????????????????????????????????????????????????
 
   private async getChatPrompt(
     messages: { role: string; content: string }[],
@@ -340,6 +437,13 @@ export class AiService {
     let userRole = 'USER';
     let schoolName = '';
     let directContext = '';
+
+    const now = new Date();
+    const formatterConfig = { timeZone: 'Africa/Lagos', hour12: false } as any;
+    const currentDay = now.toLocaleString('en-US', { ...formatterConfig, weekday: 'long' }).toUpperCase();
+    const currentTime = now.toLocaleString('en-US', { ...formatterConfig, hour: '2-digit', minute: '2-digit' });
+
+    directContext += `[REAL-TIME CLOCK] Today is ${currentDay}. The current time is ${currentTime} (WAT).\n`;
 
     if (schoolId && userId) {
       const [user, school, teacher] = await Promise.all([
@@ -355,14 +459,26 @@ export class AiService {
           where: { userId, schoolId },
           include: {
             classTeachers: {
-              include: { class: true, classArm: true, subjectRef: true }
+              include: {
+                class: true,
+                classArm: {
+                  include: { classLevel: true }
+                },
+                subjectRef: true
+              }
             },
             classArms: {
               include: { classLevel: true }
             },
             timetablePeriods: {
               where: { term: { status: 'ACTIVE' } }, // Only look at current timetable
-              include: { class: true, classArm: true, subject: true }
+              include: {
+                class: true,
+                classArm: {
+                  include: { classLevel: true }
+                },
+                subject: true
+              }
             }
           }
         })
@@ -370,20 +486,20 @@ export class AiService {
 
       if (user) {
         userRole = user.role;
-        const name = (user.firstName || user.lastName) 
-          ? `${user.firstName || ''} ${user.lastName || ''}`.trim() 
+        const name = (user.firstName || user.lastName)
+          ? `${user.firstName || ''} ${user.lastName || ''}`.trim()
           : (teacher ? `${teacher.firstName || ''} ${teacher.lastName || ''}`.trim() : 'User');
-        
+
         directContext += `Current User: ${name} (Role: ${userRole}).\n`;
         this.logger.log(`[AI Context] Identity: ${name}, Role: ${userRole}, School: ${schoolId}`);
-        
+
         const lastUserMessage = messages.slice().reverse().find(m => m.role === 'user');
         if (lastUserMessage) {
           const ragResult = await this.findRelevantContext(lastUserMessage.content, schoolId, userRole);
           contextText = ragResult.text;
         }
       }
-      
+
       if (school) {
         schoolName = school.name;
         directContext += `Current School: ${schoolName} located in ${school.address || ''}, ${school.city || ''}, ${school.state || ''}.\n`;
@@ -391,44 +507,53 @@ export class AiService {
 
       if (teacher) {
         this.logger.log(`Found teacher record for user ${userId} in school ${schoolId}.`);
-        
+
         let assignments = [];
-        
-        // 1. Subject assignments
+
+        // 4. Primary Specialization & School Type
+        if (teacher.schoolType) {
+          directContext += `Teacher's Environment: ${teacher.schoolType} School level.\n`;
+        }
+
+        // 1. Subject assignments (Official Registry)
         if (teacher.classTeachers?.length > 0) {
           const subjectAssignments = teacher.classTeachers.map(ct => {
             const subject = ct.subject || ct.subjectRef?.name || 'Subject';
-            const className = ct.class?.name || ct.classArm?.name || 'Class';
-            return `- ${subject} for ${className}${ct.isPrimary ? ' (Subject Lead)' : ''}`;
+            const levelName = ct.classArm?.classLevel?.name || '';
+            const armName = ct.classArm?.name || '';
+            const className = ct.class?.name || (levelName ? `${levelName} ${armName}`.trim() : armName) || 'Class';
+            return `- [Registry] ${subject} for ${className}${ct.isPrimary ? ' (Lead Teacher)' : ''}`;
           });
           assignments.push(...subjectAssignments);
         }
 
         // 2. Form teacher (Class Lead) assignments
         if (teacher.classArms?.length > 0) {
-          const formAssignments = teacher.classArms.map(arm => 
-            `- Form Teacher for ${arm.classLevel?.name || 'Class'} ${arm.name}`
+          const formAssignments = teacher.classArms.map(arm =>
+            `- [Registry] Form Teacher for ${arm.classLevel?.name || 'Class'} ${arm.name}`
           );
           assignments.push(...formAssignments);
         }
 
-        // 3. Timetable-based assignments (Crucial for SECONDARY schools)
+        // 3. Timetable-based assignments (Current Schedule)
         if (teacher.timetablePeriods?.length > 0) {
           const timetableMap = new Map<string, Set<string>>();
-          
+
           teacher.timetablePeriods.forEach(period => {
-            const className = period.class?.name || period.classArm?.name || 'Unknown Class';
+            const levelName = period.classArm?.classLevel?.name || '';
+            const armName = period.classArm?.name || '';
+            const className = period.class?.name || (levelName ? `${levelName} ${armName}`.trim() : armName) || 'Unknown Class';
             const subjectName = period.subject?.name || 'Class Subject';
-            
+
             if (!timetableMap.has(className)) {
               timetableMap.set(className, new Set());
             }
             timetableMap.get(className)?.add(subjectName);
           });
-          
+
           timetableMap.forEach((subjects, className) => {
             const subjectsList = Array.from(subjects).join(', ');
-            assignments.push(`- teaches ${subjectsList} for ${className} (via Timetable)`);
+            assignments.push(`- [Weekly Schedule] teaches ${subjectsList} for ${className}`);
           });
         }
 
@@ -471,30 +596,54 @@ export class AiService {
       
       Operational Rules:
       1. Always refer to yourself as Lois.
-      2. IDENTITY RULE: If the user asks who they are or what they teach, you MUST use the details in "Current Identity Context". Never say "I don't know who you are" if a name is provided in that section.
-      3. If the user asks about the SCHOOL, use the "Current Identity Context" and "Relevant Knowledge Base Context".
-      4. Always use natural, conversational language. Don't say "According to the context...", just state the answer as if you know it.
-      5. Never reveal sensitive data like passwords or internal IDs.
-      6. Maintain a helpful, professional, and teacher-focused tone.
-      7. Format responses with markdown for readability.
+      2. IDENTITY RULE: If the user asks who they are or what they teach, you MUST use the details in "Current Identity Context". Specifically mention their assigned classes (e.g., JSS 1A, SS 2B, etc.) and subjects exactly as provided in that section.
+      3. No "Empty Promises": Do NOT say "One moment please", "Let me check that", or "I'll get back to you" UNLESS you are making a tool call in the same turn. If you finish your response with a promise to find more info, users expect that info to appear immediately in the same message stream.
+      4. Decisive Interaction: If a tool returns an error (e.g., SQL Execution failed), inform the user that you are refining the approach and try a different query if it makes sense. Don't simply give up without explaining the refined attempt.
+      5. Tone: Be helpful, professional, and slightly conversational as an AI colleague to the teachers.      3. SECONDARY TEACHER SPECIALIZATION RULE:
+         - If the user role is TEACHER and the school type is SECONDARY:
+         - Check the "Teacher's Active Assignments" in the context.
+         - If the user asks to generate an assessment, quiz, or lesson plan for a subject that is NOT in their active assignments, you MUST ask for confirmation first.
+         - Example: "I see you're registered as a Chemistry teacher for JSS 1A. Since you're asking for a Mathematics assessment, would you like me to proceed with that, or is there a specific reason for the change?"
+         - Only proceed with generating if they confirm or if they explicitly stated they have permission/need for it in the initial prompt.
+
+      4. CLASS CLARIFICATION RULE:
+         - If the teacher handles MULTIPLE classes (e.g., JSS 1A and JSS 1B) and asks for class-specific content (Assessment, Lesson Plan, Quiz) WITHOUT specifying the target class, you MUST ask which class they are preparing for before calling any generation tools.
+         - Example: "I can help with that! Which class is this quiz for: JSS 1A or JSS 1B?"
+         - If they only have ONE class, do NOT ask; just proceed using that class context.
+
+      5. If the user asks about the SCHOOL, use the "Current Identity Context" and "Relevant Knowledge Base Context".
+      5. Always use natural, conversational language. Don't say "According to the context...", just state the answer as if you know it.
+      6. Never reveal sensitive data like passwords or internal IDs.
+      7. Maintain a helpful, professional, and teacher-focused tone.
+      8. Format responses with markdown for readability.
 
       HYBRID RAG ROUTING:
-      - Use `execute_sql` for quantitative questions: "How many...", "List all...", "Find the student with ID...", "Count teachers in SS1".
-      - Use `search_semantic` for qualitative questions: "Tell me about...", "Explain the policy for...", "Give me a summary of...", "What are the objectives for...".
+      - Use execute_sql for quantitative questions: "How many...", "List all...", "Find the student with ID...", "Count teachers in SS1".
+      - Use search_semantic for qualitative questions: "Tell me about...", "Explain the policy for...", "Give me a summary of...", "What are the objectives for...".
       - For queries needing both (e.g., "Analyze the performance of SS1 Math vs policy"), choose the most appropriate or sequence them.
-      - ALWAYS filter by schoolId = '${schoolId}' in your SQL queries.
       
-      SCHEMA CONTEXT FOR SQL:
-      - Tables: Student, Teacher, Class, ClassArm, Subject, Enrollment, Grade, Attendance, AcademicSession, Term, Assessment.
-      - Grade columns: score, maxScore, subject, gradeType (CA, ASSIGNMENT, EXAM).
+      TIMETABLE AND CLASS TEACHER RESOLUTION (CRITICAL):
+      You have access to the real-world time in the "Current Identity Context".
+      When a user asks "What class is going on in [Class] right now?" or "Who is taking [Class]?":
+      1. Primary Schools: Primary classes ALWAYS have one main class teacher. Do NOT look up subject teachers. If asked who is taking the class, inform them of the main Class Teacher.
+      2. Secondary Schools: Classes are subject-based. FIRST, execute_sql on "TimetablePeriod" using the current "dayOfWeek" (e.g., 'MONDAY') and time ("startTime" <= 'HH:MM' AND "endTime" >= 'HH:MM') to find the active subject. THEN, resolve the teacher assigned to that subject.
+      3. Free Period: If the "TimetablePeriod" query returns no records for the current time in Secondary, inform the user they are on a free period.
+      
+      SCHEMA CONTEXT FOR SQL (CRITICAL):
+      - Tables (MUST use double quotes): "Student", "Teacher", "Class", "ClassLevel", "ClassArm", "ClassTeacher", "Subject", "Enrollment", "Grade", "Attendance", "AcademicSession", "Term", "Assessment".
+      - Relationships: "ClassTeacher" links "Teacher" to "Class" (tertiary) or "ClassArm" (secondary).
+      - "ClassArm" links to "ClassLevel" (e.g., JSS 1) and has a "name" (e.g., A).
+      - Columns (MUST use double quotes if camelCase): "id", "schoolId", "firstName", "lastName", "email", "phone", "role", "score", "maxScore", "gradeType", "name", "code", "teacherId", "classId", "classArmId".
+      - Example Query: SELECT count(*) FROM "Teacher" WHERE "schoolId" = '${schoolId}';
+      - Grade types: CA, ASSIGNMENT, EXAM.
       - Attendance status: PRESENT, ABSENT, LATE.
-      - IDs: Always use cuid() format provided in Current Identity Context.
+      - ALWAYS filter by "schoolId" = '${schoolId}' to ensure data separation.
     `;
 
     return { systemPrompt, contextText, userRole, schoolName };
   }
 
-  // ─── Agentic Streaming Chat (SSE) ──────────────────────────────────────────
+  // ??? Agentic Streaming Chat (SSE) ??????????????????????????????????????????
 
   /**
    * Main SSE streaming endpoint with agentic tool-calling
@@ -505,174 +654,170 @@ export class AiService {
     messages: { role: 'user' | 'assistant' | 'system'; content: string }[],
     userId?: string,
     conversationId?: string,
-    schoolId?: string
-  ): Promise<void> {
+    schoolId?: string,
+    remainingTokens: number = Infinity
+  ): Promise<any> {
     this.ensureConfigured();
 
-    const { systemPrompt } = await this.getChatPrompt(messages, userId, schoolId);
+    const { systemPrompt, userRole } = await this.getChatPrompt(messages, userId, schoolId);
 
     let fullAssistantContent = '';
     let finalConversationId = conversationId || null;
     let totalUsage: any = null;
+    let estimatedTokens = 0;
+    const toolEvents: any[] = [];
+
+    // Pre-create conversation if new to ensure frontend has ID for URL sync immediately
+    if (userId && !finalConversationId) {
+      try {
+        const lastUserMessage = messages.slice().reverse().find(m => m.role === 'user');
+        const title = lastUserMessage?.content
+          ? (lastUserMessage.content.substring(0, 40) + (lastUserMessage.content.length > 40 ? '...' : ''))
+          : 'New Chat';
+
+        const conversation = await this.prisma.chatConversation.create({
+          data: {
+            userId,
+            schoolId,
+            title,
+            messages: {
+              create: messages
+                .filter(m => m.role.toLowerCase() !== 'system') // Fix: Filter out 'system' messages case-insensitively
+                .map(m => ({
+                  role: m.role as 'user' | 'assistant', // Ensure role is 'user' or 'assistant' for creation
+                  content: m.content
+                }))
+            }
+          }
+        });
+        finalConversationId = conversation.id;
+        
+        // Send immediate ID sync to frontend
+        this.sendSSE(res, {
+            event: 'conversation_id',
+            data: { conversationId: finalConversationId }
+        });
+      } catch (err) {
+        this.logger.error(`Failed to pre-create conversation: ${err}`);
+      }
+    }
 
     try {
-      // Step 1: Initial call with tools available (non-streaming to check for tool calls)
-      const initialResponse = await this.openai!.chat.completions.create({
-        model: this.model,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          ...messages,
-        ],
-        tools: AGORA_TOOLS,
-        tool_choice: 'auto',
-        temperature: 0.7,
-      });
+      let currentMessages: any[] = [
+        { role: 'system', content: systemPrompt },
+        ...messages
+      ];
 
-      const choice = initialResponse.choices[0];
-      totalUsage = initialResponse.usage;
+      let turn = 0;
+      const MAX_TURNS = 3;
 
-      // Check if the model wants to call a function tool
-      const functionToolCall = choice.message.tool_calls?.find(
-        (tc): tc is Extract<typeof tc, { type: 'function' }> => tc.type === 'function'
-      );
-      
-      if (functionToolCall) {
-        // ─── Agentic Path: Tool Execution ─────────────────────────────
-        const toolCall = functionToolCall;
-        const functionName = toolCall.function.name;
-        const functionArgs = JSON.parse(toolCall.function.arguments);
-
-        // Send thinking event
-        this.sendSSE(res, {
-          event: 'thinking',
-          data: { message: this.getToolThinkingMessage(functionName) },
+      while (turn < MAX_TURNS) {
+        turn++;
+        const response = await this.openai!.chat.completions.create({
+          model: this.model,
+          messages: currentMessages,
+          tools: AGORA_TOOLS as OpenAI.Chat.Completions.ChatCompletionTool[],
+          tool_choice: 'auto',
+          temperature: 0.7,
         });
 
-        // Send tool_start event
-        this.sendSSE(res, {
-          event: 'tool_start',
-          data: {
+        const choice = response.choices[0];
+        totalUsage = response.usage || totalUsage;
+
+        const toolCalls = choice.message.tool_calls?.filter(
+          (tc): tc is Extract<typeof tc, { type: 'function' }> => tc.type === 'function'
+        );
+
+        if (!toolCalls || toolCalls.length === 0) {
+          // Final iteration: stream the final content to the user
+          const finalStream = await this.openai!.chat.completions.create({
+            model: this.model,
+            messages: currentMessages,
+            stream: true,
+            temperature: 0.7,
+          });
+
+          for await (const chunk of finalStream as any) {
+            const delta = chunk.choices?.[0]?.delta;
+            if (delta?.content) {
+              fullAssistantContent += delta.content;
+              estimatedTokens += Math.ceil(delta.content.length / 3.5);
+
+              if (estimatedTokens > remainingTokens) {
+                finalStream.controller.abort();
+                this.sendSSE(res, {
+                  event: 'error',
+                  data: { message: 'Credit limit reached. Please top up to continue.' },
+                });
+                break;
+              }
+
+              this.sendSSE(res, {
+                event: 'token',
+                data: { token: delta.content },
+              });
+            }
+          }
+          break; // Done with all turns
+        }
+
+        // TOOL EXECUTION TURN
+        currentMessages.push(choice.message);
+        
+        for (const toolCall of toolCalls) {
+          const functionName = toolCall.function.name;
+          const functionArgs = JSON.parse(toolCall.function.arguments);
+
+          // Send thinking event
+          const thinkingEvent = { message: this.getToolThinkingMessage(functionName) };
+          this.sendSSE(res, { event: 'thinking', data: thinkingEvent });
+          toolEvents.push({ type: 'thinking', ...thinkingEvent });
+
+          // Send tool_start event
+          const toolStartEvent = {
             toolName: functionName,
             toolDisplayName: this.getToolDisplayName(functionName),
             args: functionArgs,
-          },
-        });
+          };
+          this.sendSSE(res, { event: 'tool_start', data: toolStartEvent });
+          toolEvents.push({ type: 'tool_start', ...toolStartEvent });
 
-        // Execute the tool
-        let toolResult: any;
-        let toolUsage: any;
-        try {
-          const result = await this.executeAgentTool(functionName, functionArgs);
-          toolResult = result.data;
-          toolUsage = result.usage;
-        } catch (toolError: any) {
-          this.sendSSE(res, {
-            event: 'error',
-            data: { message: `Tool execution failed: ${toolError.message}` },
-          });
-          this.sendSSE(res, { event: 'done', data: { conversationId: finalConversationId || '' } });
-          return;
-        }
-
-        // Accumulate usage
-        if (toolUsage && totalUsage) {
-          totalUsage.total_tokens = (totalUsage.total_tokens || 0) + (toolUsage.total_tokens || 0);
-        }
-
-        // Send tool_result event
-        this.sendSSE(res, {
-          event: 'tool_result',
-          data: {
+          let toolResult: any;
+          try {
+            const result = await this.executeAgentTool(functionName, functionArgs, { schoolId, userRole });
+            toolResult = result.data;
+          } catch (tErr: any) {
+            this.logger.error(`Tool execution error: ${tErr}`);
+            toolResult = { error: tErr?.message || 'Tool failed' };
+          }
+          
+          const toolResultEvent = {
             toolName: functionName,
             toolDisplayName: this.getToolDisplayName(functionName),
             result: toolResult,
-          },
-        });
+          };
+          this.sendSSE(res, { event: 'tool_result', data: toolResultEvent });
+          toolEvents.push({ type: 'tool_result', ...toolResultEvent });
 
-        // Step 2: Now stream a follow-up response that summarizes the result
-        const followUpMessages: any[] = [
-          { role: 'system', content: systemPrompt },
-          ...messages,
-          choice.message, // includes the tool_call
-          {
+          currentMessages.push({
             role: 'tool',
             tool_call_id: toolCall.id,
             content: JSON.stringify(toolResult),
-          },
-        ];
-
-        const followUpStream = await this.openai!.chat.completions.create({
-          model: this.model,
-          messages: followUpMessages,
-          stream: true,
-          temperature: 0.7,
-        });
-
-        for await (const chunk of followUpStream as any) {
-          const delta = chunk.choices?.[0]?.delta;
-          if (delta?.content) {
-            fullAssistantContent += delta.content;
-            this.sendSSE(res, {
-              event: 'token',
-              data: { token: delta.content },
-            });
-          }
+          });
         }
-      } else {
-        // ─── Direct Response Path: Stream the response ────────────────
-        // The model chose not to use any tool, so let's re-do with streaming
-        const stream = await this.openai!.chat.completions.create({
-          model: this.model,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            ...messages,
-          ],
-          stream: true,
-          temperature: 0.7,
-        });
-
-        for await (const chunk of stream as any) {
-          const delta = chunk.choices?.[0]?.delta;
-          if (delta?.content) {
-            fullAssistantContent += delta.content;
-            this.sendSSE(res, {
-              event: 'token',
-              data: { token: delta.content },
-            });
-          }
-        }
+        
+        // Loop back and let AI react to tool results
       }
 
-      // ─── Persist Conversation ──────────────────────────────────────
-      if (userId) {
-        if (!finalConversationId) {
-          const lastUserMessage = messages.slice().reverse().find(m => m.role === 'user');
-          const title = lastUserMessage?.content 
-            ? (lastUserMessage.content.substring(0, 40) + (lastUserMessage.content.length > 40 ? '...' : ''))
-            : 'New Chat';
-          
-          const conversation = await this.prisma.chatConversation.create({
-            data: {
-              userId,
-              schoolId,
-              title,
-              messages: {
-                create: messages.map(m => ({
-                  role: m.role,
-                  content: m.content
-                }))
-              }
-            }
-          });
-          finalConversationId = conversation.id;
-        }
-
+      // ??? Persist Final State ??????????????????????????????????????
+      if (userId && finalConversationId) {
+        // 1. If this was a follow-up, ensure the latest user message is saved
         if (conversationId) {
           const lastMessage = messages[messages.length - 1];
           if (lastMessage && lastMessage.role === 'user') {
             await this.prisma.chatMessage.create({
               data: {
-                conversationId: finalConversationId!,
+                conversationId: finalConversationId,
                 role: 'user',
                 content: lastMessage.content
               }
@@ -680,16 +825,15 @@ export class AiService {
           }
         }
 
-        // Save assistant response
-        if (fullAssistantContent) {
-          await this.prisma.chatMessage.create({
-            data: {
-              conversationId: finalConversationId!,
-              role: 'assistant',
-              content: fullAssistantContent
-            }
-          });
-        }
+        // 2. Save the assistant's final response and all tool events
+        await this.prisma.chatMessage.create({
+          data: {
+            conversationId: finalConversationId,
+            role: 'assistant',
+            content: fullAssistantContent || 'No response generated.',
+            toolEvents: toolEvents.length > 0 ? toolEvents : undefined
+          }
+        });
       }
 
       // Send done event
@@ -700,114 +844,209 @@ export class AiService {
           usage: totalUsage,
         },
       });
+
+      return { total_tokens: (totalUsage?.total_tokens || 0) + estimatedTokens };
     } catch (error: any) {
-      this.logger.error(`SSE Chat failed: ${error}`);
-      this.sendSSE(res, {
-        event: 'error',
-        data: { message: 'AI assistant is currently unavailable. Please try again later.' },
-      });
+      if (error.name !== 'AbortError') {
+        this.logger.error(`SSE Chat failed: ${error}`);
+        this.sendSSE(res, {
+          event: 'error',
+          data: { message: 'AI assistant is currently unavailable. Please try again later.' },
+        });
+      }
+      return { total_tokens: (totalUsage?.total_tokens || 0) + estimatedTokens };
     }
   }
 
-  // ─── Agent Tool Executor ────────────────────────────────────────────────────
+  // ??? Agent Tool Executor ????????????????????????????????????????????????????
 
   private async executeAgentTool(
     toolName: string,
-    args: any
+    args: any,
+    context?: { schoolId?: string; userRole?: string }
   ): Promise<{ data: any; usage: any }> {
     switch (toolName) {
       case 'generate_lesson_plan':
         return this.generateLessonPlan({
-          topic: args.topic,
-          subject: args.subject,
-          gradeLevel: args.gradeLevel,
+          topic: args.topic || 'General Topic',
+          subject: args.subject || 'General Studies',
+          gradeLevel: args.gradeLevel || 'Any',
           objectives: args.objectives || ['Understand key concepts', 'Apply knowledge practically'],
           duration: args.duration || 40,
         });
 
-      case 'generate_quiz':
-        return this.generateQuiz({
-          topic: args.topic,
-          subject: args.subject,
-          gradeLevel: args.gradeLevel,
+      case 'generate_quiz': {
+        const res = await this.generateQuiz({
+          topic: args.topic || 'Quick Quiz',
+          subject: args.subject || 'General',
+          gradeLevel: args.gradeLevel || 'Any',
           questionCount: args.questionCount || 5,
           questionTypes: ['multiple_choice'],
           difficulty: args.difficulty || 'medium',
         });
 
+        // Resolve subjectId from name
+        if (context?.schoolId && args.subject) {
+          const subject = await this.prisma.subject.findFirst({
+            where: {
+              schoolId: context.schoolId,
+              name: { contains: args.subject, mode: 'insensitive' },
+              isActive: true
+            },
+            select: { id: true }
+          });
+          if (subject) {
+            (res.data as any).subjectId = subject.id;
+          }
+        }
+        return res;
+      }
+
       case 'generate_flashcards':
         return this.generateFlashcards({
-          topic: args.topic,
-          subject: args.subject,
-          gradeLevel: args.gradeLevel,
+          topic: args.topic || 'General Revision',
+          subject: args.subject || 'General',
+          gradeLevel: args.gradeLevel || 'Any',
           count: args.count || 10,
         });
 
       case 'generate_summary':
         return this.generateSummary({
-          topic: args.topic,
-          subject: args.subject,
-          gradeLevel: args.gradeLevel,
+          topic: args.topic || 'Content Summary',
+          subject: args.subject || 'General',
+          gradeLevel: args.gradeLevel || 'Any',
         });
 
-      case 'generate_assessment':
-        return this.generateAssessmentQuestions({
-          topic: args.topic,
-          subject: args.subject,
-          gradeLevel: args.gradeLevel,
+      case 'generate_assessment': {
+        const res = await this.generateAssessmentQuestions({
+          topic: args.topic || 'Assessment',
+          subject: args.subject || 'General',
+          gradeLevel: args.gradeLevel || 'Any',
           questionCount: args.questionCount || 20,
           difficulty: args.difficulty || 'mixed',
+        });
+
+        // Resolve subjectId from name
+        if (context?.schoolId && args.subject) {
+          const subject = await this.prisma.subject.findFirst({
+            where: {
+              schoolId: context.schoolId,
+              name: { contains: args.subject, mode: 'insensitive' },
+              isActive: true
+            },
+            select: { id: true }
+          });
+          if (subject) {
+            (res.data as any).subjectId = subject.id;
+          }
+        }
+        return res;
+      }
+
+      case 'grade_essay':
+        return this.gradeEssay({
+          essay: args.essay,
+          prompt: args.prompt,
+          subject: args.subject,
+          gradeLevel: args.gradeLevel,
+          rubric: args.rubric,
+          maxScore: args.maxScore || 100,
         });
 
       case 'get_school_stats':
         return this.getSchoolStats(args.schoolId);
 
       case 'execute_sql':
-        return this.executeSql(args.sql);
+        return this.executeSql(args.sql, context?.schoolId);
 
       case 'search_semantic':
-        return this.searchSemantic(args.query, args.limit);
+        return this.searchSemantic(
+          args.query,
+          args.limit,
+          context?.schoolId,
+          context?.userRole,
+        );
 
       default:
         throw new Error(`Unknown tool: ${toolName}`);
     }
   }
 
-  // ─── Direct Logic for Admin Tools ──────────────────────────────────────────
+  // ??? Direct Logic for Admin Tools ??????????????????????????????????????????
 
-  private async executeSql(sql: string) {
-    if (!sql.toLowerCase().trim().startsWith('select')) {
-      return { data: null, error: 'Only read-only SELECT queries are allowed.' };
+  private async executeSql(sql: string, schoolId?: string): Promise<{ data: any; usage: any }> {
+    if (!schoolId) {
+      return { data: { error: 'School ID context is required for secure querying.' }, usage: null };
     }
 
-    // Security check for sensitive tables
-    const blockedTables = ['"User"', '"PasswordResetToken"', '"PasswordOtp"', '"LoginSession"', '"NotificationLog"', '"ApplicationError"'];
-    const lowerSql = sql.toLowerCase();
-    for (const table of blockedTables) {
-      if (lowerSql.includes(table.toLowerCase())) {
-        return { data: null, error: `Access to table ${table} is restricted for security reasons.` };
-      }
+    const trimmedSql = sql.trim();
+    const lowerSql = trimmedSql.toLowerCase();
+
+    // 1. Basic Read-Only check (kept for prompt clarity)
+    if (!lowerSql.startsWith('select')) {
+      return { data: { error: 'Only read-only SELECT queries are allowed.' }, usage: null };
     }
 
     try {
-      const results = await this.prisma.$queryRawUnsafe(sql);
+      // Enforce RLS by executing inside a transaction and setting the local tenant config
+      // Ensure the postgres read-only user respects RLS
+      const results = await this.readOnlyPrisma.$transaction(async (tx) => {
+        // Enforce physical Row Level Security in Postgres:
+        await tx.$executeRawUnsafe(`SET LOCAL row_security = on;`);
+        await tx.$executeRawUnsafe(`SET LOCAL app.current_school_id = '${schoolId}';`);
+
+        // Execute the AI-generated query
+        const results = await tx.$queryRawUnsafe(sql);
+
+        // Handle BigInt serialization for JSON (NestJS/JSON.stringify doesn't support it)
+        return JSON.parse(
+          JSON.stringify(results, (key, value) =>
+            typeof value === 'bigint' ? Number(value) : value
+          )
+        );
+      });
+
       return { data: results, usage: null };
     } catch (error: any) {
-      return { data: null, error: `SQL Error: ${error.message}` };
+      return { data: { error: `SQL Execution failed: ${error?.message || 'Invalid query'}. Please refine your query.` }, usage: null };
     }
   }
 
-  private async searchSemantic(query: string, limit?: number) {
-    // We'll need access to schoolId and role here, but those are in the context of chatStreamSSE
-    // For now, let's assume we can pull them or that findRelevantContext is called elsewhere
-    return { data: "Semantic search initiated for: " + query, usage: null };
+  private async searchSemantic(
+    query: string,
+    limit?: number,
+    schoolId?: string,
+    role?: string,
+  ) {
+    const effectiveLimit = limit ?? 5;
+    if (schoolId && role) {
+      const { text, sources } = await this.findRelevantContext(
+        query,
+        schoolId,
+        role,
+        effectiveLimit,
+      );
+      return {
+        data: text
+          ? { text, sources }
+          : { text: 'No relevant knowledge base results found for this query.', sources: [] },
+        usage: null,
+      };
+    }
+    return {
+      data: {
+        text: 'Semantic search requires school context. Please ensure you are in a school scope.',
+        sources: [],
+      },
+      usage: null,
+    };
   }
 
-  // ─── Direct Logic for Admin Tools ──────────────────────────────────────────
+  // ??? Direct Logic for Admin Tools ??????????????????????????????????????????
 
-  private async getSchoolStats(schoolId: string) {
-    if (!schoolId) return { data: null, error: 'School ID is required' };
-    
+  private async getSchoolStats(schoolId: string): Promise<{ data: any; usage: any }> {
+    if (!schoolId) return { data: { error: 'School ID is required' }, usage: null };
+
     const [classCount, teacherCount, studentCount] = await Promise.all([
       this.prisma.class.count({ where: { schoolId } }),
       this.prisma.teacher.count({ where: { schoolId } }),
@@ -827,13 +1066,17 @@ export class AiService {
 
   private getToolDisplayName(toolName: string): string {
     const names: Record<string, string> = {
-      generate_lesson_plan: '📝 Lesson Plan Generator',
-      generate_quiz: '❓ Quiz Generator',
-      generate_flashcards: '🃏 Flashcard Creator',
-      generate_summary: '📖 Study Summary',
-      generate_assessment: '📋 Assessment Builder',
+      generate_lesson_plan: '?? Lesson Plan Generator',
+      generate_quiz: '? Quiz Generator',
+      generate_flashcards: '?? Flashcard Creator',
+      generate_summary: '?? Study Summary',
+      generate_assessment: '?? Assessment Builder',
+      grade_essay: '?? Essay Grader',
+      execute_sql: '🔍 Querying School Records',
+      search_semantic: '📖 Checking Knowledge Base',
+      get_school_stats: '📊 Gathering school statistics',
     };
-    return names[toolName] || toolName;
+    return names[toolName] || toolName.replace(/_/g, ' ');
   }
 
   private getToolThinkingMessage(toolName: string): string {
@@ -843,11 +1086,15 @@ export class AiService {
       generate_flashcards: "Creating study flashcards for you...",
       generate_summary: "Let me prepare a comprehensive study summary...",
       generate_assessment: "Building formal assessment questions...",
+      grade_essay: "Analyzing the essay for grading...",
+      execute_sql: "I'm searching the school records for the information you requested...",
+      search_semantic: "Let me check the school's knowledge base and policies...",
+      get_school_stats: "Gathering the latest school statistics...",
     };
     return messages[toolName] || 'Processing your request...';
   }
 
-  // ─── Existing Tool Methods (Preserved) ──────────────────────────────────────
+  // ??? Existing Tool Methods (Preserved) ??????????????????????????????????????
 
   /**
    * Generate flashcards for a topic
@@ -976,7 +1223,7 @@ Create questions that test understanding of the topic. For each question include
 - Correct answer
 - Brief explanation of why the answer is correct
 
-Return as JSON: {"questions": [{"question": "...", "type": "...", "options": ["A...", "B...", "C...", "D..."], "correctAnswer": "...", "explanation": "..."}]}`;
+Return as JSON: {"questions": [{"text": "...", "type": "MULTIPLE_CHOICE", "options": ["...", "...", "...", "..."], "correctAnswer": "...", "explanation": "..."}]}`;
 
     try {
       const response = await this.openai!.chat.completions.create({
@@ -1065,6 +1312,50 @@ Return as JSON with this structure:
     } catch (error) {
       this.logger.error(`Failed to generate lesson plan: ${error}`);
       throw new BadRequestException('Failed to generate lesson plan. Please try again.');
+    }
+  }
+
+  /**
+   * Batch grade short answer questions using semantic similarity
+   */
+  async gradeShortAnswers(items: { question: string; studentAnswer: string; sampleAnswer: string; maxPoints: number }[]): Promise<{ data: { score: number; feedback: string; isCorrect: boolean }[]; usage: any }> {
+    if (items.length === 0) return { data: [], usage: null };
+    this.ensureConfigured();
+
+    const gradingPrompt = `You are an expert examiner. Grade the following short-answer responses by comparing the student's answer against the sample answer. 
+Award points based on semantic meaning and concept capture, not exact word matching.
+
+Questions and Answers:
+${items.map((it, i) => `
+ID: ${i}
+Question: ${it.question}
+Sample Answer: ${it.sampleAnswer}
+Student Answer: ${it.studentAnswer}
+Max Points: ${it.maxPoints}
+`).join('\n---\n')}
+
+Return a JSON object with a 'results' array where each item matches the input order:
+{"results": [{"id": number, "score": number, "isCorrect": boolean, "feedback": "short explanation"}]} `;
+
+    try {
+      const response = await this.openai!.chat.completions.create({
+        model: this.model,
+        messages: [
+          { role: 'system', content: 'You are a fair, expert teacher. Return only valid JSON.' },
+          { role: 'user', content: gradingPrompt },
+        ],
+        temperature: 0.3,
+        response_format: { type: 'json_object' },
+      });
+
+      const content = response.choices[0]?.message?.content;
+      if (!content) throw new Error('No response from AI');
+
+      const parsed = JSON.parse(content);
+      return { data: parsed.results || [], usage: response.usage };
+    } catch (error) {
+      this.logger.error(`Failed batch short answer grading: ${error}`);
+      return { data: items.map(() => ({ score: 0, feedback: 'Grading failed', isCorrect: false })), usage: null };
     }
   }
 
@@ -1171,7 +1462,7 @@ For each question include:
 - Correct answer or sample answer
 - Point value suggestion
 
-Return as JSON: {"questions": [...]}`;
+Return as JSON: {"questions": [{"text": "...", "type": "MULTIPLE_CHOICE | SHORT_ANSWER | ESSAY", "options": ["...", "..."], "correctAnswer": "...", "points": number}]}`;
 
     try {
       const response = await this.openai!.chat.completions.create({
@@ -1199,12 +1490,12 @@ Return as JSON: {"questions": [...]}`;
     }
   }
 
-  // ─── Legacy Chat (Preserved for backward compat) ────────────────────────────
+  // ??? Legacy Chat (Preserved for backward compat) ????????????????????????????
 
   async chat(
     messages: { role: 'user' | 'assistant' | 'system'; content: string }[],
-    userId?: string, 
-    conversationId?: string, 
+    userId?: string,
+    conversationId?: string,
     schoolId?: string
   ): Promise<{ data: { response: string; conversationId: string }; usage: any }> {
     this.ensureConfigured();
@@ -1231,10 +1522,10 @@ Return as JSON: {"questions": [...]}`;
       if (userId) {
         if (!finalConversationId) {
           const lastUserMessage = messages.slice().reverse().find(m => m.role === 'user');
-          const title = lastUserMessage?.content 
+          const title = lastUserMessage?.content
             ? (lastUserMessage.content.substring(0, 40) + (lastUserMessage.content.length > 40 ? '...' : ''))
             : 'New Chat';
-          
+
           const conversation = await this.prisma.chatConversation.create({
             data: {
               userId,
@@ -1273,12 +1564,12 @@ Return as JSON: {"questions": [...]}`;
         });
       }
 
-      return { 
+      return {
         data: {
-          response: assistantContent, 
+          response: assistantContent,
           conversationId: finalConversationId || ''
         },
-        usage: response.usage 
+        usage: response.usage
       };
     } catch (error) {
       this.logger.error(`AI Chat failed: ${error}`);
@@ -1286,7 +1577,7 @@ Return as JSON: {"questions": [...]}`;
     }
   }
 
-  // ─── Conversation History Methods ───────────────────────────────────────────
+  // ??? Conversation History Methods ???????????????????????????????????????????
 
   async getConversations(userId: string) {
     return this.prisma.chatConversation.findMany({

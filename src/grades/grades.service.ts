@@ -9,13 +9,15 @@ import { SchoolRepository } from '../schools/domain/repositories/school.reposito
 import { StaffRepository } from '../schools/domain/repositories/staff.repository';
 import { UserWithContext } from '../auth/types/user-with-context.type';
 import { CreateGradeDto, UpdateGradeDto } from './dto/grade.dto';
+import { KnowledgeIndexingService } from '../ai/knowledge-indexing.service';
 
 @Injectable()
 export class GradesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly schoolRepository: SchoolRepository,
-    private readonly staffRepository: StaffRepository
+    private readonly staffRepository: StaffRepository,
+    private readonly indexingService: KnowledgeIndexingService
   ) {}
 
   /**
@@ -260,6 +262,11 @@ export class GradesService {
       },
     });
 
+    // Automated Indexing: Keep the AI knowledge base updated with the latest performance
+    this.indexingService.indexStudent(grade.enrollment.studentId).catch(err => 
+      console.error(`[AI Indexing] Failed to update student ${grade.enrollment.studentId}:`, err)
+    );
+
     return {
       id: grade.id,
       enrollmentId: grade.enrollmentId,
@@ -403,6 +410,11 @@ export class GradesService {
       },
     });
 
+    // Automated Indexing: Sync the updated performance to the knowledge base
+    this.indexingService.indexStudent(updatedGrade.enrollment.studentId).catch(err => 
+      console.error(`[AI Indexing] Failed to update student ${updatedGrade.enrollment.studentId}:`, err)
+    );
+
     return {
       id: updatedGrade.id,
       enrollmentId: updatedGrade.enrollmentId,
@@ -482,6 +494,11 @@ export class GradesService {
     await this.prisma.grade.delete({
       where: { id: gradeId },
     });
+
+    // Automated Indexing: Refresh student data after grade removal
+    this.indexingService.indexStudent(grade.enrollment.studentId).catch(err => 
+      console.error(`[AI Indexing] Failed to update student ${grade.enrollment.studentId}:`, err)
+    );
   }
 
   /**

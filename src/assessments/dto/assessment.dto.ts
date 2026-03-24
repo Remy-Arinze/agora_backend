@@ -14,6 +14,12 @@ export enum AssessmentType {
     ASSIGNMENT = 'ASSIGNMENT',
 }
 
+export enum AssessmentStatus {
+    DRAFT = 'DRAFT',
+    PUBLISHED = 'PUBLISHED',
+    CLOSED = 'CLOSED',
+}
+
 class CreateQuestionDto {
     @ApiProperty()
     @IsString()
@@ -89,6 +95,11 @@ export class CreateAssessmentDto {
     @IsNumber()
     @Min(0)
     maxScore: number;
+
+    @ApiPropertyOptional({ enum: AssessmentStatus })
+    @IsOptional()
+    @IsEnum(AssessmentStatus)
+    status?: AssessmentStatus;
 
     @ApiProperty({ type: [CreateQuestionDto] })
     @IsArray()

@@ -46,6 +46,8 @@ export class AiController {
         if (summary.aiCreditsRemaining <= 0 && summary.tier !== 'CUSTOM') {
             throw new BadRequestException('Insufficient AI credits. Please upgrade your subscription.');
         }
+
+        return summary;
     }
 
     /**
@@ -80,28 +82,33 @@ export class AiController {
         @Body() body: { messages: any[]; conversationId?: string },
         @Res() res: Response
     ) {
-        await this.verifyAccess(schoolId);
-
-        // Set SSE headers
-        res.setHeader('Content-Type', 'text/event-stream');
-        res.setHeader('Cache-Control', 'no-cache');
-        res.setHeader('Connection', 'keep-alive');
-        res.setHeader('X-Accel-Buffering', 'no');
-        res.flushHeaders();
-
-        // Handle client disconnect
-        const abortController = new AbortController();
-        req.on('close', () => {
-            abortController.abort();
-        });
+        let finalUsage = { total_tokens: 0 };
 
         try {
-            await this.aiService.chatStreamSSE(
+            const summary = await this.verifyAccess(schoolId);
+            const exchangeRate = Number(process.env.AGORA_CREDITS_PER_1M_TOKENS) || 1000;
+            const remainingTokens = summary.tier === 'CUSTOM' ? Infinity : Math.max(0, (summary.aiCreditsRemaining * 1000000) / exchangeRate);
+
+            // Set SSE headers
+            res.setHeader('Content-Type', 'text/event-stream');
+            res.setHeader('Cache-Control', 'no-cache');
+            res.setHeader('Connection', 'keep-alive');
+            res.setHeader('X-Accel-Buffering', 'no');
+            res.flushHeaders();
+
+            // Handle client disconnect
+            const abortController = new AbortController();
+            req.on('close', () => {
+                abortController.abort();
+            });
+
+            finalUsage = await this.aiService.chatStreamSSE(
                 res,
                 body.messages,
                 req.user.id,
                 body.conversationId,
-                schoolId
+                schoolId,
+                remainingTokens
             );
         } catch (error: any) {
             // If the error happens before SSE starts, write it as an SSE event
@@ -111,15 +118,16 @@ export class AiController {
             }
             res.write(`event: error\ndata: ${JSON.stringify({ message: error?.message || 'Stream failed' })}\n\n`);
         } finally {
-            // Deduct credits from the done event usage
-            // The usage is sent to the client; we deduct a flat rate for streaming sessions
+            // Deduct credits based on exact tracked token usage 
             try {
-                await this.calculateAndDeductTokensFromUsage(
-                    schoolId,
-                    req.user.id,
-                    { total_tokens: 500 }, // Conservative estimate for streaming
-                    'ai_chat_stream'
-                );
+                if (finalUsage && finalUsage.total_tokens > 0) {
+                    await this.calculateAndDeductTokensFromUsage(
+                        schoolId,
+                        req.user.id,
+                        finalUsage,
+                        'ai_chat_stream'
+                    );
+                }
             } catch (e) {
                 // Credit deduction failure should not break the stream
             }

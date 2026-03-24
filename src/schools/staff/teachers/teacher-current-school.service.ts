@@ -92,6 +92,7 @@ export class TeacherCurrentSchoolService {
       email: teacher.email,
       phone: teacher.phone,
       subject: teacher.subject,
+      schoolType: teacher.schoolType,
       isTemporary: teacher.isTemporary,
       employeeId: teacher.employeeId,
       createdAt: teacher.createdAt,

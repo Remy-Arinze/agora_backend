@@ -1,4 +1,4 @@
-import { Body, Controller, Post, Get, Put, UseGuards, Request, Param, Query, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Body, Controller, Post, Get, Put, UseGuards, Request, Param, Query, NotFoundException, ForbiddenException, Delete } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -6,6 +6,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { UserRole } from '@prisma/client';
 import { AssessmentsService } from './assessments.service';
 import { CreateAssessmentDto, SubmitAssessmentDto, GradeSubmissionDto } from './dto/assessment.dto';
+import { ResponseDto } from '../common/dto/response.dto';
 
 @ApiTags('Assessments')
 @ApiBearerAuth()
@@ -20,9 +21,14 @@ export class AssessmentsController {
     async createAssessment(
         @Request() req: any,
         @Param('schoolId') schoolId: string,
+        @Param('classId') classId: string,
         @Body() dto: CreateAssessmentDto
-    ) {
-        return this.assessmentsService.createAssessment(schoolId, dto, req.user);
+    ): Promise<ResponseDto<any>> {
+        // Ensure classId from URL matches DTO if provided
+        if (!dto.classId) dto.classId = classId;
+        
+        const data = await this.assessmentsService.createAssessment(schoolId, dto, req.user);
+        return ResponseDto.ok(data, 'Assessment created successfully');
     }
 
     @Get('classes/:classId/assessments')
@@ -32,18 +38,21 @@ export class AssessmentsController {
         @Param('schoolId') schoolId: string,
         @Param('classId') classId: string,
         @Query('termId') termId?: string
-    ) {
-        return this.assessmentsService.getClassAssessments(schoolId, classId, termId);
+    ): Promise<ResponseDto<any[]>> {
+        const data = await this.assessmentsService.getClassAssessments(schoolId, classId, termId);
+        return ResponseDto.ok(data, 'Assessments retrieved successfully');
     }
 
     @Get('assessments/:assessmentId')
     @Roles(UserRole.TEACHER, UserRole.SCHOOL_ADMIN, UserRole.STUDENT)
     @ApiOperation({ summary: 'Get details of a specific assessment' })
     async getAssessmentById(
+        @Request() req: any,
         @Param('schoolId') schoolId: string,
         @Param('assessmentId') assessmentId: string
-    ) {
-        return this.assessmentsService.getAssessmentById(schoolId, assessmentId);
+    ): Promise<ResponseDto<any>> {
+        const data = await this.assessmentsService.getAssessmentById(schoolId, assessmentId, req.user);
+        return ResponseDto.ok(data, 'Assessment retrieved successfully');
     }
 
     @Post('assessments/:assessmentId/submit')
@@ -54,8 +63,9 @@ export class AssessmentsController {
         @Param('schoolId') schoolId: string,
         @Param('assessmentId') assessmentId: string,
         @Body() dto: SubmitAssessmentDto
-    ) {
-        return this.assessmentsService.submitAssessment(schoolId, assessmentId, dto, req.user);
+    ): Promise<ResponseDto<any>> {
+        const data = await this.assessmentsService.submitAssessment(schoolId, assessmentId, dto, req.user);
+        return ResponseDto.ok(data, 'Assessment submitted successfully');
     }
 
     @Get('assessments/submissions/:submissionId')
@@ -64,8 +74,9 @@ export class AssessmentsController {
     async getSubmissionById(
         @Param('schoolId') schoolId: string,
         @Param('submissionId') submissionId: string
-    ) {
-        return this.assessmentsService.getSubmissionById(schoolId, submissionId);
+    ): Promise<ResponseDto<any>> {
+        const data = await this.assessmentsService.getSubmissionById(schoolId, submissionId);
+        return ResponseDto.ok(data, 'Submission retrieved successfully');
     }
 
     @Post('assessments/submissions/:submissionId/grade')
@@ -76,7 +87,20 @@ export class AssessmentsController {
         @Param('schoolId') schoolId: string,
         @Param('submissionId') submissionId: string,
         @Body() dto: GradeSubmissionDto
-    ) {
-        return this.assessmentsService.gradeSubmission(schoolId, submissionId, dto, req.user);
+    ): Promise<ResponseDto<any>> {
+        const data = await this.assessmentsService.gradeSubmission(schoolId, submissionId, dto, req.user);
+        return ResponseDto.ok(data, 'Submission graded successfully');
+    }
+
+    @Delete('assessments/:assessmentId')
+    @Roles(UserRole.TEACHER, UserRole.SCHOOL_ADMIN)
+    @ApiOperation({ summary: 'Delete an assessment' })
+    async deleteAssessment(
+        @Request() req: any,
+        @Param('schoolId') schoolId: string,
+        @Param('assessmentId') assessmentId: string
+    ): Promise<ResponseDto<void>> {
+        await this.assessmentsService.deleteAssessment(schoolId, assessmentId, req.user);
+        return ResponseDto.ok(undefined, 'Assessment deleted successfully');
     }
 }
