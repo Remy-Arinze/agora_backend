@@ -2,6 +2,7 @@ import { Injectable, Logger, NotFoundException, BadRequestException, ForbiddenEx
 import { PrismaService } from '../database/prisma.service';
 import { CreateAssessmentDto, SubmitAssessmentDto, GradeSubmissionDto } from './dto/assessment.dto';
 import { AiService } from '../ai/ai.service';
+import { NotificationService } from '../notification/notification.service';
 import { UserWithContext } from '../auth/types/user-with-context.type';
 import { UserRole } from '@prisma/client';
 
@@ -11,7 +12,8 @@ export class AssessmentsService {
 
     constructor(
         private readonly prisma: PrismaService,
-        private readonly aiService: AiService
+        private readonly aiService: AiService,
+        private readonly notificationService: NotificationService
     ) { }
 
     async createAssessment(schoolId: string, dto: CreateAssessmentDto, user: UserWithContext) {
@@ -233,8 +235,8 @@ export class AssessmentsService {
         });
 
         // Use transaction to ensure assessment submission
-        return this.prisma.$transaction(async (tx) => {
-            const submission = await tx.assessmentSubmission.create({
+        const submission = await this.prisma.$transaction(async (tx) => {
+            const sub = await tx.assessmentSubmission.create({
                 data: {
                     assessmentId,
                     studentId: student.id,
@@ -249,8 +251,27 @@ export class AssessmentsService {
                 }
             });
 
-            return submission;
+            return sub;
         });
+
+        // --- Emit real-time notification to the teacher ---
+        try {
+            const subject = await this.prisma.subject.findUnique({ where: { id: assessment.subjectId }, select: { name: true } });
+            this.notificationService.emitSubmissionNotification({
+                schoolId,
+                teacherId: assessment.teacherId,
+                studentName: `${student.firstName || ''} ${student.lastName || ''}`.trim(),
+                assessmentTitle: assessment.title,
+                subjectName: subject?.name || 'Unknown Subject',
+                assessmentId,
+                submissionId: submission.id,
+                timestamp: new Date().toISOString(),
+            });
+        } catch (notifErr) {
+            this.logger.warn(`Failed to emit submission notification: ${notifErr}`);
+        }
+
+        return submission;
     }
 
     async getSubmissionById(schoolId: string, submissionId: string) {

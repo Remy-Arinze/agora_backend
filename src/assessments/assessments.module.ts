@@ -3,9 +3,10 @@ import { AssessmentsController } from './assessments.controller';
 import { AssessmentsService } from './assessments.service';
 import { DatabaseModule } from '../database/database.module';
 import { AiModule } from '../ai/ai.module';
+import { NotificationModule } from '../notification/notification.module';
 
 @Module({
-    imports: [DatabaseModule, AiModule],
+    imports: [DatabaseModule, AiModule, NotificationModule],
     controllers: [AssessmentsController],
     providers: [AssessmentsService],
     exports: [AssessmentsService]

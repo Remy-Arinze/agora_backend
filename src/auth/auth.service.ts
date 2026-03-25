@@ -388,6 +388,16 @@ export class AuthService {
         currentProfileId,
       );
 
+      // Get school slug if we have a school context
+      let tenantId: string | null = null;
+      if (currentSchoolId) {
+        const school = await this.prisma.school.findUnique({
+          where: { id: currentSchoolId },
+          select: { subdomain: true },
+        });
+        tenantId = school?.subdomain || null;
+      }
+
       return {
         ...tokens,
         user: {
@@ -401,6 +411,7 @@ export class AuthService {
           profileId: currentProfileId,
           publicId: currentPublicId,
           schoolId: currentSchoolId,
+          tenantId, // ✅ Include tenant ID (subdomain)
           adminRole,
           adminSchoolType,
         },

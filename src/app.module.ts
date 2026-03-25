@@ -1,6 +1,7 @@
 import { Module, NestModule, MiddlewareConsumer, RequestMethod } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { ThrottlerModule, ThrottlerStorage } from '@nestjs/throttler';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { Reflector } from '@nestjs/core';
@@ -42,6 +43,7 @@ import { HttpExceptionFilter } from './common/filters/http-exception.filter';
       envFilePath: ['.env.local', '.env'],
     }),
     ScheduleModule.forRoot(),
+    EventEmitterModule.forRoot(),
     // Global rate limiting: 300 requests per minute by default
     // Auth endpoints have stricter limits via @Throttle decorators
     ThrottlerModule.forRoot([
@@ -105,6 +107,10 @@ export class AppModule implements NestModule {
         { path: '/public/(.*)', method: RequestMethod.ALL },
         { path: '/auth', method: RequestMethod.ALL },
         { path: '/auth/(.*)', method: RequestMethod.ALL },
+        { path: '/teachers/me', method: RequestMethod.ALL },
+        { path: '/teachers/me/(.*)', method: RequestMethod.ALL },
+        { path: '/students/me', method: RequestMethod.ALL },
+        { path: '/students/me/(.*)', method: RequestMethod.ALL },
         { path: '/swagger', method: RequestMethod.ALL },
         { path: '/swagger/(.*)', method: RequestMethod.ALL },
         { path: '/swagger-json', method: RequestMethod.ALL },
