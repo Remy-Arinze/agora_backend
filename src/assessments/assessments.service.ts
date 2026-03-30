@@ -257,30 +257,31 @@ export class AssessmentsService {
 
             if (question) {
                 if (question.type === 'MULTIPLE_CHOICE') {
-                    const optionsArray = Array.isArray(question.options) ? question.options as string[] : JSON.parse((question.options as string) || '[]');
-                    const getOptText = (val: string) => {
+                    const optionsArray = Array.isArray(question.options) 
+                        ? question.options as string[] 
+                        : (typeof question.options === 'string' ? JSON.parse(question.options || '[]') : []);
+                    const getOptText = (val: string, options: string[]) => {
                         if (!val) return '';
                         const clean = val.trim();
                         if (/^[A-D]$/i.test(clean)) {
                             const idx = clean.toUpperCase().charCodeAt(0) - 65;
-                            if (optionsArray[idx]) return optionsArray[idx];
+                            return options[idx] || clean;
                         }
                         const match = clean.match(/^[A-D][\.\)]\s*(.*)/i);
-                        if (match) return match[1];
-                        return clean;
+                        return match ? match[1] : clean;
                     };
-                    const normExpected = getOptText(question.correctAnswer || '').toLowerCase();
-                    const normActual = getOptText(ans.selectedOption || '').toLowerCase();
+                    const normExpected = getOptText(question.correctAnswer || '', optionsArray).toLowerCase();
+                    const normActual = getOptText(ans.selectedOption || '', optionsArray).toLowerCase();
                     isCorrect = normExpected === normActual && normExpected !== '';
 
                     score = isCorrect ? Number(question.points) : 0;
                     totalScore += score;
                     gradedBy = 'AUTO';
                 } else if (question.type === 'SHORT_ANSWER') {
-                    const aiResult = aiResults.find((_, i) => aiGradingItems[i]?.question === question.text);
+                    const aiResult = aiResults.find((res, i) => aiGradingItems[i]?.question === question.text);
                     if (aiResult) {
                         isCorrect = aiResult.isCorrect;
-                        score = aiResult.score;
+                        score = Number(aiResult.score) || 0;
                         feedback = aiResult.feedback;
                         totalScore += score;
                         gradedBy = 'AI';
@@ -295,7 +296,7 @@ export class AssessmentsService {
                 selectedOption: ans.selectedOption,
                 isCorrect,
                 score,
-                feedback,
+                aiFeedback: feedback,
                 gradedBy
             };
         });
