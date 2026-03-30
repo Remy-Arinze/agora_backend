@@ -12,6 +12,27 @@ export interface SubmissionNotificationPayload {
     timestamp: string;
 }
 
+export interface AssessmentPublishedPayload {
+    schoolId: string;
+    classId?: string;
+    classArmId?: string;
+    assessmentTitle: string;
+    subjectName: string;
+    assessmentId: string;
+    teacherName: string;
+    timestamp: string;
+}
+
+export interface GradePublishedPayload {
+    schoolId: string;
+    studentId: string; // The student's profile ID
+    assessmentTitle: string;
+    subjectName: string;
+    score: number;
+    maxScore: number;
+    timestamp: string;
+}
+
 @Injectable()
 export class NotificationService {
     private readonly logger = new Logger(NotificationService.name);
@@ -21,5 +42,15 @@ export class NotificationService {
     emitSubmissionNotification(payload: SubmissionNotificationPayload) {
         this.logger.log(`Emitting submission notification for teacher ${payload.teacherId}: ${payload.studentName} submitted ${payload.assessmentTitle}`);
         this.eventEmitter.emit('assessment.submitted', payload);
+    }
+
+    emitAssessmentPublished(payload: AssessmentPublishedPayload) {
+        this.logger.log(`Emitting assessment published notification for class ${payload.classId || payload.classArmId}: ${payload.assessmentTitle}`);
+        this.eventEmitter.emit('assessment.published', payload);
+    }
+
+    emitGradePublished(payload: GradePublishedPayload) {
+        this.logger.log(`Emitting grade published notification for student ${payload.studentId}: ${payload.assessmentTitle}`);
+        this.eventEmitter.emit('grade.published', payload);
     }
 }

@@ -3,6 +3,7 @@ import { DatabaseModule } from '../database/database.module';
 import { AuthModule } from '../auth/auth.module';
 import { EmailModule } from '../email/email.module';
 import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
+import { LiveStatusModule } from '../live-status/live-status.module';
 
 // Super Admin
 import { SuperAdminSchoolsController } from './super-admin/super-admin-schools.controller';
@@ -66,6 +67,7 @@ import { CloudinaryModule } from '../storage/cloudinary/cloudinary.module';
     CurriculumModule,
     CloudinaryModule,
     SubscriptionsModule,
+    LiveStatusModule,
   ],
   controllers: [
     // New architecture controllers

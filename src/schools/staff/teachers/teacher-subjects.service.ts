@@ -31,7 +31,7 @@ export class TeacherSubjectsService {
    */
   async getTeacherSubjects(schoolId: string, teacherId: string): Promise<TeacherSubjectDto[]> {
     // Validate school exists
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new NotFoundException('School not found');
     }
@@ -80,7 +80,7 @@ export class TeacherSubjectsService {
     teacherId: string
   ): Promise<TeacherWithSubjectsDto> {
     // Validate school exists
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new NotFoundException('School not found');
     }
@@ -133,7 +133,7 @@ export class TeacherSubjectsService {
     dto: UpdateTeacherSubjectsDto
   ): Promise<TeacherSubjectDto[]> {
     // Validate school exists
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new NotFoundException('School not found');
     }
@@ -178,7 +178,7 @@ export class TeacherSubjectsService {
     subjectId: string
   ): Promise<TeacherSubjectDto> {
     // Validate school exists
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new NotFoundException('School not found');
     }
@@ -234,7 +234,7 @@ export class TeacherSubjectsService {
     subjectId: string
   ): Promise<void> {
     // Validate school exists
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new NotFoundException('School not found');
     }
@@ -288,7 +288,7 @@ export class TeacherSubjectsService {
     classId: string
   ): Promise<AssignableSubjectDto[]> {
     // Validate school exists
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new NotFoundException('School not found');
     }

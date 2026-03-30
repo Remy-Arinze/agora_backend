@@ -237,7 +237,7 @@ Admitted: ${enr.createdAt.toLocaleDateString()}`.trim();
 
     if (existing) {
       await this.prisma.$executeRawUnsafe(
-        `UPDATE "KnowledgeChunk" SET "content" = $1, "metadata" = $2, "updatedAt" = NOW() WHERE "id" = $3`,
+        `UPDATE "KnowledgeChunk" SET "content" = $1, "metadata" = $2::jsonb, "updatedAt" = NOW() WHERE "id" = $3`,
         content,
         JSON.stringify(metadataWithId),
         existing.id,
@@ -262,7 +262,7 @@ Admitted: ${enr.createdAt.toLocaleDateString()}`.trim();
       const id = `kc_${Math.random().toString(36).substring(2, 11)}`;
       await this.prisma.$executeRawUnsafe(
         `INSERT INTO "KnowledgeChunk" ("id", "schoolId", "content", "metadata", "updatedAt")
-         VALUES ($1, $2, $3, $4, NOW())`,
+         VALUES ($1, $2, $3, $4::jsonb, NOW())`,
         id,
         schoolId,
         content,

@@ -187,8 +187,14 @@ const AGORA_TOOLS: Array<{ type: 'function'; function: { name: string; descripti
           subject: { type: 'string', description: 'The academic subject' }, 
           gradeLevel: { type: 'string', description: 'e.g., JSS 1' },
           questionCount: { type: 'number' }, 
+          questionTypes: { 
+            type: 'array', 
+            items: { type: 'string', enum: ['multiple_choice', 'true_false', 'short_answer'] },
+            description: 'Types of questions to include'
+          },
           difficulty: { type: 'string', enum: ['easy', 'medium', 'hard'] },
         },
+        required: ['topic', 'subject', 'gradeLevel'],
       },
     },
   },
@@ -232,8 +238,14 @@ const AGORA_TOOLS: Array<{ type: 'function'; function: { name: string; descripti
           subject: { type: 'string', description: 'The academic subject' }, 
           gradeLevel: { type: 'string', description: 'e.g., SS 2' },
           questionCount: { type: 'number' }, 
+          questionTypes: { 
+            type: 'array', 
+            items: { type: 'string', enum: ['multiple_choice', 'short_answer', 'essay'] },
+            description: 'Types of questions to include'
+          },
           difficulty: { type: 'string', enum: ['easy', 'medium', 'hard', 'mixed'] },
         },
+        required: ['topic', 'subject', 'gradeLevel'],
       },
     },
   },
@@ -881,7 +893,7 @@ export class AiService {
           subject: args.subject || 'General',
           gradeLevel: args.gradeLevel || 'Any',
           questionCount: args.questionCount || 5,
-          questionTypes: ['multiple_choice'],
+          questionTypes: args.questionTypes || ['multiple_choice'],
           difficulty: args.difficulty || 'medium',
         });
 
@@ -923,6 +935,7 @@ export class AiService {
           subject: args.subject || 'General',
           gradeLevel: args.gradeLevel || 'Any',
           questionCount: args.questionCount || 20,
+          questionTypes: args.questionTypes || ['multiple_choice', 'short_answer', 'essay'],
           difficulty: args.difficulty || 'mixed',
         });
 

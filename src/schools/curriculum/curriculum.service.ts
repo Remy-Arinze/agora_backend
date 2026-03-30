@@ -239,7 +239,7 @@ export class CurriculumService {
     user: UserWithContext
   ): Promise<CurriculumDto> {
     // Validate school exists
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -346,7 +346,7 @@ export class CurriculumService {
     dto: GenerateCurriculumDto,
     user: UserWithContext
   ): Promise<CurriculumDto> {
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -565,7 +565,7 @@ export class CurriculumService {
     termId?: string,
     user?: UserWithContext
   ): Promise<CurriculumDto | null> {
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -638,7 +638,7 @@ export class CurriculumService {
     curriculumId: string,
     user?: UserWithContext
   ): Promise<CurriculumDto> {
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -678,7 +678,7 @@ export class CurriculumService {
     updateData: UpdateCurriculumDto,
     user: UserWithContext
   ): Promise<CurriculumDto> {
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -784,7 +784,7 @@ export class CurriculumService {
     curriculumId: string,
     user: UserWithContext
   ): Promise<void> {
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }

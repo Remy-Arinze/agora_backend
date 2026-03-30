@@ -26,7 +26,7 @@ export class StudentAdmissionService {
    */
   async addStudent(schoolId: string, studentData: AddStudentDto): Promise<any> {
     // Validate school exists
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }

@@ -30,7 +30,7 @@ export class GradesService {
     }
 
     // Validate school exists
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new NotFoundException('School not found');
     }
@@ -309,7 +309,7 @@ export class GradesService {
     }
 
     // Validate school exists
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new NotFoundException('School not found');
     }
@@ -452,7 +452,7 @@ export class GradesService {
     }
 
     // Validate school exists
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new NotFoundException('School not found');
     }
@@ -514,7 +514,7 @@ export class GradesService {
     user?: UserWithContext
   ): Promise<any[]> {
     // Validate school exists
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new NotFoundException('School not found');
     }
@@ -704,7 +704,7 @@ export class GradesService {
     user?: UserWithContext
   ): Promise<any[]> {
     // Validate school exists
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new NotFoundException('School not found');
     }
@@ -873,7 +873,7 @@ export class GradesService {
     }
 
     // Validate school exists
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new NotFoundException('School not found');
     }

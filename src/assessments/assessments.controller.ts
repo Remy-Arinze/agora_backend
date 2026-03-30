@@ -26,7 +26,7 @@ export class AssessmentsController {
     ): Promise<ResponseDto<any>> {
         // Ensure classId from URL matches DTO if provided
         if (!dto.classId) dto.classId = classId;
-        
+
         const data = await this.assessmentsService.createAssessment(schoolId, dto, req.user);
         return ResponseDto.ok(data, 'Assessment created successfully');
     }
@@ -37,9 +37,10 @@ export class AssessmentsController {
     async getClassAssessments(
         @Param('schoolId') schoolId: string,
         @Param('classId') classId: string,
-        @Query('termId') termId?: string
+        @Query('termId') termId?: string,
+        @Query('studentId') studentId?: string
     ): Promise<ResponseDto<any[]>> {
-        const data = await this.assessmentsService.getClassAssessments(schoolId, classId, termId);
+        const data = await this.assessmentsService.getClassAssessments(schoolId, classId, termId, studentId);
         return ResponseDto.ok(data, 'Assessments retrieved successfully');
     }
 

@@ -4,13 +4,16 @@ import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { OnEvent } from '@nestjs/event-emitter';
 import { JwtService } from '@nestjs/jwt';
 import { Response, Request } from 'express';
-import { SubmissionNotificationPayload } from './notification.service';
+import { 
+    SubmissionNotificationPayload, 
+    AssessmentPublishedPayload, 
+    GradePublishedPayload 
+} from './notification.service';
 import { PrismaService } from '../database/prisma.service';
 
 /**
  * SSE-based notification controller.
- * Teachers connect to GET /schools/:schoolId/notifications/stream?token=JWT
- * and receive real-time events when students submit assessments.
+ * Supports both Teachers and Students.
  * 
  * NOTE: We skip the standard JwtAuthGuard here because EventSource (SSE)
  * cannot set custom HTTP headers. Instead, we extract the JWT from the
@@ -21,8 +24,9 @@ import { PrismaService } from '../database/prisma.service';
 export class NotificationController {
     private readonly logger = new Logger(NotificationController.name);
 
-    // Map of teacherProfileId -> Set of SSE Response objects
-    private readonly connections = new Map<string, Set<Response>>();
+    // Map of profileId -> Set of SSE Response objects
+    private readonly teacherConnections = new Map<string, Set<Response>>();
+    private readonly studentConnections = new Map<string, Set<Response>>();
 
     constructor(
         private readonly prisma: PrismaService,
@@ -74,21 +78,6 @@ export class NotificationController {
             return;
         }
 
-        if (user.role !== 'TEACHER' && user.role !== 'SCHOOL_ADMIN') {
-            res.status(403).json({ message: 'Forbidden' });
-            return;
-        }
-
-        // Resolve the teacher's profile ID so we can match events
-        const teacher = await this.prisma.teacher.findFirst({
-            where: { userId: user.id, schoolId },
-            select: { id: true },
-        });
-
-        const teacherProfileId = teacher?.id || user.id;
-
-        this.logger.log(`SSE notification stream opened for teacher ${teacherProfileId}`);
-
         // SSE headers
         res.setHeader('Content-Type', 'text/event-stream');
         res.setHeader('Cache-Control', 'no-cache');
@@ -99,11 +88,48 @@ export class NotificationController {
         // Send initial connected event
         res.write(`event: connected\ndata: ${JSON.stringify({ message: 'Notification stream connected' })}\n\n`);
 
-        // Register this connection
-        if (!this.connections.has(teacherProfileId)) {
-            this.connections.set(teacherProfileId, new Set());
+        if (user.role === 'TEACHER' || user.role === 'SCHOOL_ADMIN') {
+            // Resolve the teacher's profile ID
+            const teacher = await this.prisma.teacher.findFirst({
+                where: { userId: user.id, schoolId },
+                select: { id: true },
+            });
+            const profileId = teacher?.id || user.id;
+
+            if (!this.teacherConnections.has(profileId)) {
+                this.teacherConnections.set(profileId, new Set());
+            }
+            this.teacherConnections.get(profileId)!.add(res);
+            this.logger.log(`SSE teacher notification stream opened: ${profileId}`);
+
+            req.on('close', () => {
+                this.teacherConnections.get(profileId)?.delete(res);
+                if (this.teacherConnections.get(profileId)?.size === 0) {
+                    this.teacherConnections.delete(profileId);
+                }
+            });
+        } else if (user.role === 'STUDENT') {
+            const student = await this.prisma.student.findUnique({
+                where: { userId: user.id },
+                select: { id: true },
+            });
+            const profileId = student?.id;
+
+            if (profileId) {
+                if (!this.studentConnections.has(profileId)) {
+                    this.studentConnections.set(profileId, new Set());
+                }
+                this.studentConnections.get(profileId)!.add(res);
+                this.logger.log(`SSE student notification stream opened: ${profileId}`);
+
+                req.on('close', () => {
+                    this.studentConnections.get(profileId)?.delete(res);
+                    if (this.studentConnections.get(profileId)?.size === 0) {
+                        this.studentConnections.delete(profileId);
+                    }
+                });
+            }
         }
-        this.connections.get(teacherProfileId)!.add(res);
 
         // Heartbeat every 30 seconds
         const heartbeat = setInterval(() => {
@@ -114,27 +140,16 @@ export class NotificationController {
             }
         }, 30000);
 
-        // Cleanup on disconnect
         req.on('close', () => {
             clearInterval(heartbeat);
-            this.connections.get(teacherProfileId)?.delete(res);
-            if (this.connections.get(teacherProfileId)?.size === 0) {
-                this.connections.delete(teacherProfileId);
-            }
-            this.logger.log(`SSE notification stream closed for teacher ${teacherProfileId}`);
+            this.logger.log(`SSE notification stream closed for user ${user.id}`);
         });
     }
 
-    /**
-     * Listens for internal 'assessment.submitted' events and pushes them
-     * to the relevant teacher's SSE connections.
-     */
     @OnEvent('assessment.submitted')
     handleSubmissionEvent(payload: SubmissionNotificationPayload) {
-        const connections = this.connections.get(payload.teacherId);
-        if (!connections || connections.size === 0) {
-            return;
-        }
+        const connections = this.teacherConnections.get(payload.teacherId);
+        if (!connections || connections.size === 0) return;
 
         const eventData = JSON.stringify({
             type: 'ASSESSMENT_SUBMITTED',
@@ -147,13 +162,67 @@ export class NotificationController {
         });
 
         connections.forEach((res) => {
-            try {
-                res.write(`event: notification\ndata: ${eventData}\n\n`);
-            } catch (err) {
-                this.logger.warn(`Failed to write SSE event: ${err}`);
-            }
+            try { res.write(`event: notification\ndata: ${eventData}\n\n`); }
+            catch (err) { this.logger.warn(`Failed to write SSE event: ${err}`); }
+        });
+    }
+
+    @OnEvent('assessment.published')
+    async handleAssessmentPublished(payload: AssessmentPublishedPayload) {
+        // Find all students in this class/arm
+        const students = await this.prisma.student.findMany({
+            where: {
+                enrollments: {
+                    some: {
+                        isActive: true,
+                        OR: [
+                            { classId: payload.classId },
+                            { classArmId: payload.classArmId }
+                        ]
+                    }
+                }
+            },
+            select: { id: true }
         });
 
-        this.logger.log(`Pushed notification to ${connections.size} connection(s) for teacher ${payload.teacherId}`);
+        const studentIds = students.map(s => s.id);
+        const eventData = JSON.stringify({
+            type: 'ASSESSMENT_PUBLISHED',
+            assessmentTitle: payload.assessmentTitle,
+            subjectName: payload.subjectName,
+            assessmentId: payload.assessmentId,
+            teacherName: payload.teacherName,
+            timestamp: payload.timestamp,
+        });
+
+        studentIds.forEach(profileId => {
+            const connections = this.studentConnections.get(profileId);
+            if (connections) {
+                connections.forEach(res => {
+                    try { res.write(`event: notification\ndata: ${eventData}\n\n`); }
+                    catch (err) { }
+                });
+            }
+        });
+    }
+
+    @OnEvent('grade.published')
+    handleGradePublished(payload: GradePublishedPayload) {
+        const connections = this.studentConnections.get(payload.studentId);
+        if (!connections || connections.size === 0) return;
+
+        const eventData = JSON.stringify({
+            type: 'GRADE_PUBLISHED',
+            assessmentTitle: payload.assessmentTitle,
+            subjectName: payload.subjectName,
+            score: payload.score,
+            maxScore: payload.maxScore,
+            timestamp: payload.timestamp,
+        });
+
+        connections.forEach(res => {
+            try { res.write(`event: notification\ndata: ${eventData}\n\n`); }
+            catch (err) { }
+        });
     }
 }

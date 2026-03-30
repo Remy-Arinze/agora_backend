@@ -50,8 +50,6 @@ export class SchoolDto {
   @ApiProperty()
   name: string;
 
-  @ApiProperty()
-  subdomain: string;
 
   @ApiProperty()
   domain: string | null;

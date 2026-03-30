@@ -38,7 +38,6 @@ export class TeacherCurrentSchoolService {
           select: {
             id: true,
             name: true,
-            subdomain: true,
             hasPrimary: true,
             hasSecondary: true,
             hasTertiary: true,
@@ -64,7 +63,6 @@ export class TeacherCurrentSchoolService {
             select: {
               id: true,
               name: true,
-              subdomain: true,
               hasPrimary: true,
               hasSecondary: true,
               hasTertiary: true,
@@ -116,7 +114,6 @@ export class TeacherCurrentSchoolService {
       select: {
         id: true,
         name: true,
-        subdomain: true,
         logo: true,
         hasPrimary: true,
         hasSecondary: true,

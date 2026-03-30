@@ -5,18 +5,10 @@ import { PrismaService } from '../database/prisma.service';
 export class TenantService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findSchoolBySubdomain(subdomain: string) {
-    return this.prisma.school.findUnique({
-      where: { subdomain },
-      select: {
-        id: true,
-        name: true,
-        subdomain: true,
-        isActive: true,
-      },
-    });
-  }
-
+  /**
+   * Get the tenant ID (schoolId UUID) from the request.
+   * This is set by TenantMiddleware from the JWT payload.
+   */
   async getTenantId(request: any): Promise<string | null> {
     return request.tenantId || null;
   }

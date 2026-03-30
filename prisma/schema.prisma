@@ -283,7 +283,6 @@ model School {
   id           String   @id @default(cuid())
   name         String
   schoolId     String?  @unique // Unique school identifier (nullable for migration)
-  subdomain    String   @unique
   domain       String?
   logo         String? // Cloudinary URL for school logo
   address      String?
@@ -331,7 +330,6 @@ model School {
   aiUsageLogs         AiUsageLog[]
   knowledgeChunks     KnowledgeChunk[]
 
-  @@index([subdomain])
   @@index([schoolId])
   @@index([isActive])
   @@index([isActive, createdAt])
