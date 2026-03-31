@@ -140,6 +140,39 @@ export class GradesController {
     return ResponseDto.ok(data, 'Grades retrieved successfully');
   }
 
+  @Get('classes/:classId/students')
+  @RequirePermission(PermissionResource.GRADES, PermissionType.READ)
+  @ApiOperation({ summary: 'Get grades grouped by students for a class' })
+  @ApiQuery({ name: 'subject', required: false, description: 'Filter by subject' })
+  @ApiQuery({ name: 'termId', required: false, description: 'Filter by term ID' })
+  @ApiQuery({
+    name: 'gradeType',
+    required: false,
+    description: 'Filter by grade type (CA, ASSIGNMENT, EXAM)',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Student grades retrieved successfully',
+  })
+  async getClassGradesGroupedByStudents(
+    @Param('schoolId') schoolId: string,
+    @Param('classId') classId: string,
+    @Query('subject') subject?: string,
+    @Query('termId') termId?: string,
+    @Query('gradeType') gradeType?: string,
+    @CurrentUser() user?: UserWithContext
+  ): Promise<ResponseDto<any[]>> {
+    const data = await this.gradesService.getClassGradesGroupedByStudents(
+      schoolId,
+      classId,
+      subject,
+      termId,
+      gradeType,
+      user
+    );
+    return ResponseDto.ok(data, 'Student grades retrieved successfully');
+  }
+
   @Get('students/:studentId')
   @RequirePermission(PermissionResource.GRADES, PermissionType.READ)
   @ApiOperation({ summary: 'Get grades for a student' })
