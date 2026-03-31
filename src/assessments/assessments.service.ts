@@ -1,4 +1,5 @@
-import { Injectable, Logger, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException, ForbiddenException, ConflictException } from '@nestjs/common';
+import { v4 as uuidv4 } from 'uuid';
 import { PrismaService } from '../database/prisma.service';
 import { CreateAssessmentDto, SubmitAssessmentDto, GradeSubmissionDto } from './dto/assessment.dto';
 import { AiService } from '../ai/ai.service';
@@ -78,6 +79,12 @@ export class AssessmentsService {
                 status: dto.status || 'DRAFT',
                 dueDate: dto.dueDate ? new Date(dto.dueDate) : null,
                 maxScore: dto.maxScore,
+                isTimed: dto.isTimed || false,
+                duration: dto.duration || null,
+                hasIntegrity: dto.hasIntegrity || false,
+                autoSubmitOnTimeout: dto.autoSubmitOnTimeout !== undefined ? dto.autoSubmitOnTimeout : true,
+                violationThreshold: dto.violationThreshold !== undefined ? dto.violationThreshold : 1,
+                pointsPerViolation: dto.pointsPerViolation || 0,
                 questions: {
                     create: dto.questions.map(q => ({
                         text: q.text,
@@ -189,6 +196,118 @@ export class AssessmentsService {
         return assessment;
     }
 
+    async startAssessment(schoolId: string, assessmentId: string, user: UserWithContext) {
+        const student = await this.prisma.student.findUnique({
+            where: { userId: user.id }
+        });
+
+        if (!student) {
+            throw new ForbiddenException('Student profile not found');
+        }
+
+        const assessment = await this.prisma.assessment.findUnique({
+            where: { id: assessmentId }
+        });
+
+        if (!assessment || assessment.schoolId !== schoolId) {
+            throw new NotFoundException('Assessment not found');
+        }
+
+        // Check if assessment is published
+        if (assessment.status !== 'PUBLISHED') {
+            throw new ForbiddenException('Assessment is not available');
+        }
+
+        // Single session enforcement: Generate a new token
+        const newSessionToken = uuidv4();
+
+        // Upsert the submission record
+        const submission = await this.prisma.assessmentSubmission.upsert({
+            where: {
+                assessmentId_studentId: {
+                    assessmentId,
+                    studentId: student.id
+                }
+            },
+            update: {
+                examSessionToken: newSessionToken,
+                // Restarting the timer if it's the FIRST time
+                startedAt: { set: undefined } // Don't overwrite startedAt if already set
+            },
+            create: {
+                assessmentId,
+                studentId: student.id,
+                examSessionToken: newSessionToken,
+                startedAt: new Date(),
+                status: 'SUBMITTED' // It starts as submitted to signal it's in progress but technically it is "IN_PROGRESS"
+            }
+        });
+
+        // If startedAt was already set, we don't overwrite it to prevent timer resets on refresh
+        let startedAt = submission.startedAt;
+        if (!startedAt) {
+            const updated = await this.prisma.assessmentSubmission.update({
+                where: { id: submission.id },
+                data: { startedAt: new Date() }
+            });
+            startedAt = updated.startedAt;
+        }
+
+        return {
+            examSessionToken: newSessionToken,
+            startedAt: startedAt?.toISOString(),
+            duration: assessment.isTimed ? assessment.duration : null
+        };
+    }
+
+    async logViolation(schoolId: string, assessmentId: string, type: string, user: UserWithContext) {
+        const student = await this.prisma.student.findUnique({
+            where: { userId: user.id }
+        });
+
+        if (!student) throw new ForbiddenException();
+
+        const submission = await this.prisma.assessmentSubmission.findUnique({
+            where: { assessmentId_studentId: { assessmentId, studentId: student.id } },
+            include: { assessment: true }
+        });
+
+        if (!submission) throw new NotFoundException('Submission not found');
+        if (submission.status === 'GRADED') throw new ForbiddenException('Already graded');
+
+        const assessment = submission.assessment;
+
+        // Log the violation
+        await this.prisma.assessmentViolation.create({
+            data: {
+                submissionId: submission.id,
+                type
+            }
+        });
+
+        // Update violation count and handle penalties
+        const newCount = submission.violationCount + 1;
+        let isFlagged = submission.isFlagged;
+        let pointDeductions = Number(submission.pointDeductions || 0);
+
+        if (newCount > (assessment.violationThreshold || 1)) {
+            isFlagged = true;
+            // Apply point deduction if configured
+            if (Number(assessment.pointsPerViolation) > 0) {
+                pointDeductions += Number(assessment.pointsPerViolation);
+            }
+        }
+
+        return this.prisma.assessmentSubmission.update({
+            where: { id: submission.id },
+            data: {
+                violationCount: newCount,
+                isFlagged,
+                pointDeductions
+            }
+        });
+    }
+
     async submitAssessment(schoolId: string, assessmentId: string, dto: SubmitAssessmentDto, user: UserWithContext) {
         const student = await this.prisma.student.findUnique({
             where: { userId: user.id }
@@ -217,7 +336,28 @@ export class AssessmentsService {
         });
 
         if (existingSubmission) {
-            throw new ForbiddenException('You have already submitted this assessment.');
+            // SINGLE SESSION ENFORCEMENT
+            if (dto.examSessionToken && existingSubmission.examSessionToken && dto.examSessionToken !== existingSubmission.examSessionToken) {
+                throw new ConflictException('Multiple sessions detected. This attempt is no longer valid.');
+            }
+
+            if (existingSubmission.status === 'GRADED') {
+                throw new ForbiddenException('You have already submitted this assessment.');
+            }
+
+            // TIMER VALIDATION
+            if (assessment.isTimed && assessment.duration && existingSubmission.startedAt) {
+                const now = new Date();
+                const diffMinutes = (now.getTime() - existingSubmission.startedAt.getTime()) / (1000 * 60);
+                
+                // Allow a small grace period (e.g., 2 minutes) for network latency
+                if (diffMinutes > assessment.duration + 2) {
+                    // Logic for auto-submit already handled by frontend, 
+                    // but server should technically block any LATE submissions
+                    this.logger.warn(`Late submission attempt by student ${student.id} for assessment ${assessmentId}`);
+                    // We might still allow it but mark as auto-submitted/late
+                }
+            }
         }
 
         // 1. Separate MCQs for instant grading and Short Answers for AI grading

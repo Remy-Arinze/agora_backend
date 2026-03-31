@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsNotEmpty, IsOptional, IsEnum, IsArray, IsNumber, IsDateString, ValidateNested, Min, Max } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsEnum, IsArray, IsNumber, IsBoolean, IsDateString, ValidateNested, Min, Max } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export enum QuestionType {
@@ -91,10 +91,42 @@ export class CreateAssessmentDto {
     @IsDateString()
     dueDate?: string;
 
-    @ApiProperty()
     @IsNumber()
     @Min(0)
     maxScore: number;
+
+    @ApiPropertyOptional()
+    @IsOptional()
+    @IsBoolean()
+    isTimed?: boolean;
+
+    @ApiPropertyOptional()
+    @IsOptional()
+    @IsNumber()
+    @Min(1)
+    duration?: number;
+
+    @ApiPropertyOptional()
+    @IsOptional()
+    @IsBoolean()
+    hasIntegrity?: boolean;
+
+    @ApiPropertyOptional()
+    @IsOptional()
+    @IsBoolean()
+    autoSubmitOnTimeout?: boolean;
+
+    @ApiPropertyOptional()
+    @IsOptional()
+    @IsNumber()
+    @Min(0)
+    violationThreshold?: number;
+
+    @ApiPropertyOptional()
+    @IsOptional()
+    @IsNumber()
+    @Min(0)
+    pointsPerViolation?: number;
 
     @ApiPropertyOptional({ enum: AssessmentStatus })
     @IsOptional()
@@ -131,6 +163,39 @@ export class SubmitAssessmentDto {
     @ValidateNested({ each: true })
     @Type(() => SubmitAnswerDto)
     answers: SubmitAnswerDto[];
+
+    @ApiPropertyOptional()
+    @IsOptional()
+    @IsString()
+    examSessionToken?: string;
+}
+
+export class StartAssessmentResponseDto {
+    @ApiProperty()
+    examSessionToken: string;
+
+    @ApiProperty()
+    startedAt: string;
+
+    @ApiProperty()
+    duration: number | null;
+}
+
+export class LogViolationDto {
+    @ApiProperty()
+    @IsString()
+    @IsNotEmpty()
+    @IsEnum(['TAB_SWITCH', 'FULLSCREEN_EXIT', 'CLIPBOARD_COPY', 'CLIPBOARD_PASTE', 'CLIPBOARD_CUT', 'DEVTOOLS_OPEN', 'WINDOW_BLUR'])
+    type: 'TAB_SWITCH' | 'FULLSCREEN_EXIT' | 'CLIPBOARD_COPY' | 'CLIPBOARD_PASTE' | 'CLIPBOARD_CUT' | 'DEVTOOLS_OPEN' | 'WINDOW_BLUR';
+
+    @ApiPropertyOptional()
+    @IsOptional()
+    @IsString()
+    details?: string;
+
+    @ApiPropertyOptional()
+    @IsOptional()
+    metadata?: any;
 }
 
 export class GradeSubmissionDto {

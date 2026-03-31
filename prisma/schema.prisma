@@ -1507,6 +1507,12 @@ model Assessment {
   status      String   @default("DRAFT") // "DRAFT", "PUBLISHED", "CLOSED"
   dueDate     DateTime?
   maxScore    Decimal  @default(100)
+  isTimed          Boolean   @default(false)
+  duration         Int?      // In minutes
+  hasIntegrity     Boolean   @default(false)
+  autoSubmitOnTimeout Boolean @default(true)
+  violationThreshold Int      @default(1)
+  pointsPerViolation Decimal  @default(0)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -1558,15 +1564,36 @@ model AssessmentSubmission {
   aiFeedback   String?
   submittedAt  DateTime @default(now())
   gradedAt     DateTime?
+  
+  // Integrity & Timer fields
+  startedAt           DateTime?
+  examSessionToken    String?   @unique
+  violationCount      Int       @default(0)
+  isFlagged           Boolean   @default(false)
+  pointDeductions     Decimal?  @default(0)
+  isAutoSubmitted     Boolean   @default(false)
 
   assessment   Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
   student      Student    @relation(fields: [studentId], references: [id], onDelete: Cascade)
   answers      AssessmentAnswer[]
+  violations   AssessmentViolation[]
 
   @@unique([assessmentId, studentId])
   @@index([assessmentId])
   @@index([studentId])
   @@index([status])
+  @@index([examSessionToken])
+}
+
+model AssessmentViolation {
+  id            String   @id @default(cuid())
+  submissionId  String
+  type          String   // "TAB_SWITCH", "FULLSCREEN_EXIT", "DUPLICATE_SESSION"
+  timestamp     DateTime @default(now())
+  
+  submission    AssessmentSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@index([submissionId])
 }
 
 model AssessmentAnswer {

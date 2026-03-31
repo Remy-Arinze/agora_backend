@@ -5,7 +5,7 @@ import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { UserRole } from '@prisma/client';
 import { AssessmentsService } from './assessments.service';
-import { CreateAssessmentDto, SubmitAssessmentDto, GradeSubmissionDto } from './dto/assessment.dto';
+import { CreateAssessmentDto, SubmitAssessmentDto, GradeSubmissionDto, LogViolationDto } from './dto/assessment.dto';
 import { ResponseDto } from '../common/dto/response.dto';
 
 @ApiTags('Assessments')
@@ -54,6 +54,31 @@ export class AssessmentsController {
     ): Promise<ResponseDto<any>> {
         const data = await this.assessmentsService.getAssessmentById(schoolId, assessmentId, req.user);
         return ResponseDto.ok(data, 'Assessment retrieved successfully');
+    }
+
+    @Post('assessments/:assessmentId/start')
+    @Roles(UserRole.STUDENT)
+    @ApiOperation({ summary: 'Initialize and start a timed/proctored assessment' })
+    async startAssessment(
+        @Request() req: any,
+        @Param('schoolId') schoolId: string,
+        @Param('assessmentId') assessmentId: string
+    ): Promise<ResponseDto<any>> {
+        const data = await this.assessmentsService.startAssessment(schoolId, assessmentId, req.user);
+        return ResponseDto.ok(data, 'Assessment started successfully');
+    }
+
+    @Post('assessments/:assessmentId/violation')
+    @Roles(UserRole.STUDENT)
+    @ApiOperation({ summary: 'Log an exam integrity violation' })
+    async logViolation(
+        @Request() req: any,
+        @Param('schoolId') schoolId: string,
+        @Param('assessmentId') assessmentId: string,
+        @Body() dto: LogViolationDto
+    ): Promise<ResponseDto<any>> {
+        const data = await this.assessmentsService.logViolation(schoolId, assessmentId, dto.type, req.user);
+        return ResponseDto.ok(data, 'Violation logged successfully');
     }
 
     @Post('assessments/:assessmentId/submit')
