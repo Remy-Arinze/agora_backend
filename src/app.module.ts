@@ -35,6 +35,7 @@ import { AssessmentsModule } from './assessments/assessments.module';
 import { AttendanceModule } from './attendance/attendance.module';
 import { APP_FILTER } from '@nestjs/core';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
+import { AgoraCurriculumModule } from './agora-curriculum/agora-curriculum.module';
 
 @Module({
   imports: [
@@ -75,6 +76,7 @@ import { HttpExceptionFilter } from './common/filters/http-exception.filter';
     ErrorsModule,
     AssessmentsModule,
     AttendanceModule,
+    AgoraCurriculumModule,
   ],
   controllers: [AppController],
   providers: [

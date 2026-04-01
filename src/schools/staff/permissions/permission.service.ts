@@ -324,6 +324,7 @@ export class PermissionService implements OnModuleInit {
       EVENTS: 'Events',
       GRADES: 'Grades',
       CURRICULUM: 'Curriculum',
+      SCHEME_OF_WORK: 'Scheme of Work',
       RESOURCES: 'Class Resources',
       TRANSFERS: 'Student Transfers',
       INTEGRATIONS: 'External Integrations',

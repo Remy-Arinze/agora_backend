@@ -43,6 +43,7 @@ import { FacultyService } from './faculties/faculty.service';
 
 // Curriculum
 import { CurriculumModule } from './curriculum/curriculum.module';
+import { SchemeOfWorkModule } from './scheme-of-work/scheme-of-work.module';
 
 // Repositories
 import { SchoolRepository } from './domain/repositories/school.repository';

@@ -329,6 +329,8 @@ model School {
   customPlans         SubscriptionPlan[] @relation("CustomPlanSchool")
   aiUsageLogs         AiUsageLog[]
   knowledgeChunks     KnowledgeChunk[]
+  schoolCurricula     SchoolCurriculumDoc[] // School-uploaded curriculum documents
+  schemesOfWork       SchemeOfWork[] // Generated schemes of work
 
   @@index([schoolId])
   @@index([isActive])
@@ -1037,6 +1039,8 @@ model NerdcSubject {
   updatedAt   DateTime @updatedAt
 
   curricula NerdcCurriculum[]
+  agoraCurriculumSources AgoraCurriculumSource[]
+  agoraCurricula         AgoraCurriculum[]
 
   @@index([code])
   @@index([isActive])
@@ -1271,6 +1275,7 @@ enum PermissionResource {
   // New resources for complete coverage
   GRADES
   CURRICULUM
+  SCHEME_OF_WORK
   RESOURCES
   TRANSFERS
   INTEGRATIONS
@@ -1675,4 +1680,288 @@ model KnowledgeChunk {
   school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
 
   @@index([schoolId])
+}
+
+// ============================================
+// AGORA CURRICULUM & SCHEME OF WORK SYSTEM
+// ============================================
+
+// Status for uploaded curriculum sources (super admin)
+enum AgoraCurriculumSourceStatus {
+  PENDING_PARSE
+  PARSING
+  PARSED
+  APPROVED
+  REJECTED
+  FAILED
+}
+
+// Status for consolidated Agora Curriculum
+enum AgoraCurriculumPublishStatus {
+  DRAFT
+  PUBLISHED
+}
+
+// Status for school-uploaded curriculum documents
+enum SchoolCurriculumDocStatus {
+  PENDING_PARSE
+  PARSING
+  PARSED
+  APPROVED
+  REJECTED
+  FAILED
+}
+
+// Status for generated Scheme of Work
+enum SchemeOfWorkStatus {
+  GENERATING
+  DRAFT
+  APPROVED
+  PUBLISHED
+  FAILED
+}
+
+// How the scheme was generated
+enum SchemeGenerationMode {
+  AGORA_ONLY
+  SCHOOL_ONLY
+  MERGED
+}
+
+// ============================================
+// SUPER ADMIN: Agora Curriculum Source
+// Uploaded files or manual entries that feed the
+// consolidated Agora Curriculum for a subject+grade
+// ============================================
+
+model AgoraCurriculumSource {
+  id              String   @id @default(cuid())
+  subjectId       String
+  gradeLevel      String   // "PRIMARY_1", "JSS_1", "SS_1", etc.
+
+  // Source content
+  sourceType      String   // "MANUAL" | "FILE_UPLOAD"
+  fileName        String?  // Original filename (for uploads)
+  fileUrl         String?  // Cloudinary URL (for uploads)
+  fileType        String?  // "PDF" | "DOCX"
+
+  // Parsed content
+  parsedData      Json?    // AI-extracted structured content
+  parseErrors     String?  // Any parsing errors/warnings
+
+  status          AgoraCurriculumSourceStatus @default(PENDING_PARSE)
+
+  // Manual entry fields
+  manualContent   Json?    // Structured manual entry data
+
+  createdBy       String   // Super admin user ID
+  approvedAt      DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  subject         NerdcSubject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@index([subjectId])
+  @@index([gradeLevel])
+  @@index([status])
+  @@index([subjectId, gradeLevel])
+}
+
+// ============================================
+// SUPER ADMIN: Consolidated Agora Curriculum
+// The versioned, published curriculum standard
+// ============================================
+
+model AgoraCurriculum {
+  id              String   @id @default(cuid())
+  subjectId       String
+  gradeLevel      String
+
+  version         Int      @default(1)
+  status          AgoraCurriculumPublishStatus @default(DRAFT)
+
+  // Consolidation metadata
+  sourceIds       String[] // IDs of sources used in this consolidation
+  consolidationNotes String? // AI notes about the consolidation process
+
+  publishedAt     DateTime?
+  publishedBy     String?  // Super admin user ID
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  subject         NerdcSubject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  topics          AgoraCurriculumTopic[]
+  schemesOfWork   SchemeOfWork[]
+
+  @@unique([subjectId, gradeLevel, version])
+  @@index([subjectId])
+  @@index([gradeLevel])
+  @@index([status])
+  @@index([subjectId, gradeLevel])
+}
+
+model AgoraCurriculumTopic {
+  id              String   @id @default(cuid())
+  curriculumId    String
+  title           String   // Added for AiService
+  description     String?  // Added for AiService
+  weekNumber      Int
+  topic           String?  // Made optional/keeping for legacy
+  subTopics       String[]
+
+  // Dual learning outcomes
+  learningOutcomes        String[] // Formal version (for teachers/admin)
+  studentFriendlyOutcomes String[] // Simplified version (for students)
+
+  suggestedActivities String[]
+  resources           String[]
+  assessmentType      String?  // "Quiz", "Project", "Written Test", etc.
+  assessmentGuidance  String?
+  duration            String?
+
+  order           Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  curriculum      AgoraCurriculum @relation(fields: [curriculumId], references: [id], onDelete: Cascade)
+
+  @@unique([curriculumId, weekNumber])
+  @@index([curriculumId])
+  @@index([weekNumber])
+}
+
+// ============================================
+// SCHOOL ADMIN: School Curriculum Document
+// Schools can upload their own curriculum files
+// for Lois to parse and use in generation
+// ============================================
+
+model SchoolCurriculumDoc {
+  id              String   @id @default(cuid())
+  schoolId        String
+  subjectId       String   // References the school's Subject
+  gradeLevel      String
+  termNumber      Int?     // 1, 2, or 3
+
+  // Source content
+  sourceType      String   // "MANUAL" | "FILE_UPLOAD"
+  fileName        String?
+  fileUrl         String?
+  fileType        String?  // "PDF" | "DOCX" | "XLSX"
+
+  // Parsed content
+  parsedData      Json?
+  parseErrors     String?
+
+  // Manual entry
+  manualContent   Json?
+
+  status          SchoolCurriculumDocStatus @default(PENDING_PARSE)
+
+  uploadedBy      String
+  approvedAt      DateTime?
+  approvedBy      String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  school          School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  schemesOfWork   SchemeOfWork[]
+
+  @@unique([schoolId, subjectId, gradeLevel, termNumber])
+  @@index([schoolId])
+  @@index([subjectId])
+  @@index([gradeLevel])
+  @@index([status])
+}
+
+// ============================================
+// SCHEME OF WORK (Generated output)
+// This is what teachers and students see.
+// Generated by Lois from Agora and/or school curriculum.
+// ============================================
+
+model SchemeOfWork {
+  id              String   @id @default(cuid())
+  schoolId        String
+  classArmId      String?  // For PRIMARY/SECONDARY
+  classId         String?  // For TERTIARY or direct class reference
+  subjectId       String
+  termId          String
+
+  // Generation context
+  generationMode  SchemeGenerationMode
+  agoraCurriculumId    String?  // Which Agora Curriculum version was used
+  agoraCurriculumVersion Int?
+  schoolCurriculumId   String?  // Which school curriculum doc was used
+  mergeWeightAgora     Int?     // e.g., 70 (percentage)
+  mergeWeightSchool    Int?     // e.g., 30 (percentage)
+
+  version         Int      @default(1)
+  status          SchemeOfWorkStatus @default(DRAFT)
+
+  // Fork tracking
+  parentSchemeId  String?  // If this is a forked version
+  isFork          Boolean  @default(false)
+
+  generatedAt     DateTime?
+  approvedAt      DateTime?
+  approvedBy      String?
+  publishedAt     DateTime?
+  publishedBy     String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  school          School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  agoraCurriculum AgoraCurriculum? @relation(fields: [agoraCurriculumId], references: [id], onDelete: SetNull)
+  schoolCurriculum SchoolCurriculumDoc? @relation(fields: [schoolCurriculumId], references: [id], onDelete: SetNull)
+  parentScheme    SchemeOfWork?  @relation("SchemeOfWorkFork", fields: [parentSchemeId], references: [id], onDelete: SetNull)
+  forks           SchemeOfWork[] @relation("SchemeOfWorkFork")
+  weeks           SchemeOfWorkWeek[]
+
+  @@index([schoolId])
+  @@index([classArmId])
+  @@index([classId])
+  @@index([subjectId])
+  @@index([termId])
+  @@index([status])
+  @@index([schoolId, subjectId, termId])
+}
+
+model SchemeOfWorkWeek {
+  id              String   @id @default(cuid())
+  schemeOfWorkId  String
+  weekNumber      Int      // Maps to timetable week structure
+  calendarStartDate DateTime? // Actual calendar date from timetable
+  calendarEndDate   DateTime?
+
+  topic           String
+  subTopics       String[]
+
+  // Dual learning outcomes
+  learningOutcomes        String[] // Formal (teacher view)
+  studentFriendlyOutcomes String[] // Simplified (student view)
+
+  suggestedActivities String[]
+  resources           String[]
+  assessmentType      String?
+  teacherNotes        String?  // Admin-set notes
+
+  // Teacher private notes (only visible to the teacher)
+  privateTeacherNotes String?
+
+  // Delivery tracking
+  isDelivered     Boolean  @default(false)
+  deliveredAt     DateTime?
+  deliveredBy     String?  // Teacher ID who marked as delivered
+
+  order           Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  schemeOfWork    SchemeOfWork @relation(fields: [schemeOfWorkId], references: [id], onDelete: Cascade)
+
+  @@unique([schemeOfWorkId, weekNumber])
+  @@index([schemeOfWorkId])
+  @@index([weekNumber])
+  @@index([isDelivered])
 }

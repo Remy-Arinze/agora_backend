@@ -1,7 +1,7 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../database/prisma.service';
-import { PrismaClient, Prisma } from '@prisma/client';
+import { PrismaClient, Prisma, AgoraCurriculumSourceStatus, AgoraCurriculumPublishStatus, SchemeOfWorkStatus } from '@prisma/client';
 import OpenAI, { AzureOpenAI } from 'openai';
 import { Response } from 'express';
 
@@ -92,6 +92,42 @@ export interface GenerateQuestionsOptions {
   questionTypes?: ('multiple_choice' | 'true_false' | 'short_answer' | 'essay')[];
   difficulty?: 'easy' | 'medium' | 'hard' | 'mixed';
   curriculum?: string;
+}
+
+export interface ParseCurriculumResult {
+  topics: {
+    topic: string;
+    subTopics: string[];
+    objectives: string[];
+    resources: string[];
+  }[];
+}
+
+export interface ConsolidateCurriculumResult {
+  topics: {
+    title: string;
+    description: string;
+    subTopics: string[];
+    learningOutcomes: string[];
+    studentFriendlyOutcomes: string[];
+    suggestedActivities: string[];
+    resources: string[];
+    assessmentType: string;
+    order: number;
+  }[];
+}
+
+export interface SchemeOfWorkGenerationResult {
+  weeks: {
+    weekNumber: number;
+    topic: string;
+    subTopics: string[];
+    learningOutcomes: string[];
+    studentFriendlyOutcomes: string[];
+    suggestedActivities: string[];
+    resources: string[];
+    assessmentType: string;
+  }[];
 }
 
 // Agora Chat Tools (Hybrid RAG: SQL + Semantic)
@@ -1638,5 +1674,204 @@ Return as JSON: {"questions": [{"text": "...", "type": "MULTIPLE_CHOICE | SHORT_
     });
 
     return { success: true };
+  }
+
+  // ==========================================
+  // CURRICULUM & SCHEME OF WORK AI METHODS
+  // ==========================================
+
+  /**
+   * Parse a raw curriculum document or manual text into structured topics.
+   * This handles the extraction of objectives, subtopics, and resources.
+   */
+  async parseCurriculumDocument(sourceId: string): Promise<void> {
+    try {
+      this.ensureConfigured();
+
+      const source = await this.prisma.agoraCurriculumSource.findUnique({
+        where: { id: sourceId },
+      });
+
+      if (!source) throw new BadRequestException('Source not found');
+
+      // Simulate parsing of visual/file data if needed, or use manual content
+      let textToParse = 'No content available for AI to parse.';
+      if (source.manualContent) {
+        textToParse = JSON.stringify(source.manualContent);
+      } else if (source.fileUrl) {
+        textToParse = `[Simulated text extraction from file at ${source.fileUrl}]`;
+      }
+
+      const response = await this.openai!.chat.completions.create({
+        model: this.model,
+        messages: [
+          {
+            role: 'system',
+            content: 'You are an expert curriculum parser. Extract the topics, subtopics, learning objectives, and resources from the provided educational document.',
+          },
+          { role: 'user', content: `Extract the curriculum data from the following text:\n\n${textToParse}` },
+        ],
+        response_format: { type: 'json_object' as const },
+      });
+
+      const resultText = response.choices[0]?.message?.content || '{}';
+      const parsedData = JSON.parse(resultText) as ParseCurriculumResult;
+
+      // Update the source with the parsed JSON payload
+      await this.prisma.agoraCurriculumSource.update({
+        where: { id: sourceId },
+        data: {
+          parsedData: parsedData as any,
+          status: AgoraCurriculumSourceStatus.PARSED,
+        },
+      });
+
+      this.logger.log(`Parsed Curriculum Source [${sourceId}] successfully.`);
+    } catch (error) {
+      this.logger.error(`Failed to parse curriculum source ${sourceId}:`, error);
+      await this.prisma.agoraCurriculumSource.update({
+        where: { id: sourceId },
+        data: { status: AgoraCurriculumSourceStatus.FAILED },
+      });
+    }
+  }
+
+  /**
+   * Consolidate multiple parsed sources into a unified drafted curriculum.
+   */
+  async consolidateAgoraCurriculum(curriculumId: string): Promise<void> {
+    try {
+      this.ensureConfigured();
+
+      const curriculum = await this.prisma.agoraCurriculum.findUnique({
+        where: { id: curriculumId },
+      });
+
+      if (!curriculum) return;
+
+      // Gather source payloads
+      const sources = await this.prisma.agoraCurriculumSource.findMany({
+        where: { id: { in: curriculum.sourceIds } },
+      });
+
+      const combinedPayloads = sources.map((s: any) => JSON.stringify(s.parsedData)).join('\n\n');
+
+      const response = await this.openai!.chat.completions.create({
+        model: this.model,
+        messages: [
+          {
+            role: 'system',
+            content: `You are an expert educational planner. Consolidate the multiple extracted raw curricula documents into a single, cohesive, logically ordered curriculum. Ensure you generate both formal exact "learningOutcomes" (for teachers) and simplified, empathetic "studentFriendlyOutcomes". Your response MUST match the JSON format containing a "topics" array.`,
+          },
+          { role: 'user', content: `Consolidate these parsed files into a unified structure:\n\n${combinedPayloads}` },
+        ],
+        response_format: { type: 'json_object' as const },
+      });
+
+      const resultText = response.choices[0]?.message?.content || '{}';
+      const result = JSON.parse(resultText) as ConsolidateCurriculumResult;
+
+      // Create topic rows
+      if (result.topics && Array.isArray(result.topics)) {
+        await this.prisma.$transaction(
+          result.topics.map((t, index) =>
+            this.prisma.agoraCurriculumTopic.create({
+              data: {
+                curriculumId,
+                title: t.title || 'Untitled Topic',
+                description: t.description,
+                weekNumber: index + 1, // Map to weekly standard for Agora standard
+                topic: t.title, // Sync topic field for legacy
+                subTopics: t.subTopics || [],
+                learningOutcomes: t.learningOutcomes || [],
+                studentFriendlyOutcomes: t.studentFriendlyOutcomes || [],
+                suggestedActivities: t.suggestedActivities || [],
+                resources: t.resources || [],
+                assessmentType: t.assessmentType,
+                order: t.order || index + 1,
+              },
+            })
+          )
+        );
+      }
+
+      this.logger.log(`Consolidated Agora Curriculum [${curriculumId}] with ${result.topics?.length} topics.`);
+    } catch (error) {
+      this.logger.error(`Failed to consolidate curriculum ${curriculumId}:`, error);
+    }
+  }
+
+  /**
+   * Generate a 12-14 week Scheme of Work using the drafted Agora Curriculum and custom School guidelines.
+   */
+  async generateSchemeOfWork(schemeId: string): Promise<void> {
+    try {
+      this.ensureConfigured();
+
+      const scheme = await this.prisma.schemeOfWork.findUnique({
+        where: { id: schemeId },
+        include: {
+          agoraCurriculum: { include: { topics: { orderBy: { order: 'asc' } } } },
+          schoolCurriculum: true,
+        },
+      });
+
+      if (!scheme) throw new BadRequestException('Scheme not found');
+
+      const modelInput = {
+        generationMode: scheme.generationMode,
+        agoraTopics: scheme.agoraCurriculum?.topics || [],
+        customSchoolGuidance: scheme.schoolCurriculum?.parsedData || null,
+        targetWeeks: 12, // Usually standard, could fetch from term settings
+      };
+
+      const response = await this.openai!.chat.completions.create({
+        model: this.model,
+        messages: [
+          {
+            role: 'system',
+            content: `You are an expert master teacher. Map the given curriculum topics across a standard ${modelInput.targetWeeks}-week academic term. Group related topics if necessary. Assign one clear topic to each week. ALWAYS Output a JSON object with a "weeks" array (matching weekNumber 1 to 12). Include revision/exams in the final two weeks if appropriate.`,
+          },
+          { role: 'user', content: JSON.stringify(modelInput) },
+        ],
+        response_format: { type: 'json_object' as const },
+      });
+
+      const resultText = response.choices[0]?.message?.content || '{}';
+      const result = JSON.parse(resultText) as SchemeOfWorkGenerationResult;
+
+      if (result.weeks && Array.isArray(result.weeks)) {
+        await this.prisma.$transaction(
+          result.weeks.map(w =>
+            this.prisma.schemeOfWorkWeek.create({
+              data: {
+                schemeOfWorkId: schemeId,
+                weekNumber: w.weekNumber,
+                topic: w.topic,
+                subTopics: w.subTopics || [],
+                learningOutcomes: w.learningOutcomes || [],
+                studentFriendlyOutcomes: w.studentFriendlyOutcomes || [],
+                suggestedActivities: w.suggestedActivities || [],
+                resources: w.resources || [],
+                assessmentType: w.assessmentType,
+              },
+            })
+          )
+        );
+
+        await this.prisma.schemeOfWork.update({
+          where: { id: schemeId },
+          data: { status: SchemeOfWorkStatus.DRAFT }, // Transition from GENERATING to DRAFT
+        });
+      }
+
+      this.logger.log(`Generated automated Scheme of Work [${schemeId}].`);
+    } catch (error) {
+      this.logger.error(`Failed to generate Scheme of Work ${schemeId}:`, error);
+      await this.prisma.schemeOfWork.update({
+        where: { id: schemeId },
+        data: { status: SchemeOfWorkStatus.FAILED },
+      });
+    }
   }
 }
