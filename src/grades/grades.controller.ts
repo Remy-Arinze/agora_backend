@@ -20,11 +20,17 @@ import { UserWithContext } from '../auth/types/user-with-context.type';
 import { ResponseDto } from '../common/dto/response.dto';
 import { GradesService } from './grades.service';
 import { CreateGradeDto, UpdateGradeDto, BulkGradeEntryDto, GradeType } from './dto/grade.dto';
+import { Throttle } from '@nestjs/throttler';
 
+/**
+ * database-intensive tier: Grade management often involves bulk operations,
+ * aggregations for transcripts, and class-wide performance results.
+ */
 @ApiTags('grades')
 @Controller('schools/:schoolId/grades')
 @UseGuards(JwtAuthGuard, SchoolDataAccessGuard, PermissionGuard)
 @ApiBearerAuth()
+@Throttle({ 'database-intensive': {} })
 export class GradesController {
   constructor(private readonly gradesService: GradesService) {}
 

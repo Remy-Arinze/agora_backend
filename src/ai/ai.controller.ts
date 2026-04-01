@@ -17,6 +17,9 @@ import {
 import { UserRole } from '@prisma/client';
 import { Response } from 'express';
 
+/**
+ * heavy-ai tier: Protects against excessive LLM token usage and high-compute indexing operations.
+ */
 @ApiTags('AI Features')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -72,7 +75,9 @@ export class AiController {
     // SSE STREAMING + AGENTIC CHAT (New Primary Endpoint)
     // ─────────────────────────────────────────────────────────────────────────
 
-    @SkipThrottle()
+    /**
+     * Heavy-AI: AI streaming consumes significant server resources per request.
+     */
     @Post('chat/stream')
     @Roles(UserRole.TEACHER, UserRole.SCHOOL_ADMIN, UserRole.STUDENT)
     @ApiOperation({ summary: 'Stream AI chat with agentic tool-calling via SSE' })

@@ -9,12 +9,17 @@ import { PaginationDto, PaginatedResponseDto } from '../../common/dto/pagination
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { Throttle } from '@nestjs/throttler';
 
+/**
+ * standard tier: Super Admin management of school entities.
+ */
 @ApiTags('schools')
 @Controller('schools')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('SUPER_ADMIN')
 @ApiBearerAuth()
+@Throttle({ standard: {} })
 export class SuperAdminSchoolsController {
   constructor(private readonly superAdminSchoolsService: SuperAdminSchoolsService) { }
 

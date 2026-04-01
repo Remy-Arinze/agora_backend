@@ -5,6 +5,11 @@ import { AgoraCurriculumSourceStatus, AgoraCurriculumPublishStatus } from '@pris
 import { AiService } from '../ai/ai.service';
 import { CloudinaryService } from '../storage/cloudinary/cloudinary.service';
 
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
+import { CURRICULUM_PROCESSING_QUEUE, CURRICULUM_CONSOLIDATION_QUEUE, JOB_PROCESS_SOURCE, JOB_CONSOLIDATE_BATCH } from './curriculum.processor';
+import { v4 as uuidv4 } from 'uuid';
+
 @Injectable()
 export class AgoraCurriculumService {
   private readonly logger = new Logger(AgoraCurriculumService.name);
@@ -12,8 +17,10 @@ export class AgoraCurriculumService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly aiService: AiService,
-    private readonly cloudinaryService: CloudinaryService
-  ) {}
+    private readonly cloudinaryService: CloudinaryService,
+    @InjectQueue(CURRICULUM_PROCESSING_QUEUE) private readonly curriculumQueue: Queue,
+    @InjectQueue(CURRICULUM_CONSOLIDATION_QUEUE) private readonly consolidationQueue: Queue,
+  ) { }
 
   // ==========================================
   // SUBJECTS
@@ -35,7 +42,7 @@ export class AgoraCurriculumService {
   // SOURCES MANAGEMENT
   // ==========================================
 
-  async createSource(dto: CreateAgoraCurriculumSourceDto, userId: string) {
+  async createSource(dto: CreateAgoraCurriculumSourceDto, userId: string, batchId?: string) {
     const subject = await this.prisma.nerdcSubject.findUnique({
       where: { id: dto.subjectId },
     });
@@ -53,22 +60,25 @@ export class AgoraCurriculumService {
         manualContent: dto.manualContent,
         status: AgoraCurriculumSourceStatus.PENDING_PARSE,
         createdBy: userId,
+        batchId: batchId || uuidv4(),
       },
     });
 
-    // Phase 4 trigger: Send to background AiService parser
-    this.logger.log(`Created new curriculum source: ${source.id}`);
-    this.aiService.parseCurriculumDocument(source.id).catch(e => {
-      this.logger.error(`Background parsing failed for ${source.id}:`, e);
+    // Queue for background processing
+    await this.curriculumQueue.add(JOB_PROCESS_SOURCE, {
+      sourceId: source.id,
+      batchId: source.batchId,
     });
 
+    this.logger.log(`Created and queued curriculum source: ${source.id}`);
     return source;
   }
 
   async uploadAndCreateSource(
     file: Express.Multer.File,
     dto: CreateAgoraCurriculumSourceDto,
-    userId: string
+    userId: string,
+    batchId?: string
   ) {
     const subject = await this.prisma.nerdcSubject.findUnique({
       where: { id: dto.subjectId },
@@ -87,22 +97,40 @@ export class AgoraCurriculumService {
         fileName: file.originalname,
         fileUrl: uploadResult.url,
         fileType: file.mimetype.includes('pdf') ? 'PDF' : 'DOCX',
-        status: 'PENDING_PARSE',
+        status: AgoraCurriculumSourceStatus.PENDING_PARSE,
         createdBy: userId,
+        batchId: batchId || uuidv4(),
       },
     });
 
-    // Phase 4 trigger
-    this.logger.log(`Created new curriculum source from upload: ${source.id}`);
-    this.aiService.parseCurriculumDocument(source.id).catch(e => {
-      this.logger.error(`Background parsing failed for ${source.id}:`, e);
+    // Queue for background processing
+    await this.curriculumQueue.add(JOB_PROCESS_SOURCE, {
+      sourceId: source.id,
+      batchId: source.batchId,
     });
 
+    this.logger.log(`Created and queued curriculum source from upload: ${source.id}`);
     return source;
   }
 
+  async uploadMultipleSources(
+    files: Express.Multer.File[],
+    dto: CreateAgoraCurriculumSourceDto,
+    userId: string
+  ) {
+    const batchId = uuidv4();
+    const results = [];
+
+    for (const file of files) {
+      const source = await this.uploadAndCreateSource(file, dto, userId, batchId);
+      results.push(source);
+    }
+
+    return { batchId, sources: results };
+  }
+
   async getSources(subjectId?: string, gradeLevel?: string) {
-    return this.prisma.agoraCurriculumSource.findMany({
+    return (this.prisma as any).agoraCurriculumSource.findMany({
       where: {
         ...(subjectId && { subjectId }),
         ...(gradeLevel && { gradeLevel }),
@@ -115,7 +143,7 @@ export class AgoraCurriculumService {
   }
 
   async getSource(id: string) {
-    const source = await this.prisma.agoraCurriculumSource.findUnique({
+    const source = await (this.prisma as any).agoraCurriculumSource.findUnique({
       where: { id },
       include: { subject: true },
     });
@@ -123,12 +151,67 @@ export class AgoraCurriculumService {
     return source;
   }
 
+  async getSourceStatus(id: string) {
+    const source = await (this.prisma as any).agoraCurriculumSource.findUnique({
+      where: { id },
+      select: { id: true, status: true, parseErrors: true, updatedAt: true },
+    });
+    if (!source) throw new NotFoundException('Source not found');
+    return source;
+  }
+
+  async getBatchStatus(batchId: string) {
+    const sources = await (this.prisma as any).agoraCurriculumSource.findMany({
+      where: { batchId },
+      select: { id: true, status: true, fileName: true },
+    });
+    
+    if (sources.length === 0) throw new NotFoundException('Batch not found');
+
+    const total = sources.length;
+    const parsed = sources.filter((s: any) => s.status === AgoraCurriculumSourceStatus.PARSED).length;
+    const failed = sources.filter((s: any) => s.status === AgoraCurriculumSourceStatus.FAILED).length;
+    const processing = sources.filter((s: any) => s.status === AgoraCurriculumSourceStatus.PARSING).length;
+
+    return {
+      batchId,
+      total,
+      parsed,
+      failed,
+      processing,
+      isComplete: parsed === total,
+      hasFailures: failed > 0,
+      sources,
+    };
+  }
+
+  async retrySourceParsing(id: string) {
+    const source = await (this.prisma as any).agoraCurriculumSource.findUnique({ where: { id } });
+    if (!source) throw new NotFoundException('Source not found');
+
+    if (source.status !== AgoraCurriculumSourceStatus.FAILED) {
+      throw new BadRequestException('Can only retry failed parsing jobs');
+    }
+
+    await (this.prisma as any).agoraCurriculumSource.update({
+      where: { id },
+      data: { status: AgoraCurriculumSourceStatus.PENDING_PARSE, parseErrors: null },
+    });
+
+    await this.curriculumQueue.add(JOB_PROCESS_SOURCE, {
+      sourceId: source.id,
+      batchId: source.batchId,
+    });
+
+    return { message: 'Retry job queued successfully' };
+  }
+
   // ==========================================
   // CONSOLIDATED CURRICULUM
   // ==========================================
 
   async consolidateSources(dto: ConsolidateCurriculumDto, userId: string) {
-    const sources = await this.prisma.agoraCurriculumSource.findMany({
+    const sources = await (this.prisma as any).agoraCurriculumSource.findMany({
       where: { id: { in: dto.sourceIds }, status: AgoraCurriculumSourceStatus.PARSED },
     });
 
@@ -137,34 +220,38 @@ export class AgoraCurriculumService {
     }
 
     // Determine the next version
-    const existing = await this.prisma.agoraCurriculum.findFirst({
+    const existing = await (this.prisma as any).agoraCurriculum.findFirst({
       where: { subjectId: dto.subjectId, gradeLevel: dto.gradeLevel },
       orderBy: { version: 'desc' },
     });
     const nextVersion = existing ? existing.version + 1 : 1;
 
     // Create draft curriculum version
-    const curriculum = await this.prisma.agoraCurriculum.create({
+    const curriculum = await (this.prisma as any).agoraCurriculum.create({
       data: {
         subjectId: dto.subjectId,
         gradeLevel: dto.gradeLevel,
         sourceIds: dto.sourceIds,
         version: nextVersion,
         status: AgoraCurriculumPublishStatus.DRAFT,
+        createdBy: userId,
       },
     });
 
-    // Phase 4 trigger: Trigger AiService for background consolidation
-    this.logger.log(`Created DRAFT curriculum consolidation: ${curriculum.id} (Version ${nextVersion})`);
-    this.aiService.consolidateAgoraCurriculum(curriculum.id).catch(e => {
-      this.logger.error(`Background consolidation failed for ${curriculum.id}:`, e);
+    // Queue for background consolidation
+    await this.consolidationQueue.add(JOB_CONSOLIDATE_BATCH, {
+      batchId: 'manual-trigger-' + uuidv4(), // Manual trigger doesn't have a single batchId necessarily
+      subjectId: dto.subjectId,
+      gradeLevel: dto.gradeLevel,
+      uploadedBy: userId,
     });
 
+    this.logger.log(`Queued DRAFT curriculum consolidation: ${curriculum.id} (Version ${nextVersion})`);
     return curriculum;
   }
 
   async getCurricula(subjectId?: string, gradeLevel?: string, status?: AgoraCurriculumPublishStatus) {
-    return this.prisma.agoraCurriculum.findMany({
+    return (this.prisma as any).agoraCurriculum.findMany({
       where: {
         ...(subjectId && { subjectId }),
         ...(gradeLevel && { gradeLevel }),
@@ -182,7 +269,7 @@ export class AgoraCurriculumService {
   }
 
   async getCurriculum(id: string) {
-    const curriculum = await this.prisma.agoraCurriculum.findUnique({
+    const curriculum = await (this.prisma as any).agoraCurriculum.findUnique({
       where: { id },
       include: {
         subject: true,
@@ -196,18 +283,18 @@ export class AgoraCurriculumService {
   }
 
   async publishCurriculum(id: string, dto: PublishCurriculumDto, userId: string) {
-    const curriculum = await this.prisma.agoraCurriculum.findUnique({ where: { id } });
+    const curriculum = await (this.prisma as any).agoraCurriculum.findUnique({ where: { id } });
     if (!curriculum) throw new NotFoundException('Curriculum not found');
 
     if (dto.status === AgoraCurriculumPublishStatus.PUBLISHED) {
       // Validate that it has topics before publishing
-      const topicsCount = await this.prisma.agoraCurriculumTopic.count({ where: { curriculumId: id } });
+      const topicsCount = await (this.prisma as any).agoraCurriculumTopic.count({ where: { curriculumId: id } });
       if (topicsCount === 0) {
         throw new BadRequestException('Cannot publish a curriculum with no topics');
       }
     }
 
-    return this.prisma.agoraCurriculum.update({
+    return (this.prisma as any).agoraCurriculum.update({
       where: { id },
       data: {
         status: dto.status,

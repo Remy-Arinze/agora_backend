@@ -7,11 +7,17 @@ import { UserRole } from '@prisma/client';
 import { AssessmentsService } from './assessments.service';
 import { CreateAssessmentDto, SubmitAssessmentDto, GradeSubmissionDto, LogViolationDto } from './dto/assessment.dto';
 import { ResponseDto } from '../common/dto/response.dto';
+import { Throttle } from '@nestjs/throttler';
 
+/**
+ * heavy-ai tier: Assessments utilize AI for automated short-answer grading
+ * and trigger real-time notification events.
+ */
 @ApiTags('Assessments')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('schools/:schoolId')
+@Throttle({ 'heavy-ai': {} })
 export class AssessmentsController {
     constructor(private readonly assessmentsService: AssessmentsService) { }
 

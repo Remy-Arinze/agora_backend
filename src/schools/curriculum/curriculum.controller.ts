@@ -9,6 +9,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
+import { SkipThrottle } from '@nestjs/throttler';
 import {
   ApiTags,
   ApiOperation,
@@ -29,6 +30,7 @@ import {
   MarkWeekInProgressDto,
   SkipWeekDto,
 } from './dto/create-curriculum.dto';
+import { SetupSchemeOfWorkDto } from './dto/scheme-of-work.dto';
 import { CurriculumDto, CurriculumSummaryDto, TimetableSubjectDto } from './dto/curriculum.dto';
 import {
   NerdcSubjectDto,
@@ -147,6 +149,23 @@ export class CurriculumController {
     return ResponseDto.ok(data, 'Curriculum summary retrieved successfully');
   }
 
+  @Get('class-level/:classLevelId/schemes-summary')
+  @SkipThrottle()
+  @RequirePermission(PermissionResource.CURRICULUM, PermissionType.READ)
+  @ApiOperation({ summary: 'Get per-subject schemes summary' })
+  @ApiParam({ name: 'schoolId', description: 'School ID' })
+  @ApiParam({ name: 'classLevelId', description: 'Class Level ID' })
+  @ApiQuery({ name: 'termId', description: 'Term ID' })
+  @ApiResponse({ status: 200, description: 'Schemes summary retrieved successfully' })
+  async getSchemesSummary(
+    @Param('schoolId') schoolId: string,
+    @Param('classLevelId') classLevelId: string,
+    @Query('termId') termId: string
+  ): Promise<ResponseDto<any[]>> {
+    const data = await this.curriculumService.getSchemesSummary(schoolId, classLevelId, termId);
+    return ResponseDto.ok(data, 'Schemes summary retrieved successfully');
+  }
+
   // ============================================
   // Curriculum CRUD
   // ============================================
@@ -179,6 +198,20 @@ export class CurriculumController {
   ): Promise<ResponseDto<CurriculumDto>> {
     const data = await this.curriculumService.generateFromNerdc(schoolId, dto, user);
     return ResponseDto.ok(data, 'Curriculum generated successfully');
+  }
+
+  @Post('schemes/setup')
+  @RequirePermission(PermissionResource.CURRICULUM, PermissionType.WRITE)
+  @ApiOperation({ summary: 'Set up a new Scheme of Work' })
+  @ApiParam({ name: 'schoolId', description: 'School ID' })
+  @ApiResponse({ status: 201, description: 'Scheme of Work setup initiated' })
+  async setupSchemeOfWork(
+    @Param('schoolId') schoolId: string,
+    @Body() dto: SetupSchemeOfWorkDto,
+    @CurrentUser() user: UserWithContext
+  ): Promise<ResponseDto<any>> {
+    const data = await this.curriculumService.setupSchemeOfWork(schoolId, dto, user);
+    return ResponseDto.ok(data, 'Scheme of Work setup initiated');
   }
 
   @Post('generate-bulk')
@@ -422,5 +455,34 @@ export class CurriculumController {
       user
     );
     return ResponseDto.ok(data, 'Week skipped');
+  }
+
+  @Post('schemes/:schemeId/cancel')
+  @RequirePermission(PermissionResource.CURRICULUM, PermissionType.WRITE)
+  @ApiOperation({ summary: 'Cancel an active scheme generation and refund credits' })
+  @ApiParam({ name: 'schoolId', description: 'School ID' })
+  @ApiParam({ name: 'schemeId', description: 'Scheme ID' })
+  @ApiResponse({ status: 200, description: 'Generation cancelled and credits refunded' })
+  async cancelSchemeGeneration(
+    @Param('schoolId') schoolId: string,
+    @Param('schemeId') schemeId: string,
+    @CurrentUser() user: UserWithContext
+  ): Promise<ResponseDto<any>> {
+    const result = await this.curriculumService.cancelSchemeGeneration(schoolId, schemeId, user);
+    return ResponseDto.ok(result, 'Generation cancelled successfully');
+  }
+
+  @Get('agora-library')
+  @RequirePermission(PermissionResource.CURRICULUM, PermissionType.READ)
+  @ApiOperation({ summary: 'Get published Agora master curricula filtered by subject and grade' })
+  @ApiParam({ name: 'schoolId', description: 'School ID' })
+  @ApiQuery({ name: 'subjectId', description: 'NERDC Subject ID' })
+  @ApiQuery({ name: 'gradeLevel', description: 'Grade level (e.g., JSS_1)' })
+  async getAgoraLibrary(
+    @Query('subjectId') subjectId: string,
+    @Query('gradeLevel') gradeLevel: string
+  ): Promise<ResponseDto<any[]>> {
+    const data = await this.curriculumService.getAgoraLibraryCurricula(subjectId, gradeLevel);
+    return ResponseDto.ok(data, 'Agora curricula retrieved successfully');
   }
 }

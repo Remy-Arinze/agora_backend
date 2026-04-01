@@ -344,6 +344,54 @@ export class SubscriptionsService {
   }
 
   /**
+   * Refund AI credits for a failed action
+   */
+  async refundAiCredits(
+    schoolId: string,
+    credits: number,
+    userId: string,
+    reason?: string
+  ): Promise<AiCreditsResultDto> {
+    const subscription = await this.prisma.subscription.findUnique({
+      where: { schoolId },
+    });
+
+    if (!subscription) {
+      throw new NotFoundException('Subscription not found');
+    }
+
+    // Update credits (decrement used)
+    const updated = await this.prisma.subscription.update({
+      where: { schoolId },
+      data: {
+        aiCreditsUsed: {
+          decrement: Math.min(subscription.aiCreditsUsed, credits),
+        },
+      },
+    });
+
+    // Create usage log (negative credits for refund)
+    await this.prisma.aiUsageLog.create({
+      data: {
+        schoolId,
+        userId,
+        action: `REFUND: ${reason || 'unknown'}`,
+        creditsUsed: -credits,
+      },
+    });
+
+    this.logger.log(
+      `School ${schoolId} refunded ${credits} AI credits due to: ${reason || 'unknown reason'}`
+    );
+
+    return {
+      success: true,
+      creditsUsed: -credits,
+      creditsRemaining: updated.aiCredits - updated.aiCreditsUsed,
+    };
+  }
+
+  /**
    * Check if school can add more students
    */
   async checkStudentLimit(

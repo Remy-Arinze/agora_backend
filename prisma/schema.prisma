@@ -497,6 +497,7 @@ model ClassLevel {
   nextLevel      ClassLevel?  @relation("ClassLevelProgression", fields: [nextLevelId], references: [id])
   nextLevelId    String?
   previousLevels ClassLevel[] @relation("ClassLevelProgression")
+  schemesOfWork  SchemeOfWork[]
 
   @@unique([schoolId, code])
   @@index([schoolId])
@@ -1714,11 +1715,14 @@ enum SchoolCurriculumDocStatus {
 
 // Status for generated Scheme of Work
 enum SchemeOfWorkStatus {
+  QUEUED
+  VERIFYING
   GENERATING
   DRAFT
   APPROVED
   PUBLISHED
   FAILED
+  CANCELLED
 }
 
 // How the scheme was generated
@@ -1758,6 +1762,7 @@ model AgoraCurriculumSource {
   approvedAt      DateTime?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+  batchId         String?  // For tracking multiple file uploads together
 
   subject         NerdcSubject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
 
@@ -1883,6 +1888,7 @@ model SchoolCurriculumDoc {
 model SchemeOfWork {
   id              String   @id @default(cuid())
   schoolId        String
+  classLevelId    String?
   classArmId      String?  // For PRIMARY/SECONDARY
   classId         String?  // For TERTIARY or direct class reference
   subjectId       String
@@ -1912,6 +1918,7 @@ model SchemeOfWork {
   updatedAt       DateTime @updatedAt
 
   school          School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  classLevel      ClassLevel? @relation(fields: [classLevelId], references: [id], onDelete: SetNull)
   agoraCurriculum AgoraCurriculum? @relation(fields: [agoraCurriculumId], references: [id], onDelete: SetNull)
   schoolCurriculum SchoolCurriculumDoc? @relation(fields: [schoolCurriculumId], references: [id], onDelete: SetNull)
   parentScheme    SchemeOfWork?  @relation("SchemeOfWorkFork", fields: [parentSchemeId], references: [id], onDelete: SetNull)
@@ -1919,6 +1926,7 @@ model SchemeOfWork {
   weeks           SchemeOfWorkWeek[]
 
   @@index([schoolId])
+  @@index([classLevelId])
   @@index([classArmId])
   @@index([classId])
   @@index([subjectId])

@@ -1,5 +1,5 @@
-import { Controller, Get, Post, Body, Patch, Param, UseGuards, Query, UseInterceptors, UploadedFile, BadRequestException } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { Controller, Get, Post, Body, Patch, Param, UseGuards, Query, UseInterceptors, UploadedFile, UploadedFiles, BadRequestException } from '@nestjs/common';
+import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -10,7 +10,12 @@ import { UserWithContext } from '../auth/types/user-with-context.type';
 import { ResponseDto } from '../common/dto/response.dto';
 import { AgoraCurriculumService } from './agora-curriculum.service';
 import { CreateAgoraCurriculumSourceDto, ConsolidateCurriculumDto, PublishCurriculumDto } from './dto/agora-curriculum.dto';
+import { Throttle } from '@nestjs/throttler';
 
+/**
+ * heavy-ai tier: Protects resource-intensive document parsing and consolidation endpoints.
+ * Limits are set low to prevent excessive AI token consumption and storage overhead.
+ */
 @ApiTags('Agora Curriculum (Super Admin)')
 @Controller('agora-curriculum')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -69,6 +74,41 @@ export class AgoraCurriculumController {
     if (!file) throw new BadRequestException('File is required');
     const source = await this.agoraCurriculumService.uploadAndCreateSource(file, dto, user.id);
     return ResponseDto.ok(source, 'Source uploaded successfully and queued for parsing');
+  }
+
+  @Post('sources/upload-multiple')
+  @ApiOperation({ summary: 'Upload multiple curriculum source documents as a batch' })
+  @UseInterceptors(FileInterceptor('files')) // Assuming frontend sends multiple files or we use FilesInterceptor
+  @UseInterceptors(require('@nestjs/platform-express').FilesInterceptor('files', 10))
+  async uploadMultipleSources(
+    @UploadedFiles() files: Express.Multer.File[],
+    @Body() dto: CreateAgoraCurriculumSourceDto,
+    @CurrentUser() user: UserWithContext
+  ) {
+    if (!files || files.length === 0) throw new BadRequestException('Files are required');
+    const result = await this.agoraCurriculumService.uploadMultipleSources(files, dto, user.id);
+    return ResponseDto.ok(result, 'Multiple sources uploaded and batch processing started');
+  }
+
+  @Get('sources/:id/status')
+  @ApiOperation({ summary: 'Get parsing status of a specific source' })
+  async getSourceStatus(@Param('id') id: string) {
+    const status = await this.agoraCurriculumService.getSourceStatus(id);
+    return ResponseDto.ok(status, 'Source status retrieved successfully');
+  }
+
+  @Get('batch/:batchId/status')
+  @ApiOperation({ summary: 'Get processing status for an entire batch' })
+  async getBatchStatus(@Param('batchId') batchId: string) {
+    const status = await this.agoraCurriculumService.getBatchStatus(batchId);
+    return ResponseDto.ok(status, 'Batch status retrieved successfully');
+  }
+
+  @Post('sources/:id/retry')
+  @ApiOperation({ summary: 'Retry a failed parsing job' })
+  async retryParsing(@Param('id') id: string) {
+    const result = await this.agoraCurriculumService.retrySourceParsing(id);
+    return ResponseDto.ok(result, 'Retry job queued');
   }
 
   @Get('sources/:id')

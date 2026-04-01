@@ -2,10 +2,12 @@ import { Module, Logger } from '@nestjs/common';
 import Redis from 'ioredis';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { BullModule } from '@nestjs/bullmq';
+import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
+import { BullBoardModule } from '@bull-board/nestjs';
 import { VECTOR_QUEUE_NAME } from './vector.processor';
 
 /**
- * BullMQ vector queue: memory-optimized for Azure Redis.
+ * BullMQ vector and curriculum queues: memory-optimized for Azure Redis.
  * - Small job payloads (chunk id only). removeOnComplete/removeOnFail to limit memory.
  * - Exponential backoff for OpenAI rate limits.
  * - Supports Redis Cluster (Azure Enterprise) with graceful degradation.
@@ -101,6 +103,38 @@ import { VECTOR_QUEUE_NAME } from './vector.processor';
         removeOnFail: { count: 100 },
       },
     }),
+    BullModule.registerQueue({
+      name: 'curriculum-processing',
+      defaultJobOptions: {
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 5000 },
+        removeOnComplete: { count: 100 },
+        removeOnFail: { count: 200 },
+      },
+    }),
+    BullModule.registerQueue({
+      name: 'curriculum-consolidation',
+      defaultJobOptions: {
+        attempts: 2,
+        backoff: { type: 'exponential', delay: 10000 },
+        removeOnComplete: { count: 50 },
+        removeOnFail: { count: 100 },
+      },
+    }),
+    BullBoardModule.forFeature(
+      {
+        name: VECTOR_QUEUE_NAME,
+        adapter: BullMQAdapter,
+      },
+      {
+        name: 'curriculum-processing',
+        adapter: BullMQAdapter,
+      },
+      {
+        name: 'curriculum-consolidation',
+        adapter: BullMQAdapter,
+      },
+    ),
   ],
   exports: [BullModule],
 })

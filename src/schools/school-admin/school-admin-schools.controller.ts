@@ -35,10 +35,15 @@ import { PermissionGuard } from '../../common/guards/permission.guard';
 import { RequirePermission } from '../../common/decorators/permission.decorator';
 import { PermissionResource, PermissionType } from '../dto/permission.dto';
 
+/**
+ * standard tier: School Admin dashboard and profile management.
+ * Sensitive configuration changes have stricter overrides.
+ */
 @ApiTags('school-admin')
 @Controller('school-admin')
 @UseGuards(JwtAuthGuard, SchoolDataAccessGuard, PermissionGuard)
 @ApiBearerAuth()
+@Throttle({ standard: {} })
 export class SchoolAdminSchoolsController {
   constructor(private readonly schoolAdminSchoolsService: SchoolAdminSchoolsService) {}
 
@@ -183,7 +188,7 @@ export class SchoolAdminSchoolsController {
   }
 
   @Post('school/request-edit-token')
-  @Throttle({ default: { ttl: 3600000, limit: 5 } }) // 5 requests per hour
+  @Throttle({ standard: { ttl: 3600000, limit: 5 } }) // 5 requests per hour (Strict)
   @RequirePermission(PermissionResource.OVERVIEW, PermissionType.ADMIN)
   @ApiOperation({ summary: 'Request verification token for sensitive school profile changes' })
   @ApiResponse({
@@ -207,7 +212,7 @@ export class SchoolAdminSchoolsController {
   }
 
   @Post('school/verify-edit-token')
-  @Throttle({ default: { ttl: 60000, limit: 10 } }) // 10 verifications per minute
+  @Throttle({ standard: { ttl: 60000, limit: 10 } }) // 10 verifications per minute (Strict)
   @RequirePermission(PermissionResource.OVERVIEW, PermissionType.ADMIN)
   @ApiOperation({ summary: 'Verify edit token and get proposed changes' })
   @ApiResponse({

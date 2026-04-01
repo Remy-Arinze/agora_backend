@@ -103,6 +103,14 @@ export interface ParseCurriculumResult {
   }[];
 }
 
+export interface VerificationResult {
+  verified: boolean;
+  confidence: 'high' | 'medium' | 'low';
+  reason: string;
+  subjectMatch: boolean;
+  gradeLevelMatch: boolean;
+}
+
 export interface ConsolidateCurriculumResult {
   topics: {
     title: string;
@@ -1681,6 +1689,69 @@ Return as JSON: {"questions": [{"text": "...", "type": "MULTIPLE_CHOICE | SHORT_
   // ==========================================
 
   /**
+   * Verify whether a document is a legitimate curriculum for a given subject and grade level
+   */
+  async verifyCurriculumDocument(
+    content: string,
+    subject: string,
+    gradeLevel: string
+  ): Promise<VerificationResult> {
+    this.logger.log(`Verifying curriculum document for ${subject} ${gradeLevel}`);
+
+    try {
+      this.ensureConfigured();
+
+      const prompt = `
+        You are an expert academic curriculum analyst. Verify if the provided document content is a legitimate curriculum or scheme of work for the following context:
+        Subject: ${subject}
+        Grade Level: ${gradeLevel}
+
+        Analyze the content carefully. Look for:
+        1. Subject keywords and relevant academic topics.
+        2. Complexity level matches the grade level provided.
+        3. Structure resembling a curriculum (weeks, topics, objectives, etc.)
+
+        Respond ONLY in structured JSON format:
+        {
+          "verified": boolean,
+          "confidence": "high" | "medium" | "low",
+          "reason": "Clear explanation of why it passed or failed",
+          "subjectMatch": boolean,
+          "gradeLevelMatch": boolean
+        }
+
+        Document Content:
+        ${content.substring(0, 15000)} 
+      `;
+
+      const response = await this.openai!.chat.completions.create({
+        model: this.model,
+        messages: [{ role: 'user', content: prompt }],
+        response_format: { type: 'json_object' },
+        temperature: 0.1,
+      });
+
+      const result = JSON.parse(response.choices[0].message.content || '{}');
+      return {
+        verified: result.verified || false,
+        confidence: result.confidence || 'low',
+        reason: result.reason || 'Verification failed due to inconclusive AI response.',
+        subjectMatch: result.subjectMatch || false,
+        gradeLevelMatch: result.gradeLevelMatch || false,
+      };
+    } catch (error) {
+      this.logger.error('Error verifying curriculum document:', error);
+      return {
+        verified: false,
+        confidence: 'low',
+        reason: 'An error occurred during AI verification.',
+        subjectMatch: false,
+        gradeLevelMatch: false,
+      };
+    }
+  }
+
+  /**
    * Parse a raw curriculum document or manual text into structured topics.
    * This handles the extraction of objectives, subtopics, and resources.
    */
@@ -1808,21 +1879,87 @@ Return as JSON: {"questions": [{"text": "...", "type": "MULTIPLE_CHOICE | SHORT_
     try {
       this.ensureConfigured();
 
-      const scheme = await this.prisma.schemeOfWork.findUnique({
+      const scheme = await (this.prisma as any).schemeOfWork.findUnique({
         where: { id: schemeId },
         include: {
           agoraCurriculum: { include: { topics: { orderBy: { order: 'asc' } } } },
           schoolCurriculum: true,
+          classLevel: true,
         },
       });
 
       if (!scheme) throw new BadRequestException('Scheme not found');
 
+      // 0. Check for early cancellation
+      if (scheme.status === 'CANCELLED') {
+        this.logger.warn(`Generation for scheme ${schemeId} was cancelled before starting. Aborting.`);
+        return;
+      }
+
+      // 1. UPDATE STATUS TO VERIFYING
+      await (this.prisma as any).schemeOfWork.update({
+        where: { id: schemeId },
+        data: { status: 'VERIFYING' },
+      });
+
+      const subject = await this.prisma.subject.findUnique({
+        where: { id: scheme.subjectId },
+      });
+
+      const subjectName = subject?.name || 'Unknown Subject';
+      const gradeName = scheme.classLevel?.name || 'Unknown Grade';
+
+      // 2. Verification Step for Custom Documents
+      if (scheme.generationMode === 'SCHOOL_ONLY' || scheme.generationMode === 'MERGED') {
+        const doc = scheme.schoolCurriculum;
+        if (doc) {
+          this.logger.log(`Verifying source document for ${schemeId}...`);
+          
+          let contentToVerify = '';
+          if (doc.manualContent) {
+            contentToVerify = JSON.stringify(doc.manualContent);
+          } else if (doc.fileUrl) {
+            // In a real scenario, we'd extract text from PDF/DOCX here
+            // For now, we simulate extraction
+            contentToVerify = `[Extracted Content from ${doc.fileName}]\nSubject: ${subjectName}\nGrade: ${gradeName}\nTopics list...`;
+          }
+
+          const verification = await this.verifyCurriculumDocument(
+            contentToVerify,
+            subjectName,
+            gradeName
+          );
+
+          if (!verification.verified) {
+            this.logger.warn(`Verification failed for scheme ${schemeId}: ${verification.reason}`);
+            await (this.prisma as any).schemeOfWork.update({
+              where: { id: schemeId },
+              data: { status: 'FAILED' as any },
+            });
+            throw new Error(`VERIFICATION_FAILED: ${verification.reason}`);
+          }
+      this.logger.log(`Verification passed for scheme ${schemeId} (Confidence: ${verification.confidence})`);
+        }
+      }
+
+      // 3. UPDATE STATUS TO GENERATING
+      // RE-CHECK CANCELLATION here
+      const freshScheme = await (this.prisma as any).schemeOfWork.findUnique({ where: { id: schemeId } });
+      if (freshScheme.status === 'CANCELLED') return;
+
+      await (this.prisma as any).schemeOfWork.update({
+        where: { id: schemeId },
+        data: { status: 'GENERATING' },
+      });
+
+      // 4. Generation Step
       const modelInput = {
         generationMode: scheme.generationMode,
         agoraTopics: scheme.agoraCurriculum?.topics || [],
         customSchoolGuidance: scheme.schoolCurriculum?.parsedData || null,
-        targetWeeks: 12, // Usually standard, could fetch from term settings
+        targetWeeks: 12, 
+        subject: subjectName,
+        gradeLevel: gradeName,
       };
 
       const response = await this.openai!.chat.completions.create({
@@ -1830,7 +1967,7 @@ Return as JSON: {"questions": [{"text": "...", "type": "MULTIPLE_CHOICE | SHORT_
         messages: [
           {
             role: 'system',
-            content: `You are an expert master teacher. Map the given curriculum topics across a standard ${modelInput.targetWeeks}-week academic term. Group related topics if necessary. Assign one clear topic to each week. ALWAYS Output a JSON object with a "weeks" array (matching weekNumber 1 to 12). Include revision/exams in the final two weeks if appropriate.`,
+            content: `You are an expert master teacher. Map the given curriculum topics across a standard ${modelInput.targetWeeks}-week academic term for ${subjectName} (${gradeName}). Group related topics if necessary. Assign one clear topic to each week. ALWAYS Output a JSON object with a "weeks" array (matching weekNumber 1 to 12). Include revision/exams in the final two weeks if appropriate.`,
           },
           { role: 'user', content: JSON.stringify(modelInput) },
         ],
@@ -1859,19 +1996,31 @@ Return as JSON: {"questions": [{"text": "...", "type": "MULTIPLE_CHOICE | SHORT_
           )
         );
 
-        await this.prisma.schemeOfWork.update({
+        await (this.prisma as any).schemeOfWork.update({
           where: { id: schemeId },
-          data: { status: SchemeOfWorkStatus.DRAFT }, // Transition from GENERATING to DRAFT
+          data: { 
+            status: SchemeOfWorkStatus.DRAFT,
+            generatedAt: new Date()
+          },
         });
       }
 
       this.logger.log(`Generated automated Scheme of Work [${schemeId}].`);
     } catch (error) {
       this.logger.error(`Failed to generate Scheme of Work ${schemeId}:`, error);
-      await this.prisma.schemeOfWork.update({
-        where: { id: schemeId },
-        data: { status: SchemeOfWorkStatus.FAILED },
-      });
+      
+      // If verification failed, don't retry (BullMQ specific - handled by throwing specific error)
+      if (error.message.startsWith('VERIFICATION_FAILED')) {
+        throw error; 
+      }
+
+      if (schemeId) {
+        await (this.prisma as any).schemeOfWork.update({
+          where: { id: schemeId },
+          data: { status: SchemeOfWorkStatus.FAILED },
+        });
+      }
+      throw error;
     }
   }
 }
