@@ -6,6 +6,7 @@ import { AiService } from '../ai/ai.service';
 import { NotificationService } from '../notification/notification.service';
 import { UserWithContext } from '../auth/types/user-with-context.type';
 import { UserRole } from '@prisma/client';
+import { MetricsService } from '../common/metrics/metrics.service';
 
 @Injectable()
 export class AssessmentsService {
@@ -14,7 +15,8 @@ export class AssessmentsService {
     constructor(
         private readonly prisma: PrismaService,
         private readonly aiService: AiService,
-        private readonly notificationService: NotificationService
+        private readonly notificationService: NotificationService,
+        private readonly metricsService: MetricsService,
     ) { }
 
     async createAssessment(schoolId: string, dto: CreateAssessmentDto, user: UserWithContext) {
@@ -116,6 +118,7 @@ export class AssessmentsService {
             });
         }
 
+        this.metricsService.assessmentsCreatedTotal.inc({ type: assessment.type, subject: assessment.subject?.name || 'unknown' });
         return assessment;
     }
 
@@ -298,7 +301,7 @@ export class AssessmentsService {
             }
         }
 
-        return this.prisma.assessmentSubmission.update({
+        const result = await this.prisma.assessmentSubmission.update({
             where: { id: submission.id },
             data: {
                 violationCount: newCount,
@@ -306,6 +309,9 @@ export class AssessmentsService {
                 pointDeductions
             }
         });
+
+        this.metricsService.assessmentViolationsTotal.inc({ type, flagged: isFlagged ? 'true' : 'false' });
+        return result;
     }
 
     async submitAssessment(schoolId: string, assessmentId: string, dto: SubmitAssessmentDto, user: UserWithContext) {
@@ -462,8 +468,8 @@ export class AssessmentsService {
         });
 
         // --- Emit real-time notification to the teacher ---
+        const subject = await this.prisma.subject.findUnique({ where: { id: assessment.subjectId }, select: { name: true } });
         try {
-            const subject = await this.prisma.subject.findUnique({ where: { id: assessment.subjectId }, select: { name: true } });
             this.notificationService.emitSubmissionNotification({
                 schoolId,
                 teacherId: assessment.teacherId,
@@ -478,6 +484,10 @@ export class AssessmentsService {
             this.logger.warn(`Failed to emit submission notification: ${notifErr}`);
         }
 
+        this.metricsService.assessmentsSubmittedTotal.inc({ type: assessment.type, subject: subject?.name || 'unknown' });
+        if (answers.some(a => a.gradedBy === 'AI')) {
+            this.metricsService.assessmentGradingTotal.inc({ type: 'AI' });
+        }
         return submission;
     }
 
@@ -618,6 +628,7 @@ export class AssessmentsService {
                 });
             }
 
+            this.metricsService.assessmentGradingTotal.inc({ type: 'TEACHER' });
             return updatedSubmission;
         });
     }

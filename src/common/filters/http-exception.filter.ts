@@ -80,6 +80,9 @@ export class HttpExceptionFilter implements ExceptionFilter {
         message =
           'Unable to send email at this time. The email service is temporarily unavailable. Please try again later or contact support if the issue persists.';
         this.logger.error(`Email service error: ${exception.message}`, exception.stack);
+      } else if (exception.message.includes('ThrottlerException')) {
+        status = HttpStatus.TOO_MANY_REQUESTS;
+        message = 'Too many requests. For security reasons, please wait a few seconds before trying again.';
       } else {
         // Log unexpected errors
         this.logger.error(`Unexpected error: ${exception.message}`, exception.stack);

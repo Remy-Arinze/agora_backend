@@ -30,12 +30,13 @@ import {
   MarkWeekInProgressDto,
   SkipWeekDto,
 } from './dto/create-curriculum.dto';
+import { CreateSchoolCurriculumDocDto } from './dto/school-curriculum-doc.dto';
 import { SetupSchemeOfWorkDto } from './dto/scheme-of-work.dto';
 import { CurriculumDto, CurriculumSummaryDto, TimetableSubjectDto } from './dto/curriculum.dto';
 import {
-  NerdcSubjectDto,
-  NerdcCurriculumDto,
-  GetNerdcSubjectsQueryDto,
+  AgoraSubjectDto,
+  AgoraCurriculumTemplateDto,
+  GetAgoraSubjectsQueryDto,
 } from './dto/nerdc-curriculum.dto';
 import { ResponseDto } from '../../common/dto/response.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
@@ -45,6 +46,9 @@ import { RequirePermission } from '../../common/decorators/permission.decorator'
 import { PermissionResource, PermissionType } from '../dto/permission.dto';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { UserWithContext } from '../../auth/types/user-with-context.type';
+import { Throttle } from '@nestjs/throttler';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { UploadedFile, UseInterceptors } from '@nestjs/common';
 
 @ApiTags('curriculum')
 @Controller('schools/:schoolId/curriculum')
@@ -60,9 +64,9 @@ export class CurriculumController {
   // NERDC Template Endpoints
   // ============================================
 
-  @Get('nerdc/subjects')
+  @Get('agora/subjects')
   @RequirePermission(PermissionResource.CURRICULUM, PermissionType.READ)
-  @ApiOperation({ summary: 'Get NERDC subjects list' })
+  @ApiOperation({ summary: 'Get global Agora subjects list' })
   @ApiParam({ name: 'schoolId', description: 'School ID' })
   @ApiQuery({
     name: 'schoolType',
@@ -74,29 +78,29 @@ export class CurriculumController {
     required: false,
     description: 'Filter by category (CORE, ELECTIVE)',
   })
-  @ApiResponse({ status: 200, description: 'NERDC subjects retrieved successfully' })
-  async getNerdcSubjects(
-    @Query() query: GetNerdcSubjectsQueryDto
-  ): Promise<ResponseDto<NerdcSubjectDto[]>> {
+  @ApiResponse({ status: 200, description: 'Agora subjects retrieved successfully' })
+  async getAgoraSubjects(
+    @Query() query: GetAgoraSubjectsQueryDto
+  ): Promise<ResponseDto<AgoraSubjectDto[]>> {
     const data = await this.nerdcService.getSubjects(query);
-    return ResponseDto.ok(data, 'NERDC subjects retrieved successfully');
+    return ResponseDto.ok(data, 'Agora subjects retrieved successfully');
   }
 
-  @Get('nerdc/template')
+  @Get('agora/template')
   @RequirePermission(PermissionResource.CURRICULUM, PermissionType.READ)
-  @ApiOperation({ summary: 'Get NERDC curriculum template' })
+  @ApiOperation({ summary: 'Get global Agora curriculum template' })
   @ApiParam({ name: 'schoolId', description: 'School ID' })
   @ApiQuery({ name: 'subjectCode', description: 'Subject code (e.g., MTH, ENG)' })
   @ApiQuery({ name: 'classLevel', description: 'Class level name (e.g., Primary 1, JSS 1)' })
   @ApiQuery({ name: 'schoolType', description: 'School type (PRIMARY, SECONDARY)' })
   @ApiQuery({ name: 'term', description: 'Term number (1, 2, or 3)' })
-  @ApiResponse({ status: 200, description: 'NERDC template retrieved successfully' })
-  async getNerdcTemplate(
+  @ApiResponse({ status: 200, description: 'Agora template retrieved successfully' })
+  async getAgoraTemplate(
     @Query('subjectCode') subjectCode: string,
     @Query('classLevel') classLevel: string,
     @Query('schoolType') schoolType: string,
     @Query('term') term: string
-  ): Promise<ResponseDto<NerdcCurriculumDto | null>> {
+  ): Promise<ResponseDto<AgoraCurriculumTemplateDto | null>> {
     const data = await this.nerdcService.getCurriculumTemplate(
       subjectCode,
       classLevel,
@@ -105,7 +109,7 @@ export class CurriculumController {
     );
     return ResponseDto.ok(
       data,
-      data ? 'NERDC template retrieved successfully' : 'No NERDC template found'
+      data ? 'Agora template retrieved successfully' : 'No Agora template found'
     );
   }
 
@@ -484,5 +488,41 @@ export class CurriculumController {
   ): Promise<ResponseDto<any[]>> {
     const data = await this.curriculumService.getAgoraLibraryCurricula(subjectId, gradeLevel);
     return ResponseDto.ok(data, 'Agora curricula retrieved successfully');
+  }
+
+  // ============================================
+  // School Private Source Library
+  // ============================================
+
+  @Post('documents/upload')
+  @Throttle({ 'heavy-ai': { limit: 5, ttl: 60000 } })
+  @RequirePermission(PermissionResource.CURRICULUM, PermissionType.WRITE)
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiOperation({ summary: "Upload a school's own curriculum document for Lois to parse" })
+  @ApiResponse({ status: 201, description: 'Document uploaded and parsing initiated' })
+  async uploadDocument(
+    @Param('schoolId') schoolId: string,
+    @UploadedFile() file: Express.Multer.File,
+    @Body() dto: CreateSchoolCurriculumDocDto,
+    @CurrentUser() user: UserWithContext
+  ) {
+    const data = await this.curriculumService.uploadSchoolCurriculumDoc(
+      schoolId,
+      file,
+      dto,
+      user.id
+    );
+    return ResponseDto.ok(data, 'Document uploaded and parsing initiated');
+  }
+
+  @Get('documents')
+  @RequirePermission(PermissionResource.CURRICULUM, PermissionType.READ)
+  @ApiOperation({ summary: "Get all uploaded curriculum documents for the school" })
+  async getDocuments(
+    @Param('schoolId') schoolId: string,
+    @Query('subjectId') subjectId?: string
+  ): Promise<ResponseDto<any[]>> {
+    const data = await this.curriculumService.getSchoolCurriculumDocs(schoolId, subjectId);
+    return ResponseDto.ok(data, 'School curriculum documents retrieved successfully');
   }
 }

@@ -13,14 +13,49 @@ import { Request, Response } from 'express';
  * 
  * Rate limit headers are added by ThrottlerHeadersInterceptor
  */
+import { MetricsService } from '../metrics/metrics.service';
+
+/**
+ * Enhanced ThrottlerGuard that supports user-based rate limiting
+ * 
+ * Features:
+ * - Uses user ID for authenticated users (more accurate than IP)
+ * - Falls back to IP address for unauthenticated requests
+ * - Handles proxy headers (X-Forwarded-For) correctly
+ * 
+ * Rate limit headers are added by ThrottlerHeadersInterceptor
+ */
 @Injectable()
 export class ThrottlerWithHeadersGuard extends ThrottlerGuard {
   constructor(
     options: ThrottlerModuleOptions,
     storage: ThrottlerStorage,
     reflector: Reflector,
+    private readonly metricsService: MetricsService,
   ) {
     super(options, storage, reflector);
+  }
+
+  /**
+   * Whitelist SUPER_ADMIN from all rate limits
+   */
+  async handleRequest(
+    context: ExecutionContext,
+    limit: number,
+    ttl: number,
+    throttler: any,
+    //@ts-ignore
+    ...args: any[]
+  ): Promise<boolean> {
+    const request = context.switchToHttp().getRequest<Request>();
+    const user = (request as any).user;
+
+    if (user?.role === 'SUPER_ADMIN') {
+      return true;
+    }
+
+    //@ts-ignore
+    return super.handleRequest(context, limit, ttl, throttler, ...args);
   }
 
   /**
@@ -79,6 +114,13 @@ export class ThrottlerWithHeadersGuard extends ThrottlerGuard {
     // Add rate limit headers before throwing exception
     this.addThrottleHeaders(response, throttlerLimitDetail);
     
+    // Record metric
+    const request = context.switchToHttp().getRequest<Request>();
+    this.metricsService.throttlerRejectedRequestsTotal.inc({
+      tier: throttlerLimitDetail.key.split(':').pop() || 'unknown',
+      route: request.url,
+    });
+
     // Call parent to throw the exception
     await super.throwThrottlingException(context, throttlerLimitDetail);
   }

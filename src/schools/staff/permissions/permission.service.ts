@@ -288,6 +288,17 @@ export class PermissionService implements OnModuleInit {
     const resources = Object.values(PermissionResource);
     const types = Object.values(PermissionType);
 
+    // Production Hardening: Check if permissions are already initialized to avoid massive upsert loops on boot
+    const count = await this.prisma.permission.count();
+    const expectedCount = resources.length * types.length;
+
+    if (count >= expectedCount) {
+      this.logger.log(`Permissions already initialized (${count}/${expectedCount}). Skipping setup.`);
+      return;
+    }
+
+    this.logger.log(`Initial Setup: Initializing ${expectedCount} default permissions...`);
+
     for (const resource of resources) {
       for (const type of types) {
         await this.prisma.permission.upsert({

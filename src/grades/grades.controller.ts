@@ -30,7 +30,7 @@ import { Throttle } from '@nestjs/throttler';
 @Controller('schools/:schoolId/grades')
 @UseGuards(JwtAuthGuard, SchoolDataAccessGuard, PermissionGuard)
 @ApiBearerAuth()
-@Throttle({ 'database-intensive': {} })
+@Throttle({ 'database-intensive': { limit: 60, ttl: 60000 } })
 export class GradesController {
   constructor(private readonly gradesService: GradesService) {}
 

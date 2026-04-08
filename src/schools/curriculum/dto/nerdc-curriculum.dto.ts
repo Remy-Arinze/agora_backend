@@ -1,118 +1,155 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsOptional, IsString, IsEnum, IsNumber, IsNotEmpty } from 'class-validator';
 
-// ============================================
-// NERDC Subject DTOs
-// ============================================
+/**
+ * Agora Subject DTOs
+ */
 
-export class NerdcSubjectDto {
-  @ApiProperty({ example: 'clx1234567890', description: 'NERDC Subject ID' })
+export class AgoraSubjectDto {
+  @ApiProperty({ example: 'clx1234567890', description: 'Agora Subject ID' })
+  @IsString()
+  @IsNotEmpty()
   id: string;
 
   @ApiProperty({ example: 'Mathematics', description: 'Subject name' })
+  @IsString()
+  @IsNotEmpty()
   name: string;
 
   @ApiProperty({ example: 'MTH', description: 'Subject code' })
+  @IsString()
+  @IsNotEmpty()
   code: string;
 
   @ApiPropertyOptional({
     example: 'CORE',
     description: 'Subject category (CORE, ELECTIVE, VOCATIONAL)',
   })
+  @IsOptional()
+  @IsString()
   category: string | null;
 
   @ApiProperty({ example: ['PRIMARY', 'SECONDARY'], description: 'Applicable school types' })
+  @IsString({ each: true })
   schoolTypes: string[];
 
   @ApiPropertyOptional({ description: 'Subject description' })
+  @IsOptional()
+  @IsString()
   description: string | null;
 
   @ApiProperty({ example: true })
   isActive: boolean;
 }
 
-// ============================================
-// NERDC Curriculum Week DTOs
-// ============================================
+/**
+ * Agora Curriculum Template Week DTOs
+ */
 
-export class NerdcCurriculumWeekDto {
+export class AgoraCurriculumTemplateWeekDto {
   @ApiProperty({ example: 'clx1234567890' })
+  @IsString()
   id: string;
 
   @ApiProperty({ example: 1, description: 'Week number (1-13)' })
+  @IsNumber()
   weekNumber: number;
 
   @ApiProperty({ example: 'Number Systems', description: 'Main topic' })
+  @IsString()
   topic: string;
 
   @ApiProperty({ example: ['Place Value', 'Number Line'], description: 'Sub-topics' })
+  @IsString({ each: true })
   subTopics: string[];
 
   @ApiProperty({
     example: ['Understand place value up to millions'],
     description: 'Learning objectives',
   })
+  @IsString({ each: true })
   objectives: string[];
 
   @ApiProperty({ example: ['Group work', 'Number puzzles'], description: 'Suggested activities' })
+  @IsString({ each: true })
   activities: string[];
 
   @ApiProperty({
     example: ['Textbook Chapter 1', 'Number cards'],
     description: 'Required resources',
   })
+  @IsString({ each: true })
   resources: string[];
 
   @ApiPropertyOptional({ example: 'Written test', description: 'Assessment method' })
+  @IsOptional()
+  @IsString()
   assessment: string | null;
 
   @ApiPropertyOptional({ example: '5 periods of 40 minutes', description: 'Duration' })
+  @IsOptional()
+  @IsString()
   duration: string | null;
 }
 
-// ============================================
-// NERDC Curriculum DTOs
-// ============================================
+/**
+ * Agora Curriculum Template DTOs
+ */
 
-export class NerdcCurriculumDto {
+export class AgoraCurriculumTemplateDto {
   @ApiProperty({ example: 'clx1234567890' })
+  @IsString()
   id: string;
 
   @ApiProperty({ example: 'PRIMARY_1', description: 'Class level code' })
+  @IsString()
   classLevel: string;
 
   @ApiProperty({ example: 1, description: 'Term number (1, 2, or 3)' })
+  @IsNumber()
   term: number;
 
   @ApiPropertyOptional({ description: 'Curriculum description' })
+  @IsOptional()
+  @IsString()
   description: string | null;
 
-  @ApiProperty({ type: NerdcSubjectDto, description: 'Subject information' })
-  subject: NerdcSubjectDto;
+  @ApiProperty({ type: AgoraSubjectDto, description: 'Subject information' })
+  subject: AgoraSubjectDto;
 
-  @ApiProperty({ type: [NerdcCurriculumWeekDto], description: 'Weekly curriculum content' })
-  weeks: NerdcCurriculumWeekDto[];
+  @ApiProperty({ type: [AgoraCurriculumTemplateWeekDto], description: 'Weekly curriculum content' })
+  weeks: AgoraCurriculumTemplateWeekDto[];
 }
 
-// ============================================
-// NERDC Query DTOs
-// ============================================
+/**
+ * Subject Selection / Query DTOs
+ */
 
-export class GetNerdcSubjectsQueryDto {
+export class GetAgoraSubjectsQueryDto {
   @ApiPropertyOptional({ example: 'PRIMARY', description: 'Filter by school type' })
+  @IsOptional()
+  @IsString()
   schoolType?: string;
 
   @ApiPropertyOptional({ example: 'CORE', description: 'Filter by category' })
+  @IsOptional()
+  @IsString()
   category?: string;
 }
 
-export class GetNerdcCurriculumQueryDto {
+export class GetAgoraCurriculumTemplateQueryDto {
   @ApiProperty({ example: 'MTH', description: 'Subject code' })
+  @IsString()
+  @IsNotEmpty()
   subjectCode: string;
 
   @ApiProperty({ example: 'PRIMARY_1', description: 'Class level code' })
+  @IsString()
+  @IsNotEmpty()
   classLevel: string;
 
   @ApiProperty({ example: 1, description: 'Term number (1, 2, or 3)' })
+  @IsNumber()
   term: number;
 }
 

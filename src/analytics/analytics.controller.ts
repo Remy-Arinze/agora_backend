@@ -13,7 +13,7 @@ import { Throttle } from '@nestjs/throttler';
 @Controller('analytics')
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth()
-@Throttle({ 'database-intensive': {} })
+@Throttle({ 'database-intensive': { limit: 60, ttl: 60000 } })
 export class AnalyticsController {
   constructor(private readonly analyticsService: AnalyticsService) {}
 

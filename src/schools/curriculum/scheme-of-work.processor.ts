@@ -13,6 +13,8 @@ export interface GenerateSchemePayload {
   creditsUsed: number;
 }
 
+import { MetricsService } from '../../common/metrics/metrics.service';
+
 @Processor(CURRICULUM_PROCESSING_QUEUE, {
   concurrency: 1, // AI generation is heavy, keep it serial for now
 })
@@ -23,11 +25,13 @@ export class SchemeOfWorkProcessor extends WorkerHost {
     private readonly aiService: AiService,
     private readonly subscriptionsService: SubscriptionsService,
     private readonly prisma: PrismaService,
+    private readonly metricsService: MetricsService,
   ) {
     super();
   }
 
   async process(job: Job<GenerateSchemePayload, void, string>): Promise<void> {
+    const startTime = Date.now();
     if (job.name !== 'generate-scheme') return;
 
     const { schemeId, schoolId, userId, creditsUsed } = job.data;
@@ -36,7 +40,13 @@ export class SchemeOfWorkProcessor extends WorkerHost {
     try {
       // Logic is already implemented in AiService
       await this.aiService.generateSchemeOfWork(schemeId);
+      
+      const durationSec = (Date.now() - startTime) / 1000;
+      this.metricsService.bullmqJobsCompletedTotal.inc({ queue: CURRICULUM_PROCESSING_QUEUE, job_name: job.name });
+      this.metricsService.bullmqJobDurationSeconds.observe({ queue: CURRICULUM_PROCESSING_QUEUE, job_name: job.name }, durationSec);
+
     } catch (error) {
+      this.metricsService.bullmqJobsFailedTotal.inc({ queue: CURRICULUM_PROCESSING_QUEUE, job_name: job.name });
       this.logger.error(`Failed to generate scheme ${schemeId}:`, error);
       
       // Check if we should refund (only on final attempt)

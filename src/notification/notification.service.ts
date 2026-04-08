@@ -33,6 +33,14 @@ export interface GradePublishedPayload {
     timestamp: string;
 }
 
+export interface AgoraSubjectAddedPayload {
+    subjectId: string;
+    subjectName: string;
+    subjectCode: string;
+    schoolTypes: string[];
+    timestamp: string;
+}
+
 @Injectable()
 export class NotificationService {
     private readonly logger = new Logger(NotificationService.name);
@@ -52,5 +60,10 @@ export class NotificationService {
     emitGradePublished(payload: GradePublishedPayload) {
         this.logger.log(`Emitting grade published notification for student ${payload.studentId}: ${payload.assessmentTitle}`);
         this.eventEmitter.emit('grade.published', payload);
+    }
+
+    emitAgoraSubjectAdded(payload: AgoraSubjectAddedPayload) {
+        this.logger.log(`Emitting global subject added notification: ${payload.subjectName} (${payload.subjectCode})`);
+        this.eventEmitter.emit('agora.subject.added', payload);
     }
 }

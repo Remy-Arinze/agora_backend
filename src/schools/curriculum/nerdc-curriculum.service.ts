@@ -1,10 +1,10 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import {
-  NerdcSubjectDto,
-  NerdcCurriculumDto,
-  NerdcCurriculumWeekDto,
-  GetNerdcSubjectsQueryDto,
+  AgoraSubjectDto,
+  AgoraCurriculumTemplateDto,
+  AgoraCurriculumTemplateWeekDto,
+  GetAgoraSubjectsQueryDto,
   getClassLevelCode,
 } from './dto/nerdc-curriculum.dto';
 
@@ -16,11 +16,8 @@ export class NerdcCurriculumService {
   // Subject Operations
   // ============================================
 
-  /**
-   * Get all NERDC subjects, optionally filtered by school type
-   */
-  async getSubjects(query: GetNerdcSubjectsQueryDto): Promise<NerdcSubjectDto[]> {
-    const subjects = await (this.prisma as any).nerdcSubject.findMany({
+  async getSubjects(query: GetAgoraSubjectsQueryDto): Promise<AgoraSubjectDto[]> {
+    const subjects = await (this.prisma as any).agoraSubject.findMany({
       where: {
         isActive: true,
         ...(query.schoolType && {
@@ -33,14 +30,14 @@ export class NerdcCurriculumService {
       orderBy: [{ category: 'asc' }, { name: 'asc' }],
     });
 
-    return subjects.map(this.mapToSubjectDto);
+    return subjects.map((s: any) => this.mapToSubjectDto(s));
   }
 
   /**
    * Get a single NERDC subject by code
    */
-  async getSubjectByCode(code: string): Promise<NerdcSubjectDto | null> {
-    const subject = await (this.prisma as any).nerdcSubject.findUnique({
+  async getSubjectByCode(code: string): Promise<AgoraSubjectDto | null> {
+    const subject = await (this.prisma as any).agoraSubject.findUnique({
       where: { code },
     });
 
@@ -59,7 +56,7 @@ export class NerdcCurriculumService {
     classLevelName: string,
     schoolType: string,
     term: number
-  ): Promise<NerdcCurriculumDto | null> {
+  ): Promise<AgoraCurriculumTemplateDto | null> {
     // Convert class level name to code
     const classLevelCode = getClassLevelCode(classLevelName, schoolType);
     if (!classLevelCode) {
@@ -67,7 +64,7 @@ export class NerdcCurriculumService {
     }
 
     // Find the subject first
-    const subject = await (this.prisma as any).nerdcSubject.findFirst({
+    const subject = await (this.prisma as any).agoraSubject.findFirst({
       where: {
         OR: [{ code: subjectCode }, { name: { contains: subjectCode, mode: 'insensitive' } }],
         isActive: true,
@@ -78,8 +75,8 @@ export class NerdcCurriculumService {
       return null;
     }
 
-    // Find the curriculum
-    const curriculum = await (this.prisma as any).nerdcCurriculum.findFirst({
+    // Find the curriculum template
+    const curriculum = await (this.prisma as any).agoraCurriculumTemplate.findFirst({
       where: {
         subjectId: subject.id,
         classLevel: classLevelCode,
@@ -93,14 +90,14 @@ export class NerdcCurriculumService {
       },
     });
 
-    return curriculum ? this.mapToCurriculumDto(curriculum) : null;
+    return curriculum ? this.mapToCurriculumTemplateDto(curriculum) : null;
   }
 
   /**
    * Get NERDC curriculum template by ID
    */
-  async getCurriculumById(id: string): Promise<NerdcCurriculumDto | null> {
-    const curriculum = await (this.prisma as any).nerdcCurriculum.findUnique({
+  async getCurriculumById(id: string): Promise<AgoraCurriculumTemplateDto | null> {
+    const curriculum = await (this.prisma as any).agoraCurriculumTemplate.findUnique({
       where: { id },
       include: {
         subject: true,
@@ -110,7 +107,7 @@ export class NerdcCurriculumService {
       },
     });
 
-    return curriculum ? this.mapToCurriculumDto(curriculum) : null;
+    return curriculum ? this.mapToCurriculumTemplateDto(curriculum) : null;
   }
 
   /**
@@ -120,8 +117,8 @@ export class NerdcCurriculumService {
     subjectId: string,
     classLevel: string,
     term: number
-  ): Promise<NerdcCurriculumDto | null> {
-    const curriculum = await (this.prisma as any).nerdcCurriculum.findFirst({
+  ): Promise<AgoraCurriculumTemplateDto | null> {
+    const curriculum = await (this.prisma as any).agoraCurriculumTemplate.findFirst({
       where: {
         subjectId,
         classLevel,
@@ -135,7 +132,7 @@ export class NerdcCurriculumService {
       },
     });
 
-    return curriculum ? this.mapToCurriculumDto(curriculum) : null;
+    return curriculum ? this.mapToCurriculumTemplateDto(curriculum) : null;
   }
 
   /**
@@ -146,7 +143,7 @@ export class NerdcCurriculumService {
     classLevel?: string;
     term?: number;
     subjectId?: string;
-  }): Promise<NerdcCurriculumDto[]> {
+  }): Promise<AgoraCurriculumTemplateDto[]> {
     const where: any = {};
 
     if (filters?.classLevel) {
@@ -167,7 +164,7 @@ export class NerdcCurriculumService {
       };
     }
 
-    const curricula = await (this.prisma as any).nerdcCurriculum.findMany({
+    const curricula = await (this.prisma as any).agoraCurriculumTemplate.findMany({
       where,
       include: {
         subject: true,
@@ -178,24 +175,21 @@ export class NerdcCurriculumService {
       orderBy: [{ classLevel: 'asc' }, { term: 'asc' }],
     });
 
-    return curricula.map((c: any) => this.mapToCurriculumDto(c));
+    return curricula.map((c: any) => this.mapToCurriculumTemplateDto(c));
   }
 
   // ============================================
   // Admin Operations (for seeding/management)
   // ============================================
 
-  /**
-   * Create or update a NERDC subject
-   */
   async upsertSubject(data: {
     code: string;
     name: string;
     category?: string;
     schoolTypes: string[];
     description?: string;
-  }): Promise<NerdcSubjectDto> {
-    const subject = await (this.prisma as any).nerdcSubject.upsert({
+  }): Promise<AgoraSubjectDto> {
+    const subject = await (this.prisma as any).agoraSubject.upsert({
       where: { code: data.code },
       update: {
         name: data.name,
@@ -233,18 +227,18 @@ export class NerdcCurriculumService {
       assessment?: string;
       duration?: string;
     }>;
-  }): Promise<NerdcCurriculumDto> {
+  }): Promise<AgoraCurriculumTemplateDto> {
     // Find subject
-    const subject = await (this.prisma as any).nerdcSubject.findUnique({
+    const subject = await (this.prisma as any).agoraSubject.findUnique({
       where: { code: data.subjectCode },
     });
 
     if (!subject) {
-      throw new NotFoundException(`NERDC subject with code ${data.subjectCode} not found`);
+      throw new NotFoundException(`Agora subject with code ${data.subjectCode} not found`);
     }
 
     // Check if curriculum exists
-    const existing = await (this.prisma as any).nerdcCurriculum.findFirst({
+    const existing = await (this.prisma as any).agoraCurriculumTemplate.findFirst({
       where: {
         subjectId: subject.id,
         classLevel: data.classLevel,
@@ -256,11 +250,11 @@ export class NerdcCurriculumService {
 
     if (existing) {
       // Update existing curriculum and replace weeks
-      await (this.prisma as any).nerdcCurriculumWeek.deleteMany({
+      await (this.prisma as any).agoraCurriculumTemplateWeek.deleteMany({
         where: { curriculumId: existing.id },
       });
 
-      curriculum = await (this.prisma as any).nerdcCurriculum.update({
+      curriculum = await (this.prisma as any).agoraCurriculumTemplate.update({
         where: { id: existing.id },
         data: {
           description: data.description || null,
@@ -285,8 +279,8 @@ export class NerdcCurriculumService {
         },
       });
     } else {
-      // Create new curriculum
-      curriculum = await (this.prisma as any).nerdcCurriculum.create({
+      // Create new curriculum template
+      curriculum = await (this.prisma as any).agoraCurriculumTemplate.create({
         data: {
           subjectId: subject.id,
           classLevel: data.classLevel,
@@ -314,14 +308,14 @@ export class NerdcCurriculumService {
       });
     }
 
-    return this.mapToCurriculumDto(curriculum);
+    return this.mapToCurriculumTemplateDto(curriculum);
   }
 
   // ============================================
   // Mapping Methods
   // ============================================
 
-  private mapToSubjectDto(subject: any): NerdcSubjectDto {
+  private mapToSubjectDto(subject: any): AgoraSubjectDto {
     return {
       id: subject.id,
       name: subject.name,
@@ -333,7 +327,7 @@ export class NerdcCurriculumService {
     };
   }
 
-  private mapToCurriculumDto(curriculum: any): NerdcCurriculumDto {
+  private mapToCurriculumTemplateDto(curriculum: any): AgoraCurriculumTemplateDto {
     return {
       id: curriculum.id,
       classLevel: curriculum.classLevel,
@@ -344,7 +338,7 @@ export class NerdcCurriculumService {
     };
   }
 
-  private mapToWeekDto(week: any): NerdcCurriculumWeekDto {
+  private mapToWeekDto(week: any): AgoraCurriculumTemplateWeekDto {
     return {
       id: week.id,
       weekNumber: week.weekNumber,

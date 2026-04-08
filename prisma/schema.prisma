@@ -554,19 +554,24 @@ model Room {
 }
 
 model Subject {
-  id           String   @id @default(cuid())
-  name         String // e.g., "Mathematics", "English Language"
-  code         String? // e.g., "MATH", "ENG"
-  schoolId     String
-  schoolType   String? // "PRIMARY", "SECONDARY", "TERTIARY" - null means applies to all types
-  classLevelId String? // For SECONDARY: link to ClassLevel (JSS vs SSS distinction)
-  description  String?
-  isActive     Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id             String   @id @default(cuid())
+  name           String // e.g., "Mathematics", "English Language"
+  code           String? // e.g., "MATH", "ENG"
+  schoolId       String
+  schoolType     String? // "PRIMARY", "SECONDARY", "TERTIARY" - null means applies to all types
+  classLevelId   String? // For SECONDARY: link to ClassLevel (JSS vs SSS distinction)
+  levelStream    String? // For SECONDARY: "JUNIOR", "SENIOR", or "ALL" (General)
+  agoraSubjectId String? // Link to global AgoraSubject bank for curriculum discovery
+  isAgoraStandard Boolean @default(false)
+  category       String? // "CORE", "ELECTIVE", etc. copied from AgoraSubject
+  description    String?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   school              School               @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   classLevel          ClassLevel?          @relation(fields: [classLevelId], references: [id], onDelete: SetNull)
+  agoraSubject        AgoraSubject?        @relation(fields: [agoraSubjectId], references: [id], onDelete: SetNull)
   timetablePeriods    TimetablePeriod[]
   subjectTeachers     SubjectTeacher[]
   classTeachers       ClassTeacher[] // Teachers assigned to teach this subject in specific classes
@@ -580,6 +585,7 @@ model Subject {
   @@index([schoolId])
   @@index([schoolType])
   @@index([classLevelId])
+  @@index([agoraSubjectId])
   @@index([isActive])
 }
 
@@ -1024,11 +1030,12 @@ model StudentResource {
 }
 
 // ============================================
-// NERDC CURRICULUM (System-wide Templates)
-// Nigerian Educational Research and Development Council
+// AGORA GLOBAL SUBJECT BANK & CURRICULUM TEMPLATES
+// Global subject registry shared across all schools.
+// Schools link their local subjects to this bank via agoraSubjectId.
 // ============================================
 
-model NerdcSubject {
+model AgoraSubject {
   id          String   @id @default(cuid())
   name        String // "English Language", "Mathematics"
   code        String   @unique // "ENG", "MTH", "BSC"
@@ -1039,15 +1046,17 @@ model NerdcSubject {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  curricula NerdcCurriculum[]
+  curriculumTemplates    AgoraCurriculumTemplate[]
   agoraCurriculumSources AgoraCurriculumSource[]
   agoraCurricula         AgoraCurriculum[]
+  schoolSubjects         Subject[] // School subjects linked to this global subject
 
+  @@map("NerdcSubject")
   @@index([code])
   @@index([isActive])
 }
 
-model NerdcCurriculum {
+model AgoraCurriculumTemplate {
   id          String   @id @default(cuid())
   subjectId   String
   classLevel  String // "PRIMARY_1", "PRIMARY_2", "JSS_1", "SS_1"
@@ -1056,16 +1065,17 @@ model NerdcCurriculum {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  subject         NerdcSubject          @relation(fields: [subjectId], references: [id], onDelete: Cascade)
-  weeks           NerdcCurriculumWeek[]
+  subject         AgoraSubject                   @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  weeks           AgoraCurriculumTemplateWeek[]
   schoolCurricula Curriculum[] // School curricula based on this template
 
+  @@map("NerdcCurriculum")
   @@unique([subjectId, classLevel, term])
   @@index([classLevel])
   @@index([term])
 }
 
-model NerdcCurriculumWeek {
+model AgoraCurriculumTemplateWeek {
   id           String   @id @default(cuid())
   curriculumId String
   weekNumber   Int // 1-13 (Nigerian school term)
@@ -1079,8 +1089,9 @@ model NerdcCurriculumWeek {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  curriculum NerdcCurriculum @relation(fields: [curriculumId], references: [id], onDelete: Cascade)
+  curriculum AgoraCurriculumTemplate @relation(fields: [curriculumId], references: [id], onDelete: Cascade)
 
+  @@map("NerdcCurriculumWeek")
   @@unique([curriculumId, weekNumber])
   @@index([curriculumId])
 }
@@ -1125,7 +1136,7 @@ model Curriculum {
   subjectRef      Subject?         @relation(fields: [subjectId], references: [id], onDelete: Cascade)
   term            Term?            @relation(fields: [termId], references: [id], onDelete: SetNull)
   teacher         Teacher?         @relation(fields: [teacherId], references: [id], onDelete: SetNull)
-  nerdcCurriculum NerdcCurriculum? @relation(fields: [nerdcCurriculumId], references: [id])
+  nerdcCurriculum AgoraCurriculumTemplate? @relation(fields: [nerdcCurriculumId], references: [id])
   items           CurriculumItem[]
 
   @@unique([schoolId, classLevelId, subjectId, termId])
@@ -1764,7 +1775,7 @@ model AgoraCurriculumSource {
   updatedAt       DateTime @updatedAt
   batchId         String?  // For tracking multiple file uploads together
 
-  subject         NerdcSubject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  subject         AgoraSubject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
 
   @@index([subjectId])
   @@index([gradeLevel])
@@ -1791,10 +1802,11 @@ model AgoraCurriculum {
 
   publishedAt     DateTime?
   publishedBy     String?  // Super admin user ID
+  createdBy       String   // Super admin user ID who created this version
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  subject         NerdcSubject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  subject         AgoraSubject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
   topics          AgoraCurriculumTopic[]
   schemesOfWork   SchemeOfWork[]
 

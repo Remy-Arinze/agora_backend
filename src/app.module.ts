@@ -38,6 +38,8 @@ import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { AgoraCurriculumModule } from './agora-curriculum/agora-curriculum.module';
 import { BullBoardModule } from '@bull-board/nestjs';
 import { ExpressAdapter } from '@bull-board/express';
+import { MetricsModule } from './common/metrics/metrics.module';
+import { HttpMetricsInterceptor } from './common/metrics/http-metrics.interceptor';
 
 @Module({
   imports: [
@@ -67,12 +69,12 @@ import { ExpressAdapter } from '@bull-board/express';
       {
         name: 'heavy-ai',
         ttl: 60000,
-        limit: 10,
+        limit: 100,
       },
       {
         name: 'database-intensive',
         ttl: 60000,
-        limit: 30,
+        limit: 100,
       },
     ]),
     DatabaseModule,
@@ -99,6 +101,7 @@ import { ExpressAdapter } from '@bull-board/express';
     AssessmentsModule,
     AttendanceModule,
     AgoraCurriculumModule,
+    MetricsModule,
   ],
   controllers: [AppController],
   providers: [
@@ -112,6 +115,11 @@ import { ExpressAdapter } from '@bull-board/express';
     {
       provide: APP_INTERCEPTOR,
       useClass: ThrottlerHeadersInterceptor,
+    },
+    // HTTP Metrics Interceptor
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: HttpMetricsInterceptor,
     },
     // Register exception filter as provider to enable dependency injection
     {
@@ -138,6 +146,7 @@ export class AppModule implements NestModule {
         { path: '/swagger', method: RequestMethod.ALL },
         { path: '/swagger/(.*)', method: RequestMethod.ALL },
         { path: '/swagger-json', method: RequestMethod.ALL },
+        { path: '/metrics', method: RequestMethod.ALL },
       )
       .forRoutes('*');
   }

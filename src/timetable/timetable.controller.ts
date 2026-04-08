@@ -26,6 +26,7 @@ import {
   CreateRoomDto,
   CreateSubjectDto,
   UpdateSubjectDto,
+  BulkDeleteSubjectsDto,
   AssignTeacherToSubjectDto,
   AutoGenerateSubjectsDto,
   AutoGenerateSubjectsResponseDto,
@@ -363,6 +364,21 @@ export class TimetableController {
   ): Promise<ResponseDto<void>> {
     await this.resourcesService.deleteSubject(schoolId, subjectId);
     return ResponseDto.ok(undefined, 'Subject deleted successfully');
+  }
+
+  @Delete('subjects')
+  @RequirePermission(PermissionResource.SUBJECTS, PermissionType.ADMIN)
+  @ApiOperation({ summary: 'Bulk delete subjects' })
+  @ApiResponse({
+    status: 200,
+    description: 'Subjects deleted successfully',
+  })
+  async bulkDeleteSubjects(
+    @Param('schoolId') schoolId: string,
+    @Body() dto: BulkDeleteSubjectsDto
+  ): Promise<ResponseDto<{ deleted: number; message: string }>> {
+    const data = await this.resourcesService.bulkDeleteSubjects(schoolId, dto.subjectIds);
+    return ResponseDto.ok(data, data.message);
   }
 
   @Post('subjects/:subjectId/teachers')

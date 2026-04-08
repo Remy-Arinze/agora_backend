@@ -151,20 +151,31 @@ export class TeacherService {
       console.error('Failed to send password reset email to teacher:', error);
     }
 
-    // If subjectIds provided, create SubjectTeacher records
+    // If subjectIds provided, create SubjectTeacher records with enhanced validation
     if (teacherData.subjectIds && teacherData.subjectIds.length > 0) {
       try {
-        // Validate all subject IDs belong to this school
+        // Validate all subject IDs belong to this school and check agora subject consistency
         for (const subjectId of teacherData.subjectIds) {
           const subject = await this.prisma.subject.findFirst({
             where: {
               id: subjectId,
               schoolId: school.id,
-              isActive: true,
             },
+            include: {
+              agoraSubject: {
+                select: { id: true, name: true, code: true }
+              }
+            }
           });
+
           if (!subject) {
-            console.warn(`Subject ${subjectId} not found or doesn't belong to school, skipping`);
+            console.error(`Subject ${subjectId} not found in school`);
+            continue;
+          }
+
+          // Validate agora subject consistency
+          if (subject.agoraSubjectId && !subject.agoraSubject) {
+            console.error(`Subject ${subject.name} has invalid agora subject reference ${subject.agoraSubjectId}`);
             continue;
           }
 
@@ -173,12 +184,8 @@ export class TeacherService {
             .create({
               data: {
                 teacherId: result.teacher.id,
-                subjectId,
+                subjectId: subjectId,
               },
-            })
-            .catch((e) => {
-              // Skip if duplicate (already exists)
-              if (e.code !== 'P2002') throw e;
             });
         }
       } catch (error) {

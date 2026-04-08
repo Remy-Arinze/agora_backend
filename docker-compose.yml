@@ -51,6 +51,17 @@ services:
     volumes:
       - redis_data:/data
 
+  alloy:
+    image: grafana/alloy:latest
+    volumes:
+      - ./monitoring/alloy.config:/etc/alloy/config.alloy
+    command: run --storage.path=/var/lib/alloy/data /etc/alloy/config.alloy
+    env_file:
+      - .env
+    depends_on:
+      - api
+    restart: unless-stopped
+
 volumes:
   postgres_data:
   redis_data:

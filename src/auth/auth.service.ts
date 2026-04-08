@@ -19,6 +19,7 @@ import { ConfirmChangePasswordDto } from './dto/confirm-change-password.dto';
 import { VerifyResetPasswordDto } from './dto/verify-reset-password.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { JwtPayload } from './types/user-with-context.type';
+import { MetricsService } from '../common/metrics/metrics.service';
 import * as bcrypt from 'bcryptjs';
 import { randomBytes } from 'crypto';
 import { generateSecurePasswordHash } from '../common/utils/password.utils';
@@ -34,6 +35,7 @@ export class AuthService {
     private readonly otpService: OtpService,
     private readonly passwordOtpService: PasswordOtpService,
     private readonly cloudinaryService: CloudinaryService,
+    private readonly metricsService: MetricsService,
   ) { }
 
   /**
@@ -212,6 +214,7 @@ export class AuthService {
 
     const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
     if (!isPasswordValid) {
+      this.metricsService.authFailedAttemptsTotal.inc({ ip: 'unknown' }); // Interceptor could pass IP if needed, but for now we track frequency
       throw new UnauthorizedException('Invalid credentials');
     }
 
@@ -229,6 +232,7 @@ export class AuthService {
    */
   async login(loginDto: LoginDto): Promise<LoginResponseDto> {
     this.logger.log(`[AUTH] Login attempt for: ${loginDto.emailOrPublicId}`);
+    this.metricsService.authLoginAttemptsTotal.inc({ status: 'attempt' });
 
     try {
       const { emailOrPublicId, password } = loginDto;
@@ -313,6 +317,7 @@ export class AuthService {
 
       // Verify OTP
       const userId = await this.otpService.verifyOtp(sessionId, code);
+      this.metricsService.authLoginAttemptsTotal.inc({ status: 'success' });
 
       // Get user with all relations
       const user = await this.prisma.user.findUnique({
@@ -415,8 +420,10 @@ export class AuthService {
         error instanceof UnauthorizedException ||
         error instanceof BadRequestException
       ) {
+        this.metricsService.authLoginAttemptsTotal.inc({ status: 'failed' });
         throw error;
       }
+      this.metricsService.authLoginAttemptsTotal.inc({ status: 'error' });
       throw new BadRequestException('OTP verification failed');
     }
   }
@@ -614,11 +621,13 @@ export class AuthService {
         ...(pwdChangedAt !== undefined && { pwdChangedAt }),
       };
 
+      this.metricsService.authTokenRefreshTotal.inc({ status: 'success' });
       return {
         accessToken: this.jwtService.sign(newPayload),
         refreshToken: this.jwtService.sign(newPayload, { expiresIn: '7d' }),
       };
     } catch (error) {
+      this.metricsService.authTokenRefreshTotal.inc({ status: 'failed' });
       if (error instanceof UnauthorizedException) {
         throw error;
       }

@@ -32,7 +32,12 @@ export class SetupSchemeOfWorkDto {
   @IsOptional()
   agoraCurriculumId?: string;
 
-  @ApiPropertyOptional({ description: 'School Curriculum Doc IDs (for Option B)' })
+  @ApiPropertyOptional({ description: 'School Curriculum Doc ID (for Option B)' })
+  @IsString()
+  @IsOptional()
+  schoolCurriculumDocId?: string;
+
+  @ApiPropertyOptional({ description: 'School Curriculum Doc IDs (Legacy/Multiple)' })
   @IsArray()
   @IsString({ each: true })
   @IsOptional()

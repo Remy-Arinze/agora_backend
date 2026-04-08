@@ -7,7 +7,8 @@ import { Response, Request } from 'express';
 import { 
     SubmissionNotificationPayload, 
     AssessmentPublishedPayload, 
-    GradePublishedPayload 
+    GradePublishedPayload,
+    AgoraSubjectAddedPayload
 } from './notification.service';
 import { PrismaService } from '../database/prisma.service';
 
@@ -223,6 +224,28 @@ export class NotificationController {
         connections.forEach(res => {
             try { res.write(`event: notification\ndata: ${eventData}\n\n`); }
             catch (err) { }
+        });
+    }
+
+    @OnEvent('agora.subject.added')
+    handleAgoraSubjectAdded(payload: AgoraSubjectAddedPayload) {
+        this.logger.log(`Broadcasting new Agora subject: ${payload.subjectName}`);
+        
+        const eventData = JSON.stringify({
+            type: 'AGORA_SUBJECT_ADDED',
+            subjectId: payload.subjectId,
+            subjectName: payload.subjectName,
+            subjectCode: payload.subjectCode,
+            schoolTypes: payload.schoolTypes,
+            timestamp: payload.timestamp,
+        });
+
+        // Broadcast to all connected teachers and school admins
+        this.teacherConnections.forEach((connections) => {
+            connections.forEach((res) => {
+                try { res.write(`event: notification\ndata: ${eventData}\n\n`); }
+                catch (err) { }
+            });
         });
     }
 }

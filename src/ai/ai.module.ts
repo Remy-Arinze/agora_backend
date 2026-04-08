@@ -9,16 +9,17 @@ import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
 import { DatabaseModule } from '../database/database.module';
 import { ScheduleModule } from '@nestjs/schedule';
 
+import { KnowledgeEventService } from './knowledge-event.service';
+
 @Module({
   imports: [
     ConfigModule,
     SubscriptionsModule,
     DatabaseModule,
-    ScheduleModule.forRoot(),
     VectorQueueModule,
   ],
   controllers: [AiController],
-  providers: [AiService, KnowledgeIndexingService, VectorProcessor],
+  providers: [AiService, KnowledgeIndexingService, VectorProcessor, KnowledgeEventService],
   exports: [AiService, KnowledgeIndexingService],
 })
 export class AiModule {}

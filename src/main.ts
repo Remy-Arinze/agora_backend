@@ -11,20 +11,20 @@ const cookieParser = require('cookie-parser');
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
 
-  // Initialize Sentry before app creation
-  if (process.env.SENTRY_DSN) {
+  const isProduction = process.env.NODE_ENV === 'production';
+
+  // Initialize Sentry before app creation - Only in Production
+  if (isProduction && process.env.SENTRY_DSN) {
     Sentry.init({
       dsn: process.env.SENTRY_DSN,
-      environment: process.env.NODE_ENV || 'development',
+      environment: process.env.NODE_ENV || 'production',
       tracesSampleRate: 1.0,
       debug: false,
-      integrations: [
-        // Add more integrations if needed
-      ],
+      integrations: [],
     });
     logger.log('🕵️ Sentry initialized');
   } else {
-    logger.warn('⚠️ SENTRY_DSN not found. Error tracking disabled.');
+    logger.log('🛡️ Sentry disabled (Not in production or DSN missing)');
   }
 
   const app = await NestFactory.create(AppModule);
@@ -34,7 +34,6 @@ async function bootstrap() {
 
   // Security: Helmet middleware for HTTP security headers
   // Protects against XSS, clickjacking, MIME sniffing, and other attacks
-  const isProduction = process.env.NODE_ENV === 'production';
   app.use(
     helmet({
       contentSecurityPolicy: {
