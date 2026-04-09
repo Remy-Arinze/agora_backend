@@ -472,8 +472,8 @@ export class CurriculumController {
     @Param('schemeId') schemeId: string,
     @CurrentUser() user: UserWithContext
   ): Promise<ResponseDto<any>> {
-    const result = await this.curriculumService.cancelSchemeGeneration(schoolId, schemeId, user);
-    return ResponseDto.ok(result, 'Generation cancelled successfully');
+    const data = await this.curriculumService.cancelSchemeGeneration(schoolId, schemeId, user);
+    return ResponseDto.ok(data, 'Generation cancelled successfully');
   }
 
   @Get('agora-library')
@@ -488,6 +488,18 @@ export class CurriculumController {
   ): Promise<ResponseDto<any[]>> {
     const data = await this.curriculumService.getAgoraLibraryCurricula(subjectId, gradeLevel);
     return ResponseDto.ok(data, 'Agora curricula retrieved successfully');
+  }
+
+  @Get('agora/:curriculumId/preview')
+  @RequirePermission(PermissionResource.CURRICULUM, PermissionType.READ)
+  @ApiOperation({ summary: 'Get a detailed preview of an Agora curriculum including term groupings' })
+  @ApiParam({ name: 'schoolId', description: 'School ID' })
+  @ApiParam({ name: 'curriculumId', description: 'Curriculum ID' })
+  async getAgoraCurriculumPreview(
+    @Param('curriculumId') curriculumId: string
+  ): Promise<ResponseDto<any>> {
+    const data = await this.curriculumService.getAgoraCurriculumPreview(curriculumId);
+    return ResponseDto.ok(data, 'Curriculum preview retrieved successfully');
   }
 
   // ============================================

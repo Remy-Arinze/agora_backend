@@ -1820,10 +1820,11 @@ model AgoraCurriculum {
 model AgoraCurriculumTopic {
   id              String   @id @default(cuid())
   curriculumId    String
-  title           String   // Added for AiService
-  description     String?  // Added for AiService
-  weekNumber      Int
-  topic           String?  // Made optional/keeping for legacy
+  term            Int      @default(1) // 1, 2, or 3 — which term this topic belongs to
+  title           String
+  description     String?
+  weekNumber      Int      // Week within the term (1-13)
+  topic           String?  // Legacy field
   subTopics       String[]
 
   // Dual learning outcomes
@@ -1842,8 +1843,9 @@ model AgoraCurriculumTopic {
 
   curriculum      AgoraCurriculum @relation(fields: [curriculumId], references: [id], onDelete: Cascade)
 
-  @@unique([curriculumId, weekNumber])
+  @@unique([curriculumId, term, weekNumber])
   @@index([curriculumId])
+  @@index([term])
   @@index([weekNumber])
 }
 

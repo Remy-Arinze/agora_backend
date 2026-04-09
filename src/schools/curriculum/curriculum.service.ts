@@ -1435,11 +1435,32 @@ export class CurriculumService {
 
       const agoraCurriculum = await (this.prisma as any).agoraCurriculum.findUnique({
         where: { id: dto.agoraCurriculumId },
-        include: { topics: { orderBy: { order: 'asc' } } },
+        include: { topics: { orderBy: { weekNumber: 'asc' } } },
       });
 
       if (!agoraCurriculum) {
         throw new NotFoundException('Agora Curriculum not found.');
+      }
+
+      // 1. Get the current term number (1, 2, or 3)
+      const term = await (this.prisma as any).term.findUnique({
+        where: { id: termId },
+        select: { number: true }
+      });
+
+      if (!term) {
+        throw new BadRequestException('Invalid term sequence.');
+      }
+
+      const targetTermNumber = term.number;
+
+      // 2. Filter topics for this specific term
+      const termTopics = agoraCurriculum.topics.filter((t: any) => t.term === targetTermNumber);
+
+      if (termTopics.length === 0) {
+        // Fallback or warning: If no topics found for this term, we might be using a legacy 1-term curriculum
+        // In that case, we decide whether to use ALL topics or throw error.
+        // For now, if it's term 1 and exactly 1-14 weeks exist without term field set (or all default to 1), it works.
       }
 
       return await this.prisma.$transaction(async (tx) => {
@@ -1456,9 +1477,9 @@ export class CurriculumService {
           },
         });
 
-        // Clone topics into weeks
+        // 3. Clone ONLY the term-relevant topics into weeks
         await (tx as any).schemeOfWorkWeek.createMany({
-          data: agoraCurriculum.topics.map((t: any) => ({
+          data: termTopics.map((t: any) => ({
             schemeOfWorkId: scheme.id,
             weekNumber: t.weekNumber,
             topic: t.title,
@@ -1567,6 +1588,10 @@ export class CurriculumService {
    * Get Agora Master curricula for the library
    * Prioritizes matching via agoraSubjectId if available
    */
+  /**
+   * Get Agora Master curricula for the library
+   * Prioritizes matching via agoraSubjectId if available
+   */
   async getAgoraLibraryCurricula(schoolSubjectId: string, gradeLevel: string) {
     // 1. Get the school subject to check for agoraSubjectId
     const schoolSubject = await (this.prisma as any).subject.findUnique({
@@ -1596,7 +1621,7 @@ export class CurriculumService {
     if (!targetAgoraSubjectId) return [];
 
     // 3. Fetch published Agora curricula for that global subject
-    return await (this.prisma as any).agoraCurriculum.findMany({
+    const curricula = await (this.prisma as any).agoraCurriculum.findMany({
       where: {
         subjectId: targetAgoraSubjectId,
         gradeLevel,
@@ -1605,10 +1630,65 @@ export class CurriculumService {
       include: {
         subject: true,
         topics: {
-          orderBy: { weekNumber: 'asc' }
+          select: { id: true, term: true }
         }
       }
     });
+
+    // 4. Transform into a list with term-level counts
+    return curricula.map((c: any) => {
+      const termStats = [1, 2, 3].map(tNum => ({
+        term: tNum,
+        count: c.topics.filter((t: any) => t.term === tNum).length
+      }));
+
+      return {
+        ...c,
+        termStats,
+        totalTopics: c.topics.length
+      };
+    });
+  }
+
+  /**
+   * Detailed preview for a specific Agora curriculum
+   */
+  async getAgoraCurriculumPreview(curriculumId: string) {
+    const curriculum = await (this.prisma as any).agoraCurriculum.findUnique({
+      where: { id: curriculumId },
+      include: {
+        subject: true,
+        topics: {
+          orderBy: [{ term: 'asc' }, { weekNumber: 'asc' }]
+        }
+      }
+    });
+
+    if (!curriculum) throw new NotFoundException('Curriculum not found');
+
+    // Parse the overview from consolidationNotes JSON string
+    let overview = null;
+    try {
+      if (curriculum.consolidationNotes) {
+        overview = JSON.parse(curriculum.consolidationNotes);
+      }
+    } catch (e) {
+      overview = { description: curriculum.consolidationNotes };
+    }
+
+    // Group topics by term
+    const termSchemes = [1, 2, 3].map(termNum => ({
+      term: termNum,
+      topics: curriculum.topics.filter((t: any) => t.term === termNum),
+      topicCount: curriculum.topics.filter((t: any) => t.term === termNum).length
+    }));
+
+    return {
+      ...curriculum,
+      overview,
+      termSchemes,
+      totalTopics: curriculum.topics.length
+    };
   }
 
   /**

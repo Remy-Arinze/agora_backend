@@ -126,16 +126,26 @@ export interface VerificationResult {
 }
 
 export interface ConsolidateCurriculumResult {
-  topics: {
-    title: string;
+  curriculumOverview: {
     description: string;
-    subTopics: string[];
-    learningOutcomes: string[];
-    studentFriendlyOutcomes: string[];
-    suggestedActivities: string[];
-    resources: string[];
-    assessmentType: string;
-    order: number;
+    themes: string[];
+    progressionNotes: string;
+  };
+  terms: {
+    term: number;
+    termTitle: string;
+    termSummary: string;
+    topics: {
+      title: string;
+      description: string;
+      subTopics: string[];
+      learningOutcomes: string[];
+      studentFriendlyOutcomes: string[];
+      suggestedActivities: string[];
+      resources: string[];
+      assessmentType: string;
+      order: number;
+    }[];
   }[];
 }
 
@@ -1915,62 +1925,105 @@ Return as JSON: {"questions": [{"text": "...", "type": "MULTIPLE_CHOICE | SHORT_
           {
             role: 'system',
             content: `You are an expert educational planner for ${subjectName} (${gradeLevel}). 
-            Your task is to consolidate multiple raw curriculum extractions into a single, cohesive, logically ordered WEEK-BY-WEEK curriculum (usually 12-14 weeks).
+            Your task is to consolidate multiple raw curriculum source materials into a FULL ACADEMIC SESSION curriculum for the Nigerian school year.
             
+            The Nigerian school year has 3 terms (1st, 2nd, and 3rd). 
+            Each term has approximately 13 weeks:
+            - Weeks 1-6: Academic topics
+            - Week 7: Mid-term revision/break
+            - Weeks 8-12: Academic topics
+            - Week 13: Examination week
+            
+            Produce TWO layers of output:
+            1. CURRICULUM OVERVIEW: A comprehensive session-wide strategy including:
+                - description: A detailed overview of the curriculum's scope and purpose.
+                - themes: The primary thematic units or focus areas.
+                - progressionNotes: A narrative describing how leaning progresses across Term 1, 2, and 3.
+            2. TERM SCHEMES OF WORK: For each of the 3 terms, produce a detailed week-by-week breakdown.
+
             CRITICAL RULES:
-            1. SUBJECT INTEGRITY: You MUST ONLY produce content related to ${subjectName}. Do NOT hallucinate other subjects unless explicitly present.
-            2. STRUCTURE: Map the provided themes and topics to academic weeks. 
+            1. SUBJECT INTEGRITY: You MUST ONLY produce content related to ${subjectName}.
+            2. STRUCTURE: Every term must have topics for all 13 weeks.
             3. OBJECTIVES: Each week MUST have formal "learningOutcomes" and "studentFriendlyOutcomes".
-            4. JSON SCHEMA: Return a JSON object with a "topics" array. Each item in "topics" MUST HAVE:
-                - "title": (string) The main topic or theme for the week.
-                - "subTopics": (array of strings) Specific sub-concepts or lesson titles for that week.
-                - "learningOutcomes": (array of strings) Formal learning objectives starting with verbs.
-                - "studentFriendlyOutcomes": (array of strings) Simplified, I-can statements.
-                - "suggestedActivities": (array of strings)
-                - "resources": (array of strings)
-                - "assessmentType": (string)
+            4. JSON SCHEMA: Return a JSON object with:
+                - "curriculumOverview": { "description": string, "themes": string[], "progressionNotes": string }
+                - "terms": Array of 3 objects, each with:
+                    - "term": number (1, 2, or 3)
+                    - "termTitle": string
+                    - "termSummary": string
+                    - "topics": Array of 13 objects, each with: "title", "subTopics", "learningOutcomes", "studentFriendlyOutcomes", "suggestedActivities", "resources", "assessmentType".
             `,
           },
-          { role: 'user', content: `Consolidate these ${subjectName} (${gradeLevel}) sources into a unified weekly structure with rich subtopics and titles:\n\n${combinedPayloads}` },
+          { role: 'user', content: `Consolidate these ${subjectName} (${gradeLevel}) sources into a unified full-year curriculum:\n\n${combinedPayloads}` },
         ],
         response_format: { type: 'json_object' as const },
-        temperature: 0.3, // Slightly higher for more creative but grounded consolidation
+        temperature: 0.3,
       });
 
       const resultText = response.choices[0]?.message?.content || '{}';
       const result = JSON.parse(resultText) as ConsolidateCurriculumResult;
 
-      // 5. Clear existing topics for this version to avoid duplicates/unique constraint errors
+      // 1. Update the AgoraCurriculum with the overview meta-data
+      const overview = result.curriculumOverview;
+      const formattedOverview = `
+# Description
+${overview.description || ''}
+
+# Themes
+${(overview.themes || []).map((t: string) => `- ${t}`).join('\n')}
+
+# Progression Notes
+${overview.progressionNotes || ''}
+      `.trim();
+
+      await this.prisma.agoraCurriculum.update({
+        where: { id: curriculumId },
+        data: {
+          consolidationNotes: formattedOverview
+        }
+      });
+
+      // 2. Clear existing topics for this version
       await this.prisma.agoraCurriculumTopic.deleteMany({
         where: { curriculumId }
       });
 
-      // 6. Create topic rows
-      if (result.topics && Array.isArray(result.topics)) {
-        await this.prisma.$transaction(
-          result.topics.map((t, index) =>
-            this.prisma.agoraCurriculumTopic.create({
-              data: {
-                curriculumId,
-                title: t.title || 'Untitled Topic',
-                description: t.description,
-                weekNumber: index + 1, // Map to weekly standard for Agora standard
-                topic: t.title, // Sync topic field for legacy
-                subTopics: t.subTopics || [],
-                learningOutcomes: t.learningOutcomes || [],
-                studentFriendlyOutcomes: t.studentFriendlyOutcomes || [],
-                suggestedActivities: t.suggestedActivities || [],
-                resources: t.resources || [],
-                assessmentType: t.assessmentType,
-                order: t.order || index + 1,
-              },
-            })
-          )
-        );
+      // 3. Create hierarchical topic rows across all 3 terms
+      if (result.terms && Array.isArray(result.terms)) {
+        const createOps = [];
+        
+        for (const termBlock of result.terms) {
+          if (!termBlock.topics) continue;
+          
+          for (const [index, t] of termBlock.topics.entries()) {
+            createOps.push(
+              this.prisma.agoraCurriculumTopic.create({
+                data: {
+                  curriculumId,
+                  term: termBlock.term || 1,
+                  title: t.title || 'Untitled Topic',
+                  description: t.description,
+                  weekNumber: index + 1,
+                  topic: t.title, // Sync topic field for legacy
+                  subTopics: t.subTopics || [],
+                  learningOutcomes: t.learningOutcomes || [],
+                  studentFriendlyOutcomes: t.studentFriendlyOutcomes || [],
+                  suggestedActivities: t.suggestedActivities || [],
+                  resources: t.resources || [],
+                  assessmentType: t.assessmentType,
+                  order: t.order || index + 1,
+                },
+              })
+            );
+          }
+        }
+        
+        // Execute in chunks/transaction to ensure integrity
+        await this.prisma.$transaction(createOps);
       }
 
       this.metricsService.loisCurationTotal.inc({ status: 'success' });
-      this.logger.log(`Lois successfully consolidated Agora Curriculum [${curriculumId}] with ${result.topics?.length} topics.`);
+      this.logger.log(`Lois successfully consolidated Agora Curriculum [${curriculumId}] into 3 terms.`);
     } catch (error) {
       this.metricsService.loisCurationTotal.inc({ status: 'failed' });
       this.logger.error(`Failed to consolidate curriculum ${curriculumId}:`, error);

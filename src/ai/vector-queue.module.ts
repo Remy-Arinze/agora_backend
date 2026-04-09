@@ -104,6 +104,7 @@ import { VECTOR_QUEUE_NAME } from './vector.processor';
       inject: [ConfigService],
     }),
     BullModule.registerQueue({
+
       name: VECTOR_QUEUE_NAME,
       defaultJobOptions: {
         attempts: 5,
@@ -146,4 +147,4 @@ import { VECTOR_QUEUE_NAME } from './vector.processor';
   ],
   exports: [BullModule],
 })
-export class VectorQueueModule {}
+export class VectorQueueModule { }
