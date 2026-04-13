@@ -27,7 +27,7 @@ describe('SuperAdminSchoolsService', () => {
           provide: SchoolRepository,
           useValue: {
             findById: jest.fn(),
-            findByIdOrSubdomain: jest.fn(),
+            findById: jest.fn(),
             findAll: jest.fn(),
             create: jest.fn(),
             update: jest.fn(),
@@ -160,7 +160,7 @@ describe('SuperAdminSchoolsService', () => {
   describe('findOne', () => {
     it('should return a school by ID', async () => {
       const mockSchool = { id: 'school-1' };
-      schoolRepository.findByIdOrSubdomain.mockResolvedValue(mockSchool as any);
+      schoolRepository.findById.mockResolvedValue(mockSchool as any);
       (prisma.school.findUnique as jest.Mock).mockResolvedValue({
         ...mockSchool,
         admins: [],
@@ -175,7 +175,7 @@ describe('SuperAdminSchoolsService', () => {
     });
 
     it('should throw BadRequestException if school not found', async () => {
-      schoolRepository.findByIdOrSubdomain.mockResolvedValue(null);
+      schoolRepository.findById.mockResolvedValue(null);
 
       await expect(service.findOne('invalid-id')).rejects.toThrow(BadRequestException);
     });

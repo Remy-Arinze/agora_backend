@@ -1,7 +1,56 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+
+export interface SubmissionNotificationPayload {
+    schoolId: string;
+    teacherId: string; // The teacher's profile ID (from Teacher table)
+    studentName: string;
+    assessmentTitle: string;
+    subjectName: string;
+    assessmentId: string;
+    submissionId: string;
+    timestamp: string;
+}
+
+export interface AssessmentPublishedPayload {
+    schoolId: string;
+    classId?: string;
+    classArmId?: string;
+    assessmentTitle: string;
+    subjectName: string;
+    assessmentId: string;
+    teacherName: string;
+    timestamp: string;
+}
+
+export interface GradePublishedPayload {
+    schoolId: string;
+    studentId: string; // The student's profile ID
+    assessmentTitle: string;
+    subjectName: string;
+    score: number;
+    maxScore: number;
+    timestamp: string;
+}
 
 @Injectable()
 export class NotificationService {
-  // Placeholder - implement notification logic with BullMQ
-  // Will integrate Resend/Postmark for email and Termii/Twilio for SMS
+    private readonly logger = new Logger(NotificationService.name);
+
+    constructor(private readonly eventEmitter: EventEmitter2) {}
+
+    emitSubmissionNotification(payload: SubmissionNotificationPayload) {
+        this.logger.log(`Emitting submission notification for teacher ${payload.teacherId}: ${payload.studentName} submitted ${payload.assessmentTitle}`);
+        this.eventEmitter.emit('assessment.submitted', payload);
+    }
+
+    emitAssessmentPublished(payload: AssessmentPublishedPayload) {
+        this.logger.log(`Emitting assessment published notification for class ${payload.classId || payload.classArmId}: ${payload.assessmentTitle}`);
+        this.eventEmitter.emit('assessment.published', payload);
+    }
+
+    emitGradePublished(payload: GradePublishedPayload) {
+        this.logger.log(`Emitting grade published notification for student ${payload.studentId}: ${payload.assessmentTitle}`);
+        this.eventEmitter.emit('grade.published', payload);
+    }
 }

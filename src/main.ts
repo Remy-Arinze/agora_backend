@@ -69,18 +69,25 @@ async function bootstrap() {
   );
 
   // CORS configuration - allow credentials for httpOnly cookies
-  // Always allow both the configured FRONTEND_URL and localhost for development
-  const frontendUrl = process.env.FRONTEND_URL;
-  const allowedOrigins = [
-    'http://localhost:3000',
-    'https://agora-schools.com',
-    'https://www.agora-schools.com',
-  ];
-  if (frontendUrl && frontendUrl !== 'http://localhost:3000' && !allowedOrigins.includes(frontendUrl)) {
-    allowedOrigins.push(frontendUrl);
-  }
+  // Always allow subdomains of the configured FRONTEND_URL and localhost for development
+  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+  
   app.enableCors({
-    origin: allowedOrigins,
+    origin: (origin, callback) => {
+      // Allow requests with no origin (like mobile apps or curl)
+      if (!origin) return callback(null, true);
+      
+      const isLocalhost = origin.includes('localhost:3000') || origin.includes('127.0.0.1:3000');
+      const isProductionDomain = origin.endsWith('.agora-schools.com') || origin === 'https://agora-schools.com';
+      const isConfiguredFrontend = frontendUrl && origin.includes(new URL(frontendUrl).hostname);
+
+      if (isLocalhost || isProductionDomain || isConfiguredFrontend) {
+        callback(null, true);
+      } else {
+        logger.warn(`CORS blocked for origin: ${origin}`);
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
     credentials: true, // Required for cookies
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'x-tenant-id'],

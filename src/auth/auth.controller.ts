@@ -37,8 +37,13 @@ import { Roles } from '../common/decorators/roles.decorator';
 const REFRESH_TOKEN_COOKIE_NAME = 'refresh_token';
 const REFRESH_TOKEN_MAX_AGE = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
 
+/**
+ * standard tier: Common authentication flows.
+ * Sensitive login and verification endpoints utilize strict local overrides.
+ */
 @ApiTags('auth')
 @Controller('auth')
+@Throttle({ standard: {} })
 export class AuthController {
   private readonly logger = new Logger(AuthController.name);
   private readonly isProduction: boolean;
@@ -77,7 +82,7 @@ export class AuthController {
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  @Throttle({ default: { ttl: 60000, limit: 5 } }) // 5 login attempts per minute
+  @Throttle({ standard: { ttl: 60000, limit: 5 } }) // 5 login attempts per minute
   @ApiOperation({ summary: 'Login with email/publicId and password - requires OTP verification' })
   @ApiBody({ type: LoginDto })
   @ApiResponse({
@@ -116,7 +121,7 @@ export class AuthController {
 
   @Post('verify-login-otp')
   @HttpCode(HttpStatus.OK)
-  @Throttle({ default: { ttl: 60000, limit: 5 } }) // 5 OTP attempts per minute
+  @Throttle({ standard: { ttl: 60000, limit: 5 } }) // 5 OTP attempts per minute
   @ApiOperation({ summary: 'Verify login OTP and complete authentication' })
   @ApiBody({ type: VerifyLoginOtpDto })
   @ApiResponse({
@@ -155,7 +160,7 @@ export class AuthController {
 
   @Post('verify-otp')
   @HttpCode(HttpStatus.OK)
-  @Throttle({ default: { ttl: 60000, limit: 5 } }) // 5 OTP attempts per minute
+  @Throttle({ standard: { ttl: 60000, limit: 5 } }) // 5 OTP attempts per minute
   @ApiOperation({ summary: 'Verify OTP and activate shadow parent account' })
   @ApiBody({ type: VerifyOtpDto })
   @ApiResponse({
@@ -189,7 +194,7 @@ export class AuthController {
 
   @Post('request-password-reset')
   @HttpCode(HttpStatus.OK)
-  @Throttle({ default: { ttl: 60000, limit: 3 } })
+  @Throttle({ standard: { ttl: 60000, limit: 3 } })
   @ApiOperation({ summary: 'Request password reset – sends OTP to email' })
   @ApiBody({ type: RequestPasswordResetDto })
   @ApiResponse({ status: 200, description: 'If an account exists, a verification code has been sent' })
@@ -206,7 +211,7 @@ export class AuthController {
 
   @Post('verify-reset-password')
   @HttpCode(HttpStatus.OK)
-  @Throttle({ default: { ttl: 60000, limit: 5 } })
+  @Throttle({ standard: { ttl: 60000, limit: 5 } })
   @ApiOperation({ summary: 'Verify reset OTP and set new password (forgot-password flow)' })
   @ApiBody({ type: VerifyResetPasswordDto })
   @ApiResponse({ status: 200, description: 'Password reset successfully. All other sessions invalidated.' })
@@ -219,7 +224,7 @@ export class AuthController {
 
   @Post('reset-password')
   @HttpCode(HttpStatus.OK)
-  @Throttle({ default: { ttl: 60000, limit: 5 } })
+  @Throttle({ standard: { ttl: 60000, limit: 5 } })
   @ApiOperation({ summary: 'Reset password using link token (e.g. admin-sent link)' })
   @ApiBody({ type: ResetPasswordDto })
   @ApiResponse({ status: 200, description: 'Password reset successfully' })
@@ -233,7 +238,7 @@ export class AuthController {
   @Post('request-change-password')
   @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
-  @Throttle({ default: { ttl: 60000, limit: 5 } })
+  @Throttle({ standard: { ttl: 60000, limit: 5 } })
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Request password change – sends OTP to email (step 1)' })
   @ApiBody({ type: RequestChangePasswordDto })
@@ -253,7 +258,7 @@ export class AuthController {
   @Post('confirm-change-password')
   @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
-  @Throttle({ default: { ttl: 60000, limit: 5 } })
+  @Throttle({ standard: { ttl: 60000, limit: 5 } })
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Confirm password change with OTP (step 2)' })
   @ApiBody({ type: ConfirmChangePasswordDto })
@@ -270,7 +275,7 @@ export class AuthController {
   @Post('change-password')
   @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
-  @Throttle({ default: { ttl: 60000, limit: 5 } })
+  @Throttle({ standard: { ttl: 60000, limit: 5 } })
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Change password (legacy single-step; prefer request-change-password + confirm-change-password with OTP)' })
   @ApiBody({ type: ChangePasswordDto })
@@ -290,7 +295,7 @@ export class AuthController {
 
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
-  @Throttle({ default: { ttl: 60000, limit: 30 } }) // 30 refresh requests per minute (more generous for legitimate use)
+  @Throttle({ standard: { ttl: 60000, limit: 30 } }) // 30 refresh requests per minute (more generous for legitimate use)
   @ApiOperation({
     summary: 'Refresh access token using refresh token from httpOnly cookie or body',
   })

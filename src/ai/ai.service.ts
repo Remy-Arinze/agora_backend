@@ -1,14 +1,18 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../database/prisma.service';
+import { PrismaClient, Prisma, AgoraCurriculumSourceStatus, AgoraCurriculumPublishStatus, SchemeOfWorkStatus } from '@prisma/client';
 import OpenAI, { AzureOpenAI } from 'openai';
+import { Response } from 'express';
+
+// ??? Interfaces ???????????????????????????????????????????????????????????????
 
 export interface GenerateFlashcardsOptions {
   topic: string;
   subject: string;
   gradeLevel: string;
   count?: number;
-  curriculum?: string; // e.g., "NERDC"
+  curriculum?: string;
 }
 
 export interface Flashcard {
@@ -47,7 +51,7 @@ export interface GenerateLessonPlanOptions {
   subject: string;
   gradeLevel: string;
   objectives: string[];
-  duration?: number; // in minutes
+  duration?: number;
   curriculum?: string;
 }
 
@@ -90,25 +94,239 @@ export interface GenerateQuestionsOptions {
   curriculum?: string;
 }
 
+export interface ParseCurriculumResult {
+  topics: {
+    topic: string;
+    subTopics: string[];
+    objectives: string[];
+    resources: string[];
+  }[];
+}
+
+export interface VerificationResult {
+  verified: boolean;
+  confidence: 'high' | 'medium' | 'low';
+  reason: string;
+  subjectMatch: boolean;
+  gradeLevelMatch: boolean;
+}
+
+export interface ConsolidateCurriculumResult {
+  topics: {
+    title: string;
+    description: string;
+    subTopics: string[];
+    learningOutcomes: string[];
+    studentFriendlyOutcomes: string[];
+    suggestedActivities: string[];
+    resources: string[];
+    assessmentType: string;
+    order: number;
+  }[];
+}
+
+export interface SchemeOfWorkGenerationResult {
+  weeks: {
+    weekNumber: number;
+    topic: string;
+    subTopics: string[];
+    learningOutcomes: string[];
+    studentFriendlyOutcomes: string[];
+    suggestedActivities: string[];
+    resources: string[];
+    assessmentType: string;
+  }[];
+}
+
+// Agora Chat Tools (Hybrid RAG: SQL + Semantic)
+const AGORA_TOOLS: Array<{ type: 'function'; function: { name: string; description: string; parameters: object } }> = [
+  {
+    type: 'function',
+    function: {
+      name: 'execute_sql',
+      description: 'Run a read-only SQL query to get counts, facts, or specific filtered records from the school database. Available tables: Student, Teacher, Class, ClassArm, Subject, Enrollment, Grade, Attendance. Use for quantitative questions like "How many...", "List all...", or "Find the student with ID...". ALWAYS filter by schoolId.',
+      parameters: {
+        type: 'object',
+        properties: {
+          sql: { type: 'string', description: 'The SELECT SQL query to execute. Must be read-only.' },
+        },
+        required: ['sql'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'search_semantic',
+      description: 'Perform a semantic vector search for information within the school knowledge base. Use for open-ended questions, summaries, or finding similar concepts in handbooks or policies.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'The natural language search query' },
+          limit: { type: 'number', description: 'Max number of results to return, default 5' },
+        },
+        required: ['query'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_school_stats',
+      description: 'Get real-time statistics for a school including total counts of students, teachers, and classes. Use when the user asks for high-level numbers about the school.',
+      parameters: {
+        type: 'object',
+        properties: {
+          schoolId: { type: 'string', description: 'The unique ID of the school' },
+        },
+        required: ['schoolId'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'grade_essay',
+      description: 'Grade a student essay based on a prompt and optional rubric. Returns score, feedback, strengths, and areas for improvement.',
+      parameters: {
+        type: 'object',
+        properties: {
+          essay: { type: 'string', description: 'The full text of the student essay' },
+          prompt: { type: 'string', description: 'The prompt or question the student was answering' },
+          subject: { type: 'string', description: 'The subject of the essay' },
+          gradeLevel: { type: 'string', description: 'The grade level of the student' },
+          rubric: { type: 'string', description: 'Optional grading rubric or criteria' },
+          maxScore: { type: 'number', description: 'Maximum possible score, default 100' },
+        },
+        required: ['essay', 'prompt', 'subject', 'gradeLevel'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'generate_lesson_plan',
+      description: 'Generate a detailed lesson plan. Use this tool even if optional details are missing; LOIS will infer them from context.',
+      parameters: {
+        type: 'object',
+        properties: {
+          topic: { type: 'string', description: 'The lesson topic' }, 
+          subject: { type: 'string', description: 'The academic subject' }, 
+          gradeLevel: { type: 'string', description: 'e.g., JSS 1, SS 3' },
+          objectives: { type: 'array', items: { type: 'string' } }, 
+          duration: { type: 'number', description: 'Duration in minutes' },
+        },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'generate_quiz',
+      description: 'Generate quick quiz questions. Use this tool for ALL quiz requests to ensure the interactive builder appears.',
+      parameters: {
+        type: 'object',
+        properties: {
+          topic: { type: 'string', description: 'The quiz topic' }, 
+          subject: { type: 'string', description: 'The academic subject' }, 
+          gradeLevel: { type: 'string', description: 'e.g., JSS 1' },
+          questionCount: { type: 'number' }, 
+          questionTypes: { 
+            type: 'array', 
+            items: { type: 'string', enum: ['multiple_choice', 'true_false', 'short_answer'] },
+            description: 'Types of questions to include'
+          },
+          difficulty: { type: 'string', enum: ['easy', 'medium', 'hard'] },
+        },
+        required: ['topic', 'subject', 'gradeLevel'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'generate_flashcards',
+      description: 'Create study flashcards for a topic.',
+      parameters: {
+        type: 'object',
+        properties: {
+          topic: { type: 'string' }, subject: { type: 'string' }, gradeLevel: { type: 'string' }, count: { type: 'number' },
+        },
+        required: ['topic', 'subject', 'gradeLevel'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'generate_summary',
+      description: 'Generate a study summary for a topic.',
+      parameters: {
+        type: 'object',
+        properties: {
+          topic: { type: 'string' }, subject: { type: 'string' }, gradeLevel: { type: 'string' },
+        },
+        required: ['topic', 'subject', 'gradeLevel'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'generate_assessment',
+      description: 'Generate formal assessment questions. MANDATORY: ALWAYS use this tool if the user wants to create an assessment/exam so they can access the full-screen editor.',
+      parameters: {
+        type: 'object',
+        properties: {
+          topic: { type: 'string', description: 'Assessment topic' }, 
+          subject: { type: 'string', description: 'The academic subject' }, 
+          gradeLevel: { type: 'string', description: 'e.g., SS 2' },
+          questionCount: { type: 'number' }, 
+          questionTypes: { 
+            type: 'array', 
+            items: { type: 'string', enum: ['multiple_choice', 'short_answer', 'essay'] },
+            description: 'Types of questions to include'
+          },
+          difficulty: { type: 'string', enum: ['easy', 'medium', 'hard', 'mixed'] },
+        },
+        required: ['topic', 'subject', 'gradeLevel'],
+      },
+    },
+  },
+];
+
+
 /**
  * AI Service - Wrapper around OpenAI for all AI-powered features
- * Used by PrepMaster (student) and Socrates (teacher) tools
+ * Supports SSE streaming, agentic tool-calling, and advanced RAG
  */
 @Injectable()
 export class AiService {
   private readonly logger = new Logger(AiService.name);
   private openai: OpenAI | null = null;
+  private embeddingsClient: OpenAI | null = null;
   private readonly model: string;
+  private readOnlyPrisma: PrismaClient;
 
   constructor(
     private readonly configService: ConfigService,
     private readonly prisma: PrismaService
   ) {
+    const readOnlyUrl = this.configService.get<string>('READONLY_DATABASE_URL') || this.configService.get<string>('DATABASE_URL') || this.configService.get<string>('DB_URL');
+    this.readOnlyPrisma = new PrismaClient({
+      datasources: { db: { url: readOnlyUrl } }
+    });
+
     const apiKey = this.configService.get<string>('OPENAI_API_KEY');
     const azureApiKey = this.configService.get<string>('AZURE_OPENAI_API_KEY');
     const azureEndpoint = this.configService.get<string>('AZURE_OPENAI_ENDPOINT');
     const azureDeployment = this.configService.get<string>('AZURE_OPENAI_DEPLOYMENT');
     const azureApiVersion = this.configService.get<string>('AZURE_OPENAI_API_VERSION');
+
+    const azureEmbedKey = this.configService.get<string>('AZURE_OPENAI_EMBEDDING_API_KEY');
+    const azureEmbedEndpoint = this.configService.get<string>('Azure_OPENAI_EMBEDDING_ENDPOINT') || this.configService.get<string>('AZURE_OPENAI_EMBEDDING_ENDPOINT');
+    const azureEmbedDeployment = this.configService.get<string>('AZURE_OPENAI_EMBEDDING_DEPLOYMENT');
+    const azureEmbedApiVersion = this.configService.get<string>('AZURE_OPENAI_EMBEDDING_API_VERSION');
 
     this.model = this.configService.get<string>('OPENAI_MODEL') || 'gpt-4o';
 
@@ -125,6 +343,22 @@ export class AiService {
       this.logger.log('Standard OpenAI client initialized');
     } else {
       this.logger.warn('AI services are not configured (neither OpenAI nor Azure)');
+    }
+
+    // Initialize Embeddings Client
+    if (azureEmbedKey && azureEmbedEndpoint && azureEmbedDeployment) {
+      this.embeddingsClient = new AzureOpenAI({
+        apiKey: azureEmbedKey,
+        endpoint: azureEmbedEndpoint,
+        apiVersion: azureEmbedApiVersion || '2023-05-15',
+        deployment: azureEmbedDeployment,
+      }) as any;
+      this.logger.log(`Azure OpenAI Embeddings initialized with deployment: ${azureEmbedDeployment}`);
+    } else {
+      this.embeddingsClient = this.openai;
+      if (this.openai) {
+        this.logger.log('Using default OpenAI client for embeddings fallback');
+      }
     }
   }
 
@@ -146,10 +380,783 @@ export class AiService {
     }
   }
 
+  // ??? SSE Helper ?????????????????????????????????????????????????????????????
+
+  private sendSSE(res: Response, event: { event: string; data: unknown }): void {
+    res.write(`event: ${event.event}\ndata: ${JSON.stringify(event.data)}\n\n`);
+  }
+
+  // ??? Advanced RAG Pipeline ??????????????????????????????????????????????????
+
   /**
-   * Generate flashcards for a topic (PrepMaster)
+   * Create vector embedding for text
    */
-  async generateFlashcards(options: GenerateFlashcardsOptions): Promise<Flashcard[]> {
+  async createEmbedding(text: string): Promise<number[]> {
+    this.ensureConfigured();
+    if (!this.embeddingsClient) {
+      throw new BadRequestException('Embeddings client is not configured.');
+    }
+    try {
+      const modelName = this.configService.get<string>('AZURE_OPENAI_EMBEDDIGN_MODEL_NAME')
+        || this.configService.get<string>('AZURE_OPENAI_EMBEDDING_MODEL_NAME')
+        || 'text-embedding-3-small';
+
+      const response = await this.embeddingsClient.embeddings.create({
+        model: modelName,
+        input: text.substring(0, 8192),
+      });
+      return response.data[0].embedding;
+    } catch (error) {
+      this.logger.error(`Embedding failed: ${error}`);
+      throw new BadRequestException('Failed to process context for search');
+    }
+  }
+
+  /**
+   * Advanced context retrieval with relevance scoring and re-ranking
+   */
+  async findRelevantContext(
+    query: string,
+    schoolId: string,
+    role: string,
+    limit: number = 5
+  ): Promise<{ text: string; sources: { type: string; relevance: number }[] }> {
+    try {
+      const embedding = await this.createEmbedding(query);
+      const vectorString = `[${embedding.join(',')}]`;
+
+      // Enhanced query with cosine distance scoring and metadata
+      const chunks: any[] = await this.prisma.$queryRawUnsafe(`
+        SELECT content, metadata, (embedding <=> $3::vector) as distance
+        FROM "KnowledgeChunk"
+        WHERE "schoolId" = $1
+        AND (
+          (metadata->'permissions'->'roles')::jsonb ? $2
+          OR (metadata->'permissions'->'isPublic')::boolean = true
+        )
+        ORDER BY embedding <=> $3::vector
+        LIMIT $4
+      `, schoolId, role, vectorString, limit);
+
+      if (!chunks || chunks.length === 0) {
+        return { text: '', sources: [] };
+      }
+
+      // Filter by relevance threshold (cosine distance < 0.85)
+      const relevantChunks = chunks.filter(c => c.distance < 0.85);
+
+      if (relevantChunks.length === 0) {
+        return { text: '', sources: [] };
+      }
+
+      // Build enriched context with source attribution
+      const sources = relevantChunks.map(c => ({
+        type: c.metadata?.type || 'unknown',
+        relevance: Math.round((1 - c.distance) * 100),
+      }));
+
+      const contextParts = relevantChunks.map((c, i) => {
+        const sourceLabel = c.metadata?.type === 'student_progress'
+          ? '?? Student Performance'
+          : c.metadata?.type === 'curriculum'
+            ? '?? Curriculum Plan'
+            : c.metadata?.type === 'assessment'
+              ? '?? Teacher Assessment'
+              : c.metadata?.type === 'class_info'
+                ? '?? Class Info'
+                : c.metadata?.type === 'school_info'
+                  ? '?? School Profile'
+                  : c.metadata?.type === 'teacher_info'
+                    ? '????? Teacher Profile'
+                    : '?? School Knowledge';
+        return `[Source ${i + 1}: ${sourceLabel} ? ${sources[i].relevance}% relevance]\n${c.content}`;
+      });
+
+      return {
+        text: contextParts.join('\n\n---\n\n'),
+        sources,
+      };
+    } catch (error) {
+      this.logger.error(`Context retrieval failed: ${error}`);
+      return { text: '', sources: [] };
+    }
+  }
+
+  // ??? System Prompt Builder ??????????????????????????????????????????????????
+
+  private async getChatPrompt(
+    messages: { role: string; content: string }[],
+    userId?: string,
+    schoolId?: string
+  ): Promise<{ systemPrompt: string; contextText: string; userRole: string; schoolName: string }> {
+    let contextText = '';
+    let userRole = 'USER';
+    let schoolName = '';
+    let directContext = '';
+
+    const now = new Date();
+    const formatterConfig = { timeZone: 'Africa/Lagos', hour12: false } as any;
+    const currentDay = now.toLocaleString('en-US', { ...formatterConfig, weekday: 'long' }).toUpperCase();
+    const currentTime = now.toLocaleString('en-US', { ...formatterConfig, hour: '2-digit', minute: '2-digit' });
+
+    directContext += `[REAL-TIME CLOCK] Today is ${currentDay}. The current time is ${currentTime} (WAT).\n`;
+
+    if (schoolId && userId) {
+      const [user, school, teacher] = await Promise.all([
+        this.prisma.user.findUnique({
+          where: { id: userId },
+          select: { role: true, firstName: true, lastName: true }
+        }),
+        this.prisma.school.findUnique({
+          where: { id: schoolId },
+          select: { name: true, address: true, city: true, state: true }
+        }),
+        this.prisma.teacher.findFirst({
+          where: { userId, schoolId },
+          include: {
+            classTeachers: {
+              include: {
+                class: true,
+                classArm: {
+                  include: { classLevel: true }
+                },
+                subjectRef: true
+              }
+            },
+            classArms: {
+              include: { classLevel: true }
+            },
+            timetablePeriods: {
+              where: { term: { status: 'ACTIVE' } }, // Only look at current timetable
+              include: {
+                class: true,
+                classArm: {
+                  include: { classLevel: true }
+                },
+                subject: true
+              }
+            }
+          }
+        })
+      ]);
+
+      if (user) {
+        userRole = user.role;
+        const name = (user.firstName || user.lastName)
+          ? `${user.firstName || ''} ${user.lastName || ''}`.trim()
+          : (teacher ? `${teacher.firstName || ''} ${teacher.lastName || ''}`.trim() : 'User');
+
+        directContext += `Current User: ${name} (Role: ${userRole}).\n`;
+        this.logger.log(`[AI Context] Identity: ${name}, Role: ${userRole}, School: ${schoolId}`);
+
+        const lastUserMessage = messages.slice().reverse().find(m => m.role === 'user');
+        if (lastUserMessage) {
+          const ragResult = await this.findRelevantContext(lastUserMessage.content, schoolId, userRole);
+          contextText = ragResult.text;
+        }
+      }
+
+      if (school) {
+        schoolName = school.name;
+        directContext += `Current School: ${schoolName} located in ${school.address || ''}, ${school.city || ''}, ${school.state || ''}.\n`;
+      }
+
+      if (teacher) {
+        this.logger.log(`Found teacher record for user ${userId} in school ${schoolId}.`);
+
+        let assignments = [];
+
+        // 4. Primary Specialization & School Type
+        if (teacher.schoolType) {
+          directContext += `Teacher's Environment: ${teacher.schoolType} School level.\n`;
+        }
+
+        // 1. Subject assignments (Official Registry)
+        if (teacher.classTeachers?.length > 0) {
+          const subjectAssignments = teacher.classTeachers.map(ct => {
+            const subject = ct.subject || ct.subjectRef?.name || 'Subject';
+            const levelName = ct.classArm?.classLevel?.name || '';
+            const armName = ct.classArm?.name || '';
+            const className = ct.class?.name || (levelName ? `${levelName} ${armName}`.trim() : armName) || 'Class';
+            return `- [Registry] ${subject} for ${className}${ct.isPrimary ? ' (Lead Teacher)' : ''}`;
+          });
+          assignments.push(...subjectAssignments);
+        }
+
+        // 2. Form teacher (Class Lead) assignments
+        if (teacher.classArms?.length > 0) {
+          const formAssignments = teacher.classArms.map(arm =>
+            `- [Registry] Form Teacher for ${arm.classLevel?.name || 'Class'} ${arm.name}`
+          );
+          assignments.push(...formAssignments);
+        }
+
+        // 3. Timetable-based assignments (Current Schedule)
+        if (teacher.timetablePeriods?.length > 0) {
+          const timetableMap = new Map<string, Set<string>>();
+
+          teacher.timetablePeriods.forEach(period => {
+            const levelName = period.classArm?.classLevel?.name || '';
+            const armName = period.classArm?.name || '';
+            const className = period.class?.name || (levelName ? `${levelName} ${armName}`.trim() : armName) || 'Unknown Class';
+            const subjectName = period.subject?.name || 'Class Subject';
+
+            if (!timetableMap.has(className)) {
+              timetableMap.set(className, new Set());
+            }
+            timetableMap.get(className)?.add(subjectName);
+          });
+
+          timetableMap.forEach((subjects, className) => {
+            const subjectsList = Array.from(subjects).join(', ');
+            assignments.push(`- [Weekly Schedule] teaches ${subjectsList} for ${className}`);
+          });
+        }
+
+        // Unique assignments only
+        const uniqueAssignments = [...new Set(assignments)];
+
+        if (uniqueAssignments.length > 0) {
+          directContext += `Teacher's Active Assignments:\n${uniqueAssignments.join('\n')}\n`;
+        } else {
+          directContext += `Teacher's Active Assignments: No specific class or subject assignments found in the official registry or current timetable yet.\n`;
+        }
+
+        if (teacher.subject) {
+          directContext += `Teacher's Primary Specialization: ${teacher.subject}\n`;
+        }
+      } else {
+        this.logger.warn(`No teacher record found for user ${userId} in school ${schoolId}`);
+      }
+    }
+
+    this.logger.debug(`Final Direct Context for AI: ${directContext}`);
+
+    const isNewConversation = messages.filter(m => m.role === 'user').length <= 1;
+
+    const systemPrompt = `
+      Your identity: You are Lois, the Agora School Space AI Assistant assigned to ${schoolName || 'the school'}.
+      Introduction rule: 
+      - If it is the start of a conversation, you can mention you are Lois.
+      - If the user asks for your name or who you are: Must say "I am Lois, the AI assistant for ${schoolName || 'this school'} on Agora School Space."
+      - Otherwise, do NOT start every message with a formal introduction. Just answer the user's question directly.
+      
+      IMPORTANT: Use the following details to answer questions about the current user and school.
+      Current Identity Context:
+      ${directContext || 'Basic school assistant context.'}
+      
+      Relevant Knowledge Base Context (from RAG search): 
+      ${contextText || 'No specific knowledge base context found for this query.'} 
+      
+      User Role: ${userRole}
+      
+      Operational Rules:
+      1. Always refer to yourself as Lois.
+      2. IDENTITY RULE: If the user asks who they are or what they teach, you MUST use the details in "Current Identity Context". Specifically mention their assigned classes (e.g., JSS 1A, SS 2B, etc.) and subjects exactly as provided in that section.
+      3. No "Empty Promises": Do NOT say "One moment please", "Let me check that", or "I'll get back to you" UNLESS you are making a tool call in the same turn. If you finish your response with a promise to find more info, users expect that info to appear immediately in the same message stream.
+      4. Decisive Interaction: If a tool returns an error (e.g., SQL Execution failed), inform the user that you are refining the approach and try a different query if it makes sense. Don't simply give up without explaining the refined attempt.
+      5. Tone: Be helpful, professional, and slightly conversational as an AI colleague to the teachers.      3. SECONDARY TEACHER SPECIALIZATION RULE:
+         - If the user role is TEACHER and the school type is SECONDARY:
+         - Check the "Teacher's Active Assignments" in the context.
+         - If the user asks to generate an assessment, quiz, or lesson plan for a subject that is NOT in their active assignments, you MUST ask for confirmation first.
+         - Example: "I see you're registered as a Chemistry teacher for JSS 1A. Since you're asking for a Mathematics assessment, would you like me to proceed with that, or is there a specific reason for the change?"
+         - Only proceed with generating if they confirm or if they explicitly stated they have permission/need for it in the initial prompt.
+
+      4. CLASS CLARIFICATION RULE:
+         - If the teacher handles MULTIPLE classes (e.g., JSS 1A and JSS 1B) and asks for class-specific content (Assessment, Lesson Plan, Quiz) WITHOUT specifying the target class, you MUST ask which class they are preparing for before calling any generation tools.
+         - Example: "I can help with that! Which class is this quiz for: JSS 1A or JSS 1B?"
+         - If they only have ONE class, do NOT ask; just proceed using that class context.
+
+      5. If the user asks about the SCHOOL, use the "Current Identity Context" and "Relevant Knowledge Base Context".
+      5. Always use natural, conversational language. Don't say "According to the context...", just state the answer as if you know it.
+      6. Never reveal sensitive data like passwords or internal IDs.
+      7. Maintain a helpful, professional, and teacher-focused tone.
+      8. Format responses with markdown for readability.
+
+      HYBRID RAG ROUTING:
+      - Use execute_sql for quantitative questions: "How many...", "List all...", "Find the student with ID...", "Count teachers in SS1".
+      - Use search_semantic for qualitative questions: "Tell me about...", "Explain the policy for...", "Give me a summary of...", "What are the objectives for...".
+      - For queries needing both (e.g., "Analyze the performance of SS1 Math vs policy"), choose the most appropriate or sequence them.
+      
+      TIMETABLE AND CLASS TEACHER RESOLUTION (CRITICAL):
+      You have access to the real-world time in the "Current Identity Context".
+      When a user asks "What class is going on in [Class] right now?" or "Who is taking [Class]?":
+      1. Primary Schools: Primary classes ALWAYS have one main class teacher. Do NOT look up subject teachers. If asked who is taking the class, inform them of the main Class Teacher.
+      2. Secondary Schools: Classes are subject-based. FIRST, execute_sql on "TimetablePeriod" using the current "dayOfWeek" (e.g., 'MONDAY') and time ("startTime" <= 'HH:MM' AND "endTime" >= 'HH:MM') to find the active subject. THEN, resolve the teacher assigned to that subject.
+      3. Free Period: If the "TimetablePeriod" query returns no records for the current time in Secondary, inform the user they are on a free period.
+      
+      SCHEMA CONTEXT FOR SQL (CRITICAL):
+      - Tables (MUST use double quotes): "Student", "Teacher", "Class", "ClassLevel", "ClassArm", "ClassTeacher", "Subject", "Enrollment", "Grade", "Attendance", "AcademicSession", "Term", "Assessment".
+      - Relationships: "ClassTeacher" links "Teacher" to "Class" (tertiary) or "ClassArm" (secondary).
+      - "ClassArm" links to "ClassLevel" (e.g., JSS 1) and has a "name" (e.g., A).
+      - Columns (MUST use double quotes if camelCase): "id", "schoolId", "firstName", "lastName", "email", "phone", "role", "score", "maxScore", "gradeType", "name", "code", "teacherId", "classId", "classArmId".
+      - Example Query: SELECT count(*) FROM "Teacher" WHERE "schoolId" = '${schoolId}';
+      - Grade types: CA, ASSIGNMENT, EXAM.
+      - Attendance status: PRESENT, ABSENT, LATE.
+      - ALWAYS filter by "schoolId" = '${schoolId}' to ensure data separation.
+    `;
+
+    return { systemPrompt, contextText, userRole, schoolName };
+  }
+
+  // ??? Agentic Streaming Chat (SSE) ??????????????????????????????????????????
+
+  /**
+   * Main SSE streaming endpoint with agentic tool-calling
+   * This is the new primary chat method that replaces the old one for the frontend
+   */
+  async chatStreamSSE(
+    res: Response,
+    messages: { role: 'user' | 'assistant' | 'system'; content: string }[],
+    userId?: string,
+    conversationId?: string,
+    schoolId?: string,
+    remainingTokens: number = Infinity
+  ): Promise<any> {
+    this.ensureConfigured();
+
+    const { systemPrompt, userRole } = await this.getChatPrompt(messages, userId, schoolId);
+
+    let fullAssistantContent = '';
+    let finalConversationId = conversationId || null;
+    let totalUsage: any = null;
+    let estimatedTokens = 0;
+    const toolEvents: any[] = [];
+
+    // Pre-create conversation if new to ensure frontend has ID for URL sync immediately
+    if (userId && !finalConversationId) {
+      try {
+        const lastUserMessage = messages.slice().reverse().find(m => m.role === 'user');
+        const title = lastUserMessage?.content
+          ? (lastUserMessage.content.substring(0, 40) + (lastUserMessage.content.length > 40 ? '...' : ''))
+          : 'New Chat';
+
+        const conversation = await this.prisma.chatConversation.create({
+          data: {
+            userId,
+            schoolId,
+            title,
+            messages: {
+              create: messages
+                .filter(m => m.role.toLowerCase() !== 'system') // Fix: Filter out 'system' messages case-insensitively
+                .map(m => ({
+                  role: m.role as 'user' | 'assistant', // Ensure role is 'user' or 'assistant' for creation
+                  content: m.content
+                }))
+            }
+          }
+        });
+        finalConversationId = conversation.id;
+        
+        // Send immediate ID sync to frontend
+        this.sendSSE(res, {
+            event: 'conversation_id',
+            data: { conversationId: finalConversationId }
+        });
+      } catch (err) {
+        this.logger.error(`Failed to pre-create conversation: ${err}`);
+      }
+    }
+
+    try {
+      let currentMessages: any[] = [
+        { role: 'system', content: systemPrompt },
+        ...messages
+      ];
+
+      let turn = 0;
+      const MAX_TURNS = 3;
+
+      while (turn < MAX_TURNS) {
+        turn++;
+        const response = await this.openai!.chat.completions.create({
+          model: this.model,
+          messages: currentMessages,
+          tools: AGORA_TOOLS as OpenAI.Chat.Completions.ChatCompletionTool[],
+          tool_choice: 'auto',
+          temperature: 0.7,
+        });
+
+        const choice = response.choices[0];
+        totalUsage = response.usage || totalUsage;
+
+        const toolCalls = choice.message.tool_calls?.filter(
+          (tc): tc is Extract<typeof tc, { type: 'function' }> => tc.type === 'function'
+        );
+
+        if (!toolCalls || toolCalls.length === 0) {
+          // Final iteration: stream the final content to the user
+          const finalStream = await this.openai!.chat.completions.create({
+            model: this.model,
+            messages: currentMessages,
+            stream: true,
+            temperature: 0.7,
+          });
+
+          for await (const chunk of finalStream as any) {
+            const delta = chunk.choices?.[0]?.delta;
+            if (delta?.content) {
+              fullAssistantContent += delta.content;
+              estimatedTokens += Math.ceil(delta.content.length / 3.5);
+
+              if (estimatedTokens > remainingTokens) {
+                finalStream.controller.abort();
+                this.sendSSE(res, {
+                  event: 'error',
+                  data: { message: 'Credit limit reached. Please top up to continue.' },
+                });
+                break;
+              }
+
+              this.sendSSE(res, {
+                event: 'token',
+                data: { token: delta.content },
+              });
+            }
+          }
+          break; // Done with all turns
+        }
+
+        // TOOL EXECUTION TURN
+        currentMessages.push(choice.message);
+        
+        for (const toolCall of toolCalls) {
+          const functionName = toolCall.function.name;
+          const functionArgs = JSON.parse(toolCall.function.arguments);
+
+          // Send thinking event
+          const thinkingEvent = { message: this.getToolThinkingMessage(functionName) };
+          this.sendSSE(res, { event: 'thinking', data: thinkingEvent });
+          toolEvents.push({ type: 'thinking', ...thinkingEvent });
+
+          // Send tool_start event
+          const toolStartEvent = {
+            toolName: functionName,
+            toolDisplayName: this.getToolDisplayName(functionName),
+            args: functionArgs,
+          };
+          this.sendSSE(res, { event: 'tool_start', data: toolStartEvent });
+          toolEvents.push({ type: 'tool_start', ...toolStartEvent });
+
+          let toolResult: any;
+          try {
+            const result = await this.executeAgentTool(functionName, functionArgs, { schoolId, userRole });
+            toolResult = result.data;
+          } catch (tErr: any) {
+            this.logger.error(`Tool execution error: ${tErr}`);
+            toolResult = { error: tErr?.message || 'Tool failed' };
+          }
+          
+          const toolResultEvent = {
+            toolName: functionName,
+            toolDisplayName: this.getToolDisplayName(functionName),
+            result: toolResult,
+          };
+          this.sendSSE(res, { event: 'tool_result', data: toolResultEvent });
+          toolEvents.push({ type: 'tool_result', ...toolResultEvent });
+
+          currentMessages.push({
+            role: 'tool',
+            tool_call_id: toolCall.id,
+            content: JSON.stringify(toolResult),
+          });
+        }
+        
+        // Loop back and let AI react to tool results
+      }
+
+      // ??? Persist Final State ??????????????????????????????????????
+      if (userId && finalConversationId) {
+        // 1. If this was a follow-up, ensure the latest user message is saved
+        if (conversationId) {
+          const lastMessage = messages[messages.length - 1];
+          if (lastMessage && lastMessage.role === 'user') {
+            await this.prisma.chatMessage.create({
+              data: {
+                conversationId: finalConversationId,
+                role: 'user',
+                content: lastMessage.content
+              }
+            });
+          }
+        }
+
+        // 2. Save the assistant's final response and all tool events
+        await this.prisma.chatMessage.create({
+          data: {
+            conversationId: finalConversationId,
+            role: 'assistant',
+            content: fullAssistantContent || 'No response generated.',
+            toolEvents: toolEvents.length > 0 ? toolEvents : undefined
+          }
+        });
+      }
+
+      // Send done event
+      this.sendSSE(res, {
+        event: 'done',
+        data: {
+          conversationId: finalConversationId || '',
+          usage: totalUsage,
+        },
+      });
+
+      return { total_tokens: (totalUsage?.total_tokens || 0) + estimatedTokens };
+    } catch (error: any) {
+      if (error.name !== 'AbortError') {
+        this.logger.error(`SSE Chat failed: ${error}`);
+        this.sendSSE(res, {
+          event: 'error',
+          data: { message: 'AI assistant is currently unavailable. Please try again later.' },
+        });
+      }
+      return { total_tokens: (totalUsage?.total_tokens || 0) + estimatedTokens };
+    }
+  }
+
+  // ??? Agent Tool Executor ????????????????????????????????????????????????????
+
+  private async executeAgentTool(
+    toolName: string,
+    args: any,
+    context?: { schoolId?: string; userRole?: string }
+  ): Promise<{ data: any; usage: any }> {
+    switch (toolName) {
+      case 'generate_lesson_plan':
+        return this.generateLessonPlan({
+          topic: args.topic || 'General Topic',
+          subject: args.subject || 'General Studies',
+          gradeLevel: args.gradeLevel || 'Any',
+          objectives: args.objectives || ['Understand key concepts', 'Apply knowledge practically'],
+          duration: args.duration || 40,
+        });
+
+      case 'generate_quiz': {
+        const res = await this.generateQuiz({
+          topic: args.topic || 'Quick Quiz',
+          subject: args.subject || 'General',
+          gradeLevel: args.gradeLevel || 'Any',
+          questionCount: args.questionCount || 5,
+          questionTypes: args.questionTypes || ['multiple_choice'],
+          difficulty: args.difficulty || 'medium',
+        });
+
+        // Resolve subjectId from name
+        if (context?.schoolId && args.subject) {
+          const subject = await this.prisma.subject.findFirst({
+            where: {
+              schoolId: context.schoolId,
+              name: { contains: args.subject, mode: 'insensitive' },
+              isActive: true
+            },
+            select: { id: true }
+          });
+          if (subject) {
+            (res.data as any).subjectId = subject.id;
+          }
+        }
+        return res;
+      }
+
+      case 'generate_flashcards':
+        return this.generateFlashcards({
+          topic: args.topic || 'General Revision',
+          subject: args.subject || 'General',
+          gradeLevel: args.gradeLevel || 'Any',
+          count: args.count || 10,
+        });
+
+      case 'generate_summary':
+        return this.generateSummary({
+          topic: args.topic || 'Content Summary',
+          subject: args.subject || 'General',
+          gradeLevel: args.gradeLevel || 'Any',
+        });
+
+      case 'generate_assessment': {
+        const res = await this.generateAssessmentQuestions({
+          topic: args.topic || 'Assessment',
+          subject: args.subject || 'General',
+          gradeLevel: args.gradeLevel || 'Any',
+          questionCount: args.questionCount || 20,
+          questionTypes: args.questionTypes || ['multiple_choice', 'short_answer', 'essay'],
+          difficulty: args.difficulty || 'mixed',
+        });
+
+        // Resolve subjectId from name
+        if (context?.schoolId && args.subject) {
+          const subject = await this.prisma.subject.findFirst({
+            where: {
+              schoolId: context.schoolId,
+              name: { contains: args.subject, mode: 'insensitive' },
+              isActive: true
+            },
+            select: { id: true }
+          });
+          if (subject) {
+            (res.data as any).subjectId = subject.id;
+          }
+        }
+        return res;
+      }
+
+      case 'grade_essay':
+        return this.gradeEssay({
+          essay: args.essay,
+          prompt: args.prompt,
+          subject: args.subject,
+          gradeLevel: args.gradeLevel,
+          rubric: args.rubric,
+          maxScore: args.maxScore || 100,
+        });
+
+      case 'get_school_stats':
+        return this.getSchoolStats(args.schoolId);
+
+      case 'execute_sql':
+        return this.executeSql(args.sql, context?.schoolId);
+
+      case 'search_semantic':
+        return this.searchSemantic(
+          args.query,
+          args.limit,
+          context?.schoolId,
+          context?.userRole,
+        );
+
+      default:
+        throw new Error(`Unknown tool: ${toolName}`);
+    }
+  }
+
+  // ??? Direct Logic for Admin Tools ??????????????????????????????????????????
+
+  private async executeSql(sql: string, schoolId?: string): Promise<{ data: any; usage: any }> {
+    if (!schoolId) {
+      return { data: { error: 'School ID context is required for secure querying.' }, usage: null };
+    }
+
+    const trimmedSql = sql.trim();
+    const lowerSql = trimmedSql.toLowerCase();
+
+    // 1. Basic Read-Only check (kept for prompt clarity)
+    if (!lowerSql.startsWith('select')) {
+      return { data: { error: 'Only read-only SELECT queries are allowed.' }, usage: null };
+    }
+
+    try {
+      // Enforce RLS by executing inside a transaction and setting the local tenant config
+      // Ensure the postgres read-only user respects RLS
+      const results = await this.readOnlyPrisma.$transaction(async (tx) => {
+        // Enforce physical Row Level Security in Postgres:
+        await tx.$executeRawUnsafe(`SET LOCAL row_security = on;`);
+        await tx.$executeRawUnsafe(`SET LOCAL app.current_school_id = '${schoolId}';`);
+
+        // Execute the AI-generated query
+        const results = await tx.$queryRawUnsafe(sql);
+
+        // Handle BigInt serialization for JSON (NestJS/JSON.stringify doesn't support it)
+        return JSON.parse(
+          JSON.stringify(results, (key, value) =>
+            typeof value === 'bigint' ? Number(value) : value
+          )
+        );
+      });
+
+      return { data: results, usage: null };
+    } catch (error: any) {
+      return { data: { error: `SQL Execution failed: ${error?.message || 'Invalid query'}. Please refine your query.` }, usage: null };
+    }
+  }
+
+  private async searchSemantic(
+    query: string,
+    limit?: number,
+    schoolId?: string,
+    role?: string,
+  ) {
+    const effectiveLimit = limit ?? 5;
+    if (schoolId && role) {
+      const { text, sources } = await this.findRelevantContext(
+        query,
+        schoolId,
+        role,
+        effectiveLimit,
+      );
+      return {
+        data: text
+          ? { text, sources }
+          : { text: 'No relevant knowledge base results found for this query.', sources: [] },
+        usage: null,
+      };
+    }
+    return {
+      data: {
+        text: 'Semantic search requires school context. Please ensure you are in a school scope.',
+        sources: [],
+      },
+      usage: null,
+    };
+  }
+
+  // ??? Direct Logic for Admin Tools ??????????????????????????????????????????
+
+  private async getSchoolStats(schoolId: string): Promise<{ data: any; usage: any }> {
+    if (!schoolId) return { data: { error: 'School ID is required' }, usage: null };
+
+    const [classCount, teacherCount, studentCount] = await Promise.all([
+      this.prisma.class.count({ where: { schoolId } }),
+      this.prisma.teacher.count({ where: { schoolId } }),
+      this.prisma.enrollment.count({ where: { schoolId } })
+    ]);
+
+    return {
+      data: {
+        classes: classCount,
+        teachers: teacherCount,
+        students: studentCount,
+        totalPopulation: studentCount + teacherCount
+      },
+      usage: null
+    };
+  }
+
+  private getToolDisplayName(toolName: string): string {
+    const names: Record<string, string> = {
+      generate_lesson_plan: '?? Lesson Plan Generator',
+      generate_quiz: '? Quiz Generator',
+      generate_flashcards: '?? Flashcard Creator',
+      generate_summary: '?? Study Summary',
+      generate_assessment: '?? Assessment Builder',
+      grade_essay: '?? Essay Grader',
+      execute_sql: '🔍 Querying School Records',
+      search_semantic: '📖 Checking Knowledge Base',
+      get_school_stats: '📊 Gathering school statistics',
+    };
+    return names[toolName] || toolName.replace(/_/g, ' ');
+  }
+
+  private getToolThinkingMessage(toolName: string): string {
+    const messages: Record<string, string> = {
+      generate_lesson_plan: "I'll craft a detailed lesson plan for you...",
+      generate_quiz: "Let me generate some quiz questions...",
+      generate_flashcards: "Creating study flashcards for you...",
+      generate_summary: "Let me prepare a comprehensive study summary...",
+      generate_assessment: "Building formal assessment questions...",
+      grade_essay: "Analyzing the essay for grading...",
+      execute_sql: "I'm searching the school records for the information you requested...",
+      search_semantic: "Let me check the school's knowledge base and policies...",
+      get_school_stats: "Gathering the latest school statistics...",
+    };
+    return messages[toolName] || 'Processing your request...';
+  }
+
+  // ??? Existing Tool Methods (Preserved) ??????????????????????????????????????
+
+  /**
+   * Generate flashcards for a topic
+   */
+  async generateFlashcards(options: GenerateFlashcardsOptions): Promise<{ data: Flashcard[]; usage: any }> {
     this.ensureConfigured();
 
     const { topic, subject, gradeLevel, count = 10, curriculum = 'NERDC' } = options;
@@ -189,7 +1196,7 @@ Focus on key concepts, definitions, formulas, and facts that students need to re
       if (!content) throw new Error('No response from AI');
 
       const parsed = JSON.parse(content);
-      return parsed.flashcards || parsed;
+      return { data: parsed.flashcards || parsed, usage: response.usage };
     } catch (error) {
       this.logger.error(`Failed to generate flashcards: ${error}`);
       throw new BadRequestException('Failed to generate flashcards. Please try again.');
@@ -197,9 +1204,9 @@ Focus on key concepts, definitions, formulas, and facts that students need to re
   }
 
   /**
-   * Generate study summary (PrepMaster)
+   * Generate study summary
    */
-  async generateSummary(options: GenerateSummaryOptions): Promise<string> {
+  async generateSummary(options: GenerateSummaryOptions): Promise<{ data: string; usage: any }> {
     this.ensureConfigured();
 
     const { topic, subject, gradeLevel, weekContent, curriculum = 'NERDC' } = options;
@@ -235,7 +1242,7 @@ Write in a student-friendly tone appropriate for ${gradeLevel} level.`;
         temperature: 0.7,
       });
 
-      return response.choices[0]?.message?.content || '';
+      return { data: response.choices[0]?.message?.content || '', usage: response.usage };
     } catch (error) {
       this.logger.error(`Failed to generate summary: ${error}`);
       throw new BadRequestException('Failed to generate summary. Please try again.');
@@ -243,9 +1250,9 @@ Write in a student-friendly tone appropriate for ${gradeLevel} level.`;
   }
 
   /**
-   * Generate quiz questions (PrepMaster & Socrates)
+   * Generate quiz questions
    */
-  async generateQuiz(options: GenerateQuizOptions): Promise<QuizQuestion[]> {
+  async generateQuiz(options: GenerateQuizOptions): Promise<{ data: QuizQuestion[]; usage: any }> {
     this.ensureConfigured();
 
     const {
@@ -273,7 +1280,7 @@ Create questions that test understanding of the topic. For each question include
 - Correct answer
 - Brief explanation of why the answer is correct
 
-Return as JSON: {"questions": [{"question": "...", "type": "...", "options": ["A...", "B...", "C...", "D..."], "correctAnswer": "...", "explanation": "..."}]}`;
+Return as JSON: {"questions": [{"text": "...", "type": "MULTIPLE_CHOICE", "options": ["...", "...", "...", "..."], "correctAnswer": "...", "explanation": "..."}]}`;
 
     try {
       const response = await this.openai!.chat.completions.create({
@@ -293,7 +1300,7 @@ Return as JSON: {"questions": [{"question": "...", "type": "...", "options": ["A
       if (!content) throw new Error('No response from AI');
 
       const parsed = JSON.parse(content);
-      return parsed.questions || parsed;
+      return { data: parsed.questions || parsed, usage: response.usage };
     } catch (error) {
       this.logger.error(`Failed to generate quiz: ${error}`);
       throw new BadRequestException('Failed to generate quiz. Please try again.');
@@ -303,7 +1310,7 @@ Return as JSON: {"questions": [{"question": "...", "type": "...", "options": ["A
   /**
    * Generate lesson plan (Socrates)
    */
-  async generateLessonPlan(options: GenerateLessonPlanOptions): Promise<LessonPlan> {
+  async generateLessonPlan(options: GenerateLessonPlanOptions): Promise<{ data: LessonPlan; usage: any }> {
     this.ensureConfigured();
 
     const { topic, subject, gradeLevel, objectives, duration = 40, curriculum = 'NERDC' } = options;
@@ -358,7 +1365,7 @@ Return as JSON with this structure:
       const content = response.choices[0]?.message?.content;
       if (!content) throw new Error('No response from AI');
 
-      return JSON.parse(content);
+      return { data: JSON.parse(content), usage: response.usage };
     } catch (error) {
       this.logger.error(`Failed to generate lesson plan: ${error}`);
       throw new BadRequestException('Failed to generate lesson plan. Please try again.');
@@ -366,9 +1373,53 @@ Return as JSON with this structure:
   }
 
   /**
+   * Batch grade short answer questions using semantic similarity
+   */
+  async gradeShortAnswers(items: { question: string; studentAnswer: string; sampleAnswer: string; maxPoints: number }[]): Promise<{ data: { score: number; feedback: string; isCorrect: boolean }[]; usage: any }> {
+    if (items.length === 0) return { data: [], usage: null };
+    this.ensureConfigured();
+
+    const gradingPrompt = `You are an expert examiner. Grade the following short-answer responses by comparing the student's answer against the sample answer. 
+Award points based on semantic meaning and concept capture, not exact word matching.
+
+Questions and Answers:
+${items.map((it, i) => `
+ID: ${i}
+Question: ${it.question}
+Sample Answer: ${it.sampleAnswer}
+Student Answer: ${it.studentAnswer}
+Max Points: ${it.maxPoints}
+`).join('\n---\n')}
+
+Return a JSON object with a 'results' array where each item matches the input order:
+{"results": [{"id": number, "score": number, "isCorrect": boolean, "feedback": "short explanation"}]} `;
+
+    try {
+      const response = await this.openai!.chat.completions.create({
+        model: this.model,
+        messages: [
+          { role: 'system', content: 'You are a fair, expert teacher. Return only valid JSON.' },
+          { role: 'user', content: gradingPrompt },
+        ],
+        temperature: 0.3,
+        response_format: { type: 'json_object' },
+      });
+
+      const content = response.choices[0]?.message?.content;
+      if (!content) throw new Error('No response from AI');
+
+      const parsed = JSON.parse(content);
+      return { data: parsed.results || [], usage: response.usage };
+    } catch (error) {
+      this.logger.error(`Failed batch short answer grading: ${error}`);
+      return { data: items.map(() => ({ score: 0, feedback: 'Grading failed', isCorrect: false })), usage: null };
+    }
+  }
+
+  /**
    * Grade an essay with AI assistance (Socrates)
    */
-  async gradeEssay(options: GradeEssayOptions): Promise<EssayGrade> {
+  async gradeEssay(options: GradeEssayOptions): Promise<{ data: EssayGrade; usage: any }> {
     this.ensureConfigured();
 
     const { essay, prompt: essayPrompt, rubric, maxScore = 100, subject, gradeLevel } = options;
@@ -416,14 +1467,14 @@ Return as JSON:
           },
           { role: 'user', content: gradingPrompt },
         ],
-        temperature: 0.5, // Lower temperature for more consistent grading
+        temperature: 0.5,
         response_format: { type: 'json_object' },
       });
 
       const content = response.choices[0]?.message?.content;
       if (!content) throw new Error('No response from AI');
 
-      return JSON.parse(content);
+      return { data: JSON.parse(content), usage: response.usage };
     } catch (error) {
       this.logger.error(`Failed to grade essay: ${error}`);
       throw new BadRequestException('Failed to grade essay. Please try again.');
@@ -433,7 +1484,7 @@ Return as JSON:
   /**
    * Generate assessment questions for tests/exams (Socrates)
    */
-  async generateAssessmentQuestions(options: GenerateQuestionsOptions): Promise<QuizQuestion[]> {
+  async generateAssessmentQuestions(options: GenerateQuestionsOptions): Promise<{ data: QuizQuestion[]; usage: any }> {
     this.ensureConfigured();
 
     const {
@@ -468,7 +1519,7 @@ For each question include:
 - Correct answer or sample answer
 - Point value suggestion
 
-Return as JSON: {"questions": [...]}`;
+Return as JSON: {"questions": [{"text": "...", "type": "MULTIPLE_CHOICE | SHORT_ANSWER | ESSAY", "options": ["...", "..."], "correctAnswer": "...", "points": number}]}`;
 
     try {
       const response = await this.openai!.chat.completions.create({
@@ -489,100 +1540,24 @@ Return as JSON: {"questions": [...]}`;
       if (!content) throw new Error('No response from AI');
 
       const parsed = JSON.parse(content);
-      return parsed.questions || parsed;
+      return { data: parsed.questions || parsed, usage: response.usage };
     } catch (error) {
       this.logger.error(`Failed to generate assessment questions: ${error}`);
       throw new BadRequestException('Failed to generate questions. Please try again.');
     }
   }
 
-  /**
-   * Create vector embedding for text
-   */
-  async createEmbedding(text: string): Promise<number[]> {
-    this.ensureConfigured();
-    try {
-      const response = await this.openai!.embeddings.create({
-        model: 'text-embedding-3-small',
-        input: text.substring(0, 8192), // OpenAI limit
-      });
-      return response.data[0].embedding;
-    } catch (error) {
-      this.logger.error(`Embedding failed: ${error}`);
-      throw new BadRequestException('Failed to process context for search');
-    }
-  }
+  // ??? Legacy Chat (Preserved for backward compat) ????????????????????????????
 
-  /**
-   * Find relevant context chunks using vector similarity
-   */
-  async findRelevantContext(query: string, schoolId: string, role: string, limit: number = 5): Promise<string> {
-    try {
-      const embedding = await this.createEmbedding(query);
-      const vectorString = `[${embedding.join(',')}]`;
-
-      // We use queryRaw because Prisma doesn't support vector operators natively yet
-      // The <=> operator is for cosine distance in pgvector
-      const chunks: any[] = await this.prisma.$queryRawUnsafe(`
-        SELECT content
-        FROM "KnowledgeChunk"
-        WHERE "schoolId" = $1
-        AND (
-          (metadata->'permissions'->'roles')::jsonb ? $2
-          OR (metadata->'permissions'->'isPublic')::boolean = true
-        )
-        ORDER BY embedding <=> $3::vector
-        LIMIT $4
-      `, schoolId, role, vectorString, limit);
-
-      if (!chunks || chunks.length === 0) return '';
-
-      return chunks.map(c => c.content).join('\n---\n');
-    } catch (error) {
-      this.logger.error(`Context retrieval failed: ${error}`);
-      return ''; // Fallback to no context rather than crashing
-    }
-  }
-
-  /**
-   * Generic chat with AI
-   */
   async chat(
-    messages: { role: 'user' | 'assistant' | 'system'; content: string }[], 
-    userId?: string, 
-    conversationId?: string, 
+    messages: { role: 'user' | 'assistant' | 'system'; content: string }[],
+    userId?: string,
+    conversationId?: string,
     schoolId?: string
-  ): Promise<{ content: string; conversationId: string }> {
+  ): Promise<{ data: { response: string; conversationId: string }; usage: any }> {
     this.ensureConfigured();
 
-    let contextText = '';
-    let userRole = 'USER';
-
-    // If we have a school ID and user, try to get context
-    if (schoolId && userId) {
-      const user = await this.prisma.user.findUnique({
-        where: { id: userId },
-        select: { role: true }
-      });
-      if (user) {
-        userRole = user.role;
-        const lastUserMessage = messages.slice().reverse().find(m => m.role === 'user');
-        if (lastUserMessage) {
-          contextText = await this.findRelevantContext(lastUserMessage.content, schoolId, userRole);
-        }
-      }
-    }
-
-    const systemPrompt = `
-      You are the Agora School OS Assistant. 
-      Context about the school: ${contextText || 'No specific context found.'}
-      
-      User Role: ${userRole}
-      Rules:
-      - Only answer based on the provided context.
-      - If the user asks something outside school context, try to relate it to how it helps the school.
-      - Never reveal data the user doesn't have access to based on their role.
-    `;
+    const { systemPrompt } = await this.getChatPrompt(messages, userId, schoolId);
 
     try {
       const response = await this.openai!.chat.completions.create({
@@ -602,14 +1577,12 @@ Return as JSON: {"questions": [...]}`;
       let finalConversationId = conversationId;
 
       if (userId) {
-        // If we have a userId, we should save the history
         if (!finalConversationId) {
-          // Create a new conversation if none exists
           const lastUserMessage = messages.slice().reverse().find(m => m.role === 'user');
-          const title = lastUserMessage?.content 
+          const title = lastUserMessage?.content
             ? (lastUserMessage.content.substring(0, 40) + (lastUserMessage.content.length > 40 ? '...' : ''))
             : 'New Chat';
-          
+
           const conversation = await this.prisma.chatConversation.create({
             data: {
               userId,
@@ -626,7 +1599,19 @@ Return as JSON: {"questions": [...]}`;
           finalConversationId = conversation.id;
         }
 
-        // Save the assistant's response to the conversation
+        if (conversationId) {
+          const lastMessage = messages[messages.length - 1];
+          if (lastMessage && lastMessage.role === 'user') {
+            await this.prisma.chatMessage.create({
+              data: {
+                conversationId: finalConversationId!,
+                role: 'user',
+                content: lastMessage.content
+              }
+            });
+          }
+        }
+
         await this.prisma.chatMessage.create({
           data: {
             conversationId: finalConversationId!,
@@ -634,36 +1619,22 @@ Return as JSON: {"questions": [...]}`;
             content: assistantContent
           }
         });
-
-        // If it was an existing conversation, we also need to save the latest user message
-        // (Assuming the caller ONLY sent the new message or the whole history)
-        // Actually, the frontend usually sends the whole history. 
-        // For simplicity, let's assume we want to sync the latest message if not already saved.
-        // But the create above already saved the history.
-        // If finalConversationId existed, we only need to save the LATEST user message and assistant message.
-        if (conversationId) {
-           const lastMessage = messages[messages.length - 1];
-           if (lastMessage && lastMessage.role === 'user') {
-             await this.prisma.chatMessage.create({
-               data: {
-                 conversationId: finalConversationId!,
-                 role: 'user',
-                 content: lastMessage.content
-               }
-             });
-           }
-        }
       }
 
-      return { 
-        content: assistantContent, 
-        conversationId: finalConversationId || '' 
+      return {
+        data: {
+          response: assistantContent,
+          conversationId: finalConversationId || ''
+        },
+        usage: response.usage
       };
     } catch (error) {
       this.logger.error(`AI Chat failed: ${error}`);
       throw new BadRequestException('AI assistant is currently unavailable. Please try again later.');
     }
   }
+
+  // ??? Conversation History Methods ???????????????????????????????????????????
 
   async getConversations(userId: string) {
     return this.prisma.chatConversation.findMany({
@@ -712,5 +1683,344 @@ Return as JSON: {"questions": [...]}`;
 
     return { success: true };
   }
-}
 
+  // ==========================================
+  // CURRICULUM & SCHEME OF WORK AI METHODS
+  // ==========================================
+
+  /**
+   * Verify whether a document is a legitimate curriculum for a given subject and grade level
+   */
+  async verifyCurriculumDocument(
+    content: string,
+    subject: string,
+    gradeLevel: string
+  ): Promise<VerificationResult> {
+    this.logger.log(`Verifying curriculum document for ${subject} ${gradeLevel}`);
+
+    try {
+      this.ensureConfigured();
+
+      const prompt = `
+        You are an expert academic curriculum analyst. Verify if the provided document content is a legitimate curriculum or scheme of work for the following context:
+        Subject: ${subject}
+        Grade Level: ${gradeLevel}
+
+        Analyze the content carefully. Look for:
+        1. Subject keywords and relevant academic topics.
+        2. Complexity level matches the grade level provided.
+        3. Structure resembling a curriculum (weeks, topics, objectives, etc.)
+
+        Respond ONLY in structured JSON format:
+        {
+          "verified": boolean,
+          "confidence": "high" | "medium" | "low",
+          "reason": "Clear explanation of why it passed or failed",
+          "subjectMatch": boolean,
+          "gradeLevelMatch": boolean
+        }
+
+        Document Content:
+        ${content.substring(0, 15000)} 
+      `;
+
+      const response = await this.openai!.chat.completions.create({
+        model: this.model,
+        messages: [{ role: 'user', content: prompt }],
+        response_format: { type: 'json_object' },
+        temperature: 0.1,
+      });
+
+      const result = JSON.parse(response.choices[0].message.content || '{}');
+      return {
+        verified: result.verified || false,
+        confidence: result.confidence || 'low',
+        reason: result.reason || 'Verification failed due to inconclusive AI response.',
+        subjectMatch: result.subjectMatch || false,
+        gradeLevelMatch: result.gradeLevelMatch || false,
+      };
+    } catch (error) {
+      this.logger.error('Error verifying curriculum document:', error);
+      return {
+        verified: false,
+        confidence: 'low',
+        reason: 'An error occurred during AI verification.',
+        subjectMatch: false,
+        gradeLevelMatch: false,
+      };
+    }
+  }
+
+  /**
+   * Parse a raw curriculum document or manual text into structured topics.
+   * This handles the extraction of objectives, subtopics, and resources.
+   */
+  async parseCurriculumDocument(sourceId: string): Promise<void> {
+    try {
+      this.ensureConfigured();
+
+      const source = await this.prisma.agoraCurriculumSource.findUnique({
+        where: { id: sourceId },
+      });
+
+      if (!source) throw new BadRequestException('Source not found');
+
+      // Simulate parsing of visual/file data if needed, or use manual content
+      let textToParse = 'No content available for AI to parse.';
+      if (source.manualContent) {
+        textToParse = JSON.stringify(source.manualContent);
+      } else if (source.fileUrl) {
+        textToParse = `[Simulated text extraction from file at ${source.fileUrl}]`;
+      }
+
+      const response = await this.openai!.chat.completions.create({
+        model: this.model,
+        messages: [
+          {
+            role: 'system',
+            content: 'You are an expert curriculum parser. Extract the topics, subtopics, learning objectives, and resources from the provided educational document.',
+          },
+          { role: 'user', content: `Extract the curriculum data from the following text:\n\n${textToParse}` },
+        ],
+        response_format: { type: 'json_object' as const },
+      });
+
+      const resultText = response.choices[0]?.message?.content || '{}';
+      const parsedData = JSON.parse(resultText) as ParseCurriculumResult;
+
+      // Update the source with the parsed JSON payload
+      await this.prisma.agoraCurriculumSource.update({
+        where: { id: sourceId },
+        data: {
+          parsedData: parsedData as any,
+          status: AgoraCurriculumSourceStatus.PARSED,
+        },
+      });
+
+      this.logger.log(`Parsed Curriculum Source [${sourceId}] successfully.`);
+    } catch (error) {
+      this.logger.error(`Failed to parse curriculum source ${sourceId}:`, error);
+      await this.prisma.agoraCurriculumSource.update({
+        where: { id: sourceId },
+        data: { status: AgoraCurriculumSourceStatus.FAILED },
+      });
+    }
+  }
+
+  /**
+   * Consolidate multiple parsed sources into a unified drafted curriculum.
+   */
+  async consolidateAgoraCurriculum(curriculumId: string): Promise<void> {
+    try {
+      this.ensureConfigured();
+
+      const curriculum = await this.prisma.agoraCurriculum.findUnique({
+        where: { id: curriculumId },
+      });
+
+      if (!curriculum) return;
+
+      // Gather source payloads
+      const sources = await this.prisma.agoraCurriculumSource.findMany({
+        where: { id: { in: curriculum.sourceIds } },
+      });
+
+      const combinedPayloads = sources.map((s: any) => JSON.stringify(s.parsedData)).join('\n\n');
+
+      const response = await this.openai!.chat.completions.create({
+        model: this.model,
+        messages: [
+          {
+            role: 'system',
+            content: `You are an expert educational planner. Consolidate the multiple extracted raw curricula documents into a single, cohesive, logically ordered curriculum. Ensure you generate both formal exact "learningOutcomes" (for teachers) and simplified, empathetic "studentFriendlyOutcomes". Your response MUST match the JSON format containing a "topics" array.`,
+          },
+          { role: 'user', content: `Consolidate these parsed files into a unified structure:\n\n${combinedPayloads}` },
+        ],
+        response_format: { type: 'json_object' as const },
+      });
+
+      const resultText = response.choices[0]?.message?.content || '{}';
+      const result = JSON.parse(resultText) as ConsolidateCurriculumResult;
+
+      // Create topic rows
+      if (result.topics && Array.isArray(result.topics)) {
+        await this.prisma.$transaction(
+          result.topics.map((t, index) =>
+            this.prisma.agoraCurriculumTopic.create({
+              data: {
+                curriculumId,
+                title: t.title || 'Untitled Topic',
+                description: t.description,
+                weekNumber: index + 1, // Map to weekly standard for Agora standard
+                topic: t.title, // Sync topic field for legacy
+                subTopics: t.subTopics || [],
+                learningOutcomes: t.learningOutcomes || [],
+                studentFriendlyOutcomes: t.studentFriendlyOutcomes || [],
+                suggestedActivities: t.suggestedActivities || [],
+                resources: t.resources || [],
+                assessmentType: t.assessmentType,
+                order: t.order || index + 1,
+              },
+            })
+          )
+        );
+      }
+
+      this.logger.log(`Consolidated Agora Curriculum [${curriculumId}] with ${result.topics?.length} topics.`);
+    } catch (error) {
+      this.logger.error(`Failed to consolidate curriculum ${curriculumId}:`, error);
+    }
+  }
+
+  /**
+   * Generate a 12-14 week Scheme of Work using the drafted Agora Curriculum and custom School guidelines.
+   */
+  async generateSchemeOfWork(schemeId: string): Promise<void> {
+    try {
+      this.ensureConfigured();
+
+      const scheme = await (this.prisma as any).schemeOfWork.findUnique({
+        where: { id: schemeId },
+        include: {
+          agoraCurriculum: { include: { topics: { orderBy: { order: 'asc' } } } },
+          schoolCurriculum: true,
+          classLevel: true,
+        },
+      });
+
+      if (!scheme) throw new BadRequestException('Scheme not found');
+
+      // 0. Check for early cancellation
+      if (scheme.status === 'CANCELLED') {
+        this.logger.warn(`Generation for scheme ${schemeId} was cancelled before starting. Aborting.`);
+        return;
+      }
+
+      // 1. UPDATE STATUS TO VERIFYING
+      await (this.prisma as any).schemeOfWork.update({
+        where: { id: schemeId },
+        data: { status: 'VERIFYING' },
+      });
+
+      const subject = await this.prisma.subject.findUnique({
+        where: { id: scheme.subjectId },
+      });
+
+      const subjectName = subject?.name || 'Unknown Subject';
+      const gradeName = scheme.classLevel?.name || 'Unknown Grade';
+
+      // 2. Verification Step for Custom Documents
+      if (scheme.generationMode === 'SCHOOL_ONLY' || scheme.generationMode === 'MERGED') {
+        const doc = scheme.schoolCurriculum;
+        if (doc) {
+          this.logger.log(`Verifying source document for ${schemeId}...`);
+          
+          let contentToVerify = '';
+          if (doc.manualContent) {
+            contentToVerify = JSON.stringify(doc.manualContent);
+          } else if (doc.fileUrl) {
+            // In a real scenario, we'd extract text from PDF/DOCX here
+            // For now, we simulate extraction
+            contentToVerify = `[Extracted Content from ${doc.fileName}]\nSubject: ${subjectName}\nGrade: ${gradeName}\nTopics list...`;
+          }
+
+          const verification = await this.verifyCurriculumDocument(
+            contentToVerify,
+            subjectName,
+            gradeName
+          );
+
+          if (!verification.verified) {
+            this.logger.warn(`Verification failed for scheme ${schemeId}: ${verification.reason}`);
+            await (this.prisma as any).schemeOfWork.update({
+              where: { id: schemeId },
+              data: { status: 'FAILED' as any },
+            });
+            throw new Error(`VERIFICATION_FAILED: ${verification.reason}`);
+          }
+      this.logger.log(`Verification passed for scheme ${schemeId} (Confidence: ${verification.confidence})`);
+        }
+      }
+
+      // 3. UPDATE STATUS TO GENERATING
+      // RE-CHECK CANCELLATION here
+      const freshScheme = await (this.prisma as any).schemeOfWork.findUnique({ where: { id: schemeId } });
+      if (freshScheme.status === 'CANCELLED') return;
+
+      await (this.prisma as any).schemeOfWork.update({
+        where: { id: schemeId },
+        data: { status: 'GENERATING' },
+      });
+
+      // 4. Generation Step
+      const modelInput = {
+        generationMode: scheme.generationMode,
+        agoraTopics: scheme.agoraCurriculum?.topics || [],
+        customSchoolGuidance: scheme.schoolCurriculum?.parsedData || null,
+        targetWeeks: 12, 
+        subject: subjectName,
+        gradeLevel: gradeName,
+      };
+
+      const response = await this.openai!.chat.completions.create({
+        model: this.model,
+        messages: [
+          {
+            role: 'system',
+            content: `You are an expert master teacher. Map the given curriculum topics across a standard ${modelInput.targetWeeks}-week academic term for ${subjectName} (${gradeName}). Group related topics if necessary. Assign one clear topic to each week. ALWAYS Output a JSON object with a "weeks" array (matching weekNumber 1 to 12). Include revision/exams in the final two weeks if appropriate.`,
+          },
+          { role: 'user', content: JSON.stringify(modelInput) },
+        ],
+        response_format: { type: 'json_object' as const },
+      });
+
+      const resultText = response.choices[0]?.message?.content || '{}';
+      const result = JSON.parse(resultText) as SchemeOfWorkGenerationResult;
+
+      if (result.weeks && Array.isArray(result.weeks)) {
+        await this.prisma.$transaction(
+          result.weeks.map(w =>
+            this.prisma.schemeOfWorkWeek.create({
+              data: {
+                schemeOfWorkId: schemeId,
+                weekNumber: w.weekNumber,
+                topic: w.topic,
+                subTopics: w.subTopics || [],
+                learningOutcomes: w.learningOutcomes || [],
+                studentFriendlyOutcomes: w.studentFriendlyOutcomes || [],
+                suggestedActivities: w.suggestedActivities || [],
+                resources: w.resources || [],
+                assessmentType: w.assessmentType,
+              },
+            })
+          )
+        );
+
+        await (this.prisma as any).schemeOfWork.update({
+          where: { id: schemeId },
+          data: { 
+            status: SchemeOfWorkStatus.DRAFT,
+            generatedAt: new Date()
+          },
+        });
+      }
+
+      this.logger.log(`Generated automated Scheme of Work [${schemeId}].`);
+    } catch (error) {
+      this.logger.error(`Failed to generate Scheme of Work ${schemeId}:`, error);
+      
+      // If verification failed, don't retry (BullMQ specific - handled by throwing specific error)
+      if (error.message.startsWith('VERIFICATION_FAILED')) {
+        throw error; 
+      }
+
+      if (schemeId) {
+        await (this.prisma as any).schemeOfWork.update({
+          where: { id: schemeId },
+          data: { status: SchemeOfWorkStatus.FAILED },
+        });
+      }
+      throw error;
+    }
+  }
+}

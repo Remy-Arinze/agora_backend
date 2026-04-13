@@ -82,7 +82,7 @@ export class ClassService {
    */
   async createClass(schoolId: string, classData: CreateClassDto): Promise<ClassDto> {
     // Validate school exists
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -140,7 +140,7 @@ export class ClassService {
    */
   async getTeacherClasses(schoolId: string, teacherId: string): Promise<ClassDto[]> {
     // Validate school exists
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -473,7 +473,7 @@ export class ClassService {
     academicYear?: string,
     typeFilter?: ClassType
   ): Promise<ClassDto[]> {
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -604,7 +604,7 @@ export class ClassService {
    * For TERTIARY: Returns Class data (backward compatibility)
    */
   async getClassById(schoolId: string, classId: string): Promise<ClassDto> {
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -703,7 +703,7 @@ export class ClassService {
     assignmentData: AssignTeacherToClassDto
   ): Promise<ClassDto> {
     // Validate school exists
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -866,7 +866,7 @@ export class ClassService {
     subject?: string
   ): Promise<void> {
     // Validate school exists
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -975,7 +975,7 @@ export class ClassService {
     updateData: Partial<CreateClassDto>
   ): Promise<ClassDto> {
     // Validate school exists
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -1147,7 +1147,7 @@ export class ClassService {
     forceDelete: boolean = false
   ): Promise<void> {
     // Validate school exists
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -1270,7 +1270,7 @@ export class ClassService {
    */
   async getClassStudents(schoolId: string, classId: string): Promise<any[]> {
     // Validate school exists
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }

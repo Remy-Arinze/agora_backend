@@ -16,10 +16,16 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { UserWithContext } from '../auth/types/user-with-context.type';
 import { ResponseDto } from '../common/dto/response.dto';
 
+import { SkipThrottle, Throttle } from '@nestjs/throttler';
+
+/**
+ * standard tier: Attendance logs are lightweight entity updates.
+ */
 @ApiTags('attendance')
 @Controller('schools/:schoolId/attendance')
 @UseGuards(JwtAuthGuard, SchoolDataAccessGuard)
 @ApiBearerAuth()
+@Throttle({ standard: {} })
 export class AttendanceController {
   constructor(private readonly attendanceService: AttendanceService) {}
 

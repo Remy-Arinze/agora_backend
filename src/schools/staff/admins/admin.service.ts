@@ -46,7 +46,7 @@ export class AdminService {
    */
   async addAdmin(schoolId: string, adminData: AddAdminDto, requestingUser: UserWithContext): Promise<any> {
     // Validate school exists
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -241,7 +241,7 @@ export class AdminService {
    */
   async updateAdmin(schoolId: string, adminId: string, updateData: UpdateAdminDto, requestingUser: UserWithContext): Promise<any> {
     // Validate school exists
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -330,7 +330,7 @@ export class AdminService {
    */
   async deleteAdmin(schoolId: string, adminId: string, requestingUser: UserWithContext): Promise<void> {
     // Validate school exists
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -388,7 +388,7 @@ export class AdminService {
    */
   async makePrincipal(schoolId: string, adminId: string, requestingUser: UserWithContext): Promise<void> {
     // Validate school exists
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -451,7 +451,7 @@ export class AdminService {
     updateData: { firstName?: string; lastName?: string; phone?: string }
   ): Promise<any> {
     // Validate school exists
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -483,7 +483,7 @@ export class AdminService {
    */
   async deletePrincipal(schoolId: string, principalId: string): Promise<void> {
     // Validate school exists
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -536,7 +536,7 @@ export class AdminService {
     requestingUser: UserWithContext
   ): Promise<void> {
     // Validate school exists
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -635,7 +635,7 @@ export class AdminService {
     file: Express.Multer.File
   ): Promise<any> {
     // Validate school exists
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }

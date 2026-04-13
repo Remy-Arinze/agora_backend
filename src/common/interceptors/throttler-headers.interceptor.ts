@@ -60,6 +60,11 @@ export class ThrottlerHeadersInterceptor implements NestInterceptor {
       // Calculate reset time (current time + TTL in seconds)
       const resetTime = Math.ceil(Date.now() / 1000) + Math.ceil(ttl / 1000);
 
+      // Check if headers have already been sent (e.g., for SSE streams)
+      if (response.headersSent) {
+        return;
+      }
+
       // Add headers
       // Note: Remaining count would require storage access, so we set it to a safe default
       // In production with Redis, you can query the actual remaining count

@@ -45,7 +45,7 @@ export class TeacherService {
    */
   async addTeacher(schoolId: string, teacherData: AddTeacherDto): Promise<any> {
     // Validate school exists
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -240,7 +240,7 @@ export class TeacherService {
     updateData: UpdateTeacherDto
   ): Promise<any> {
     // Validate school exists
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -283,7 +283,7 @@ export class TeacherService {
     file: Express.Multer.File
   ): Promise<any> {
     // Validate school exists
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -348,7 +348,7 @@ export class TeacherService {
    */
   async deleteTeacher(schoolId: string, teacherId: string, requestingUser: UserWithContext): Promise<void> {
     // Validate school exists
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }

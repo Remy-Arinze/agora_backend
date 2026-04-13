@@ -13,7 +13,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: 4000
-      DB_URL: ${DB_URL:-postgresql://agora:agora@postgres:5432/agora?schema=public}
+      DB_URL: ${DB_URL:-postgresql://agora:agora@db:5432/agora?schema=public}
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-1d}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
@@ -22,11 +22,13 @@ services:
     env_file:
       - .env
     depends_on:
-      postgres:
+      db:
         condition: service_healthy
+      redis:
+        condition: service_started
     restart: unless-stopped
 
-  postgres:
+  db:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: agora
@@ -42,14 +44,13 @@ services:
       timeout: 5s
       retries: 5
 
-  # Optional: Redis for BullMQ (uncomment if your app requires it)
-  # redis:
-  #   image: redis:7-alpine
-  #   ports:
-  #     - "6379:6379"
-  #   volumes:
-  #     - redis_data:/data
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
 
 volumes:
   postgres_data:
-  # redis_data:
+  redis_data:

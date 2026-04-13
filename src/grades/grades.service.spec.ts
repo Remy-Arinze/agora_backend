@@ -29,7 +29,7 @@ describe('GradesService', () => {
         {
           provide: SchoolRepository,
           useValue: {
-            findByIdOrSubdomain: jest.fn(),
+            findById: jest.fn(),
           },
         },
         {
@@ -117,7 +117,7 @@ describe('GradesService', () => {
         },
       };
 
-      schoolRepository.findByIdOrSubdomain.mockResolvedValue(mockSchool as any);
+      schoolRepository.findById.mockResolvedValue(mockSchool as any);
       staffRepository.findTeacherByTeacherId.mockResolvedValue(mockTeacher as any);
       (prisma.enrollment.findUnique as jest.Mock).mockResolvedValue(mockEnrollment as any);
       (prisma.subject.findUnique as jest.Mock).mockResolvedValue({ id: 'subject-1', name: 'Math' } as any);
@@ -126,7 +126,7 @@ describe('GradesService', () => {
 
       const result = await service.createGrade(mockSchoolId, mockDto, mockUser);
 
-      expect(schoolRepository.findByIdOrSubdomain).toHaveBeenCalledWith(mockSchoolId);
+      expect(schoolRepository.findById).toHaveBeenCalledWith(mockSchoolId);
       expect(result).toHaveProperty('id', 'grade-1');
     });
 
@@ -142,7 +142,7 @@ describe('GradesService', () => {
     });
 
     it('should throw NotFoundException if school not found', async () => {
-      schoolRepository.findByIdOrSubdomain.mockResolvedValue(null);
+      schoolRepository.findById.mockResolvedValue(null);
 
       await expect(service.createGrade(mockSchoolId, mockDto, mockUser)).rejects.toThrow(
         NotFoundException
@@ -161,7 +161,7 @@ describe('GradesService', () => {
         isActive: true,
       };
 
-      schoolRepository.findByIdOrSubdomain.mockResolvedValue(mockSchool as any);
+      schoolRepository.findById.mockResolvedValue(mockSchool as any);
       staffRepository.findTeacherByTeacherId.mockResolvedValue(mockTeacher as any);
       (prisma.enrollment.findUnique as jest.Mock).mockResolvedValue(mockEnrollment as any);
 

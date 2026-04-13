@@ -18,6 +18,8 @@ import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { SubscriptionPlansService } from '../subscriptions/plans/plans.service';
 import { UserWithContext } from '../auth/types/user-with-context.type';
 import { SubscriptionTier } from '../subscriptions/dto/subscription.dto';
+import { Throttle, SkipThrottle } from '@nestjs/throttler';
+import { IpWhitelistGuard } from '../common/guards/ip-whitelist.guard';
 
 class InitializePaymentDto {
   @IsEnum(SubscriptionTier)
@@ -31,7 +33,12 @@ class InitializePaymentDto {
   callbackUrl?: string;
 }
 
+/**
+ * Standard tier: 300 req/min for general pricing and initialization.
+ * Webhooks are skipped but protected by IP whitelisting.
+ */
 @Controller('payments')
+@Throttle({ standard: {} })
 export class PaymentsController {
   constructor(
     private readonly paymentsService: PaymentsService,
@@ -138,9 +145,12 @@ export class PaymentsController {
   }
 
   /**
-   * Paystack webhook handler
+   * Paystack webhook handler: Skipped from throttling to prevent data loss.
+   * Protected by IP whitelisting.
    */
   @Post('webhooks/paystack')
+  @SkipThrottle()
+  @UseGuards(IpWhitelistGuard)
   async handlePaystackWebhook(
     @Req() req: RawBodyRequest<Request>,
     @Headers('x-paystack-signature') signature: string,

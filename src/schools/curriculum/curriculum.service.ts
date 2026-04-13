@@ -4,6 +4,7 @@ import {
   NotFoundException,
   ForbiddenException,
   ConflictException,
+  Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { SchoolRepository } from '../domain/repositories/school.repository';
@@ -24,14 +25,29 @@ import {
 import { NerdcCurriculumService } from './nerdc-curriculum.service';
 import { getClassLevelCode } from './dto/nerdc-curriculum.dto';
 import { UserWithContext } from '../../auth/types/user-with-context.type';
+import { SubscriptionsService } from '../../subscriptions/subscriptions.service';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
+import { CURRICULUM_PROCESSING_QUEUE, JOB_PROCESS_SOURCE } from '../../agora-curriculum/curriculum.processor';
+import { SetupSchemeOfWorkDto } from './dto/scheme-of-work.dto';
+import { SchemeGenerationMode, SchemeOfWorkStatus } from '@prisma/client';
 
 @Injectable()
 export class CurriculumService {
+  private readonly logger = new Logger(CurriculumService.name);
+
+  // Credit Constants
+  private readonly VERIFICATION_COST = 5;
+  private readonly GENERATION_COST = 45;
+  private readonly TOTAL_COST = 50;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly schoolRepository: SchoolRepository,
     private readonly staffRepository: StaffRepository,
-    private readonly nerdcService: NerdcCurriculumService
+    private readonly nerdcService: NerdcCurriculumService,
+    private readonly subscriptionsService: SubscriptionsService,
+    @InjectQueue(CURRICULUM_PROCESSING_QUEUE) private readonly curriculumQueue: Queue
   ) { }
 
   // ============================================
@@ -239,7 +255,7 @@ export class CurriculumService {
     user: UserWithContext
   ): Promise<CurriculumDto> {
     // Validate school exists
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -346,7 +362,7 @@ export class CurriculumService {
     dto: GenerateCurriculumDto,
     user: UserWithContext
   ): Promise<CurriculumDto> {
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -565,7 +581,7 @@ export class CurriculumService {
     termId?: string,
     user?: UserWithContext
   ): Promise<CurriculumDto | null> {
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -638,7 +654,7 @@ export class CurriculumService {
     curriculumId: string,
     user?: UserWithContext
   ): Promise<CurriculumDto> {
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -678,7 +694,7 @@ export class CurriculumService {
     updateData: UpdateCurriculumDto,
     user: UserWithContext
   ): Promise<CurriculumDto> {
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -784,7 +800,7 @@ export class CurriculumService {
     curriculumId: string,
     user: UserWithContext
   ): Promise<void> {
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -1358,6 +1374,261 @@ export class CurriculumService {
       completedBy: item.completedBy,
       createdAt: item.createdAt,
       updatedAt: item.updatedAt,
+    };
+  }
+  // ============================================
+  // SCHEME OF WORK (New Flow)
+  // ============================================
+
+  /**
+   * Find the latest published Agora curriculum for a subject and level
+   */
+  async getLatestAgoraCurriculum(subjectId: string, gradeLevel: string) {
+    return await (this.prisma as any).agoraCurriculum.findFirst({
+      where: {
+        subjectId,
+        gradeLevel,
+        status: 'PUBLISHED',
+      },
+      orderBy: { version: 'desc' },
+    });
+  }
+
+  /**
+   * Set up a new Scheme of Work for a subject
+   */
+  async setupSchemeOfWork(
+    schoolId: string,
+    dto: SetupSchemeOfWorkDto,
+    user: UserWithContext
+  ) {
+    const { classLevelId, classId, subjectId, termId, mode } = dto;
+
+    // Check for existing scheme
+    const existing = await (this.prisma as any).schemeOfWork.findFirst({
+      where: {
+        schoolId,
+        subjectId,
+        termId,
+        classLevelId,
+      },
+    });
+
+    if (existing) {
+      throw new ConflictException('A Scheme of Work already exists for this subject and term.');
+    }
+
+    // PATH A: Agora Curriculum (Free)
+    if (mode === SchemeGenerationMode.AGORA_ONLY) {
+      if (!dto.agoraCurriculumId) {
+        throw new BadRequestException('Agora Curriculum ID is required for Agora-only mode.');
+      }
+
+      const agoraCurriculum = await (this.prisma as any).agoraCurriculum.findUnique({
+        where: { id: dto.agoraCurriculumId },
+        include: { topics: { orderBy: { order: 'asc' } } },
+      });
+
+      if (!agoraCurriculum) {
+        throw new NotFoundException('Agora Curriculum not found.');
+      }
+
+      return await this.prisma.$transaction(async (tx) => {
+        const scheme = await (tx as any).schemeOfWork.create({
+          data: {
+            schoolId,
+            classLevelId,
+            classId: classId || null,
+            subjectId,
+            termId,
+            generationMode: mode,
+            agoraCurriculumId: agoraCurriculum.id,
+            status: SchemeOfWorkStatus.DRAFT,
+          },
+        });
+
+        // Clone topics into weeks
+        await (tx as any).schemeOfWorkWeek.createMany({
+          data: agoraCurriculum.topics.map((t: any) => ({
+            schemeOfWorkId: scheme.id,
+            weekNumber: t.weekNumber,
+            topic: t.title,
+            subTopics: t.subTopics || [],
+            learningOutcomes: t.learningOutcomes || [],
+            studentFriendlyOutcomes: t.studentFriendlyOutcomes || [],
+            suggestedActivities: t.suggestedActivities || [],
+            resources: t.resources || [],
+            assessmentType: t.assessmentType,
+            order: t.order || t.weekNumber,
+          })),
+        });
+
+        return scheme;
+      });
+    }
+
+    // PATH B: Custom School Curriculum (Paid)
+    if (mode === SchemeGenerationMode.SCHOOL_ONLY || mode === SchemeGenerationMode.MERGED) {
+      const creditsNeeded = this.TOTAL_COST;
+
+      // 1. Check access and credits
+      const summary = await this.subscriptionsService.getSubscriptionSummary(schoolId);
+      if (summary.aiCreditsRemaining < creditsNeeded && summary.tier !== 'CUSTOM') {
+        throw new BadRequestException(`Insufficient AI credits. Required: ${creditsNeeded}, Available: ${summary.aiCreditsRemaining}`);
+      }
+
+      return await this.prisma.$transaction(async (tx) => {
+        // 2. Deduct credits
+        const creditResult = await this.subscriptionsService.useAiCredits(
+          schoolId,
+          creditsNeeded,
+          user.id,
+          `GENERATE_SCHEME: ${subjectId}`
+        );
+
+        if (!creditResult.success) {
+          throw new BadRequestException(creditResult.message || 'Failed to deduct AI credits.');
+        }
+
+        // 3. Create the Scheme entry in QUEUED status
+        const schemaData: any = {
+          schoolId,
+          subjectId,
+          termId,
+          classLevelId,
+          classId: classId || null,
+          generationMode: mode,
+          agoraCurriculumId: dto.agoraCurriculumId || null,
+          schoolCurriculumId: dto.schoolCurriculumDocIds?.[0] || null,
+          status: 'QUEUED',
+        };
+
+        const scheme = await (tx as any).schemeOfWork.create({
+          data: schemaData,
+        });
+
+        // 4. Enqueue BullMQ job
+        await this.curriculumQueue.add('generate-scheme', {
+          schemeId: scheme.id,
+          schoolId,
+          userId: user.id,
+          creditsUsed: this.TOTAL_COST,
+        }, {
+          attempts: 3,
+          backoff: { type: 'exponential', delay: 10000 },
+        });
+
+        return scheme;
+      });
+    }
+
+    throw new BadRequestException('Invalid generation mode.');
+  }
+
+  /**
+   * Get all schemes of work for a class and term
+   */
+  async getSchemesSummary(schoolId: string, classLevelId: string, termId: string) {
+    const subjects = await this.getSubjectsFromTimetable(schoolId, classLevelId, termId);
+    
+    const schemes = await (this.prisma as any).schemeOfWork.findMany({
+      where: {
+        schoolId,
+        classLevelId,
+        termId,
+      },
+    });
+
+    const schemeMap = new Map(schemes.map((s: any) => [s.subjectId, s]));
+
+    return subjects.map(subject => {
+      const scheme = schemeMap.get(subject.subjectId) as any;
+      return {
+        ...subject,
+        schemeId: scheme?.id || null,
+        status: scheme?.status || 'NOT_SET_UP',
+        generationMode: scheme?.generationMode || null,
+        version: scheme?.version || null,
+        updatedAt: scheme?.updatedAt || null,
+      };
+    });
+  }
+
+  /**
+   * Get Agora Master curricula for the library
+   */
+  async getAgoraLibraryCurricula(subjectId: string, gradeLevel: string) {
+    return await (this.prisma as any).agoraCurriculum.findMany({
+      where: {
+        subjectId,
+        gradeLevel,
+        status: 'PUBLISHED'
+      },
+      include: {
+        subject: true,
+        topics: {
+          orderBy: { weekNumber: 'asc' }
+        }
+      }
+    });
+  }
+
+  /**
+   * Cancel an active scheme generation and refund credits
+   */
+  async cancelSchemeGeneration(schoolId: string, schemeId: string, user: UserWithContext) {
+    const scheme = await (this.prisma as any).schemeOfWork.findUnique({
+      where: { id: schemeId },
+    });
+
+    if (!scheme) throw new NotFoundException('Scheme not found');
+    
+    const status = scheme.status as string;
+    const canCancel = ['QUEUED', 'VERIFYING', 'GENERATING'].includes(status);
+    
+    if (!canCancel) {
+      throw new BadRequestException(`Cannot cancel generation in status: ${status}`);
+    }
+
+    // 1. Calculate refund based on status (Production-ready logic)
+    let creditsToRefund = 0;
+    let reason = `CANCEL_GENERATION: ${schemeId} in status ${status}`;
+
+    if (status === 'QUEUED') {
+      // Not started yet - 100% refund
+      creditsToRefund = this.TOTAL_COST;
+    } else if (status === 'VERIFYING') {
+      // Verification in progress - Refund generation portion, keep verification fee
+      creditsToRefund = this.GENERATION_COST;
+      reason += ' (Kept verification fee)';
+    } else if (status === 'GENERATING') {
+      // Deep generation started - 0 refund to cover API costs
+      creditsToRefund = 0;
+      reason += ' (No refund - generation in progress)';
+    }
+
+    // 2. Update status to CANCELLED (The BullMQ processor will see this and skip work)
+    await (this.prisma as any).schemeOfWork.update({
+      where: { id: schemeId },
+      data: { status: 'CANCELLED' },
+    });
+
+    // 3. Refund credits if applicable
+    if (creditsToRefund > 0) {
+      await this.subscriptionsService.refundAiCredits(
+        schoolId,
+        creditsToRefund,
+        user.id,
+        reason
+      );
+    }
+
+    return { 
+      success: true, 
+      refunded: creditsToRefund,
+      message: creditsToRefund > 0 
+        ? `Generation cancelled. ${creditsToRefund} credits refunded.` 
+        : 'Generation stopped. No refund available for in-progress tasks.'
     };
   }
 }

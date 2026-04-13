@@ -3,11 +3,17 @@ import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@ne
 import { AnalyticsService, AnalyticsStats } from './analytics.service';
 import { ResponseDto } from '../common/dto/response.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { Throttle } from '@nestjs/throttler';
 
+/**
+ * database-intensive tier: Aggregates stats across multi-tenant schemas.
+ * 30 req/min is optimal for reporting needs while preventing DB deadlock.
+ */
 @ApiTags('analytics')
 @Controller('analytics')
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth()
+@Throttle({ 'database-intensive': {} })
 export class AnalyticsController {
   constructor(private readonly analyticsService: AnalyticsService) {}
 

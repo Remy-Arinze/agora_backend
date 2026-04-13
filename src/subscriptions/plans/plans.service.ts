@@ -33,7 +33,7 @@ export class SubscriptionPlansService {
             ],
             include: {
                 customSchool: {
-                    select: { name: true, subdomain: true },
+                    select: { name: true },
                 },
             },
         });

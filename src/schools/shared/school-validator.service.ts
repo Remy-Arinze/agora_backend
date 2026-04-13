@@ -9,27 +9,13 @@ import { PrismaService } from '../../database/prisma.service';
 export class SchoolValidatorService {
   constructor(private readonly prisma: PrismaService) { }
 
-  /**
-   * Validate that a subdomain is unique
-   */
-  async validateSubdomainUnique(subdomain: string, excludeSchoolId?: string): Promise<void> {
-    const existingSchool = await this.prisma.school.findUnique({
-      where: { subdomain },
-    });
-
-    if (existingSchool && existingSchool.id !== excludeSchoolId) {
-      throw new ConflictException('School with this subdomain already exists');
-    }
-  }
 
   /**
    * Validate that a school exists
    */
   async validateSchoolExists(schoolId: string): Promise<void> {
-    const school = await this.prisma.school.findFirst({
-      where: {
-        OR: [{ id: schoolId }, { subdomain: schoolId }],
-      },
+    const school = await this.prisma.school.findUnique({
+      where: { id: schoolId },
     });
 
     if (!school) {
@@ -41,10 +27,8 @@ export class SchoolValidatorService {
    * Validate that a school is active
    */
   async validateSchoolActive(schoolId: string): Promise<void> {
-    const school = await this.prisma.school.findFirst({
-      where: {
-        OR: [{ id: schoolId }, { subdomain: schoolId }],
-      },
+    const school = await this.prisma.school.findUnique({
+      where: { id: schoolId },
     });
 
     if (!school) {
@@ -60,29 +44,13 @@ export class SchoolValidatorService {
     }
   }
 
-  /**
-   * Validate school data before creation/update
-   */
   validateSchoolData(data: {
     name?: string;
-    subdomain?: string;
     email?: string;
     phone?: string;
   }): void {
     if (data.name && data.name.trim().length < 2) {
       throw new BadRequestException('School name must be at least 2 characters');
-    }
-
-    if (data.subdomain) {
-      const subdomainRegex = /^[a-z0-9-]+$/;
-      if (!subdomainRegex.test(data.subdomain)) {
-        throw new BadRequestException(
-          'Subdomain can only contain lowercase letters, numbers, and hyphens'
-        );
-      }
-      if (data.subdomain.length < 3 || data.subdomain.length > 50) {
-        throw new BadRequestException('Subdomain must be between 3 and 50 characters');
-      }
     }
 
     if (data.email && !this.isValidEmail(data.email)) {

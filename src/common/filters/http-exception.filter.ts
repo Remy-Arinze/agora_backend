@@ -129,12 +129,20 @@ export class HttpExceptionFilter implements ExceptionFilter {
       // Extract schoolId from request
       let schoolId: string | undefined;
       const user = (request as any).user;
+      
       if (user?.currentSchoolId) {
         schoolId = user.currentSchoolId;
       } else if ((request as any).tenantId) {
         schoolId = (request as any).tenantId;
       } else if (request.headers['x-tenant-id']) {
-        schoolId = request.headers['x-tenant-id'] as string;
+        const tenantHeader = request.headers['x-tenant-id'] as string;
+        // Basic check: IDs are usually long (CUID/UUID), subdomains are shorter/names.
+        // CUIDs start with 'c' and are ~25 chars. UUIDs have hyphens and are 36 chars.
+        // Validating the ID format prevents DB Foreign Key crashes when a subdomain is sent.
+        const isPotentialId = /^[a-z0-9-]{20,}$/i.test(tenantHeader);
+        if (isPotentialId) {
+          schoolId = tenantHeader;
+        }
       }
 
       // Extract userId from request

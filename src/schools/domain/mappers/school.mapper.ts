@@ -35,7 +35,6 @@ export class SchoolMapper {
       id: school.id,
       schoolId: school.schoolId || '',
       name: school.name,
-      subdomain: school.subdomain,
       domain: school.domain,
       address: school.address,
       city: school.city,

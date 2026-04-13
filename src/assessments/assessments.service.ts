@@ -1,6 +1,9 @@
-import { Injectable, Logger, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException, ForbiddenException, ConflictException } from '@nestjs/common';
+import { v4 as uuidv4 } from 'uuid';
 import { PrismaService } from '../database/prisma.service';
 import { CreateAssessmentDto, SubmitAssessmentDto, GradeSubmissionDto } from './dto/assessment.dto';
+import { AiService } from '../ai/ai.service';
+import { NotificationService } from '../notification/notification.service';
 import { UserWithContext } from '../auth/types/user-with-context.type';
 import { UserRole } from '@prisma/client';
 
@@ -8,17 +11,23 @@ import { UserRole } from '@prisma/client';
 export class AssessmentsService {
     private readonly logger = new Logger(AssessmentsService.name);
 
-    constructor(private readonly prisma: PrismaService) { }
+    constructor(
+        private readonly prisma: PrismaService,
+        private readonly aiService: AiService,
+        private readonly notificationService: NotificationService
+    ) { }
 
     async createAssessment(schoolId: string, dto: CreateAssessmentDto, user: UserWithContext) {
-        const teacherId = user.currentProfileId;
-        if (!teacherId) {
+        const teacherProfileId = user.currentProfileId;
+        if (!teacherProfileId) {
             throw new ForbiddenException('Teacher profile not found');
         }
 
-        const teacher = await this.prisma.teacher.findUnique({
+        // Validate teacher has access to the school
+        const teacher = await this.prisma.teacher.findFirst({
             where: {
-                userId_schoolId: { userId: user.id, schoolId }
+                id: teacherProfileId,
+                schoolId
             }
         });
 
@@ -26,20 +35,56 @@ export class AssessmentsService {
             throw new ForbiddenException('Teacher not found in this school');
         }
 
+        // Resolve and validate class/arm IDs
+        let finalClassId = dto.classId;
+        let finalClassArmId = dto.classArmId;
+
+        if (finalClassId) {
+            // Check if it's a ClassArm first (Primary/Secondary context)
+            const classArm = await (this.prisma as any).classArm.findUnique({ where: { id: finalClassId } });
+            if (classArm) {
+                finalClassArmId = classArm.id;
+                finalClassId = undefined; // It's an Arm, so clear the Class ID field
+            } else {
+                // Check if it's a regular Class
+                const classExists = await this.prisma.class.findUnique({ where: { id: finalClassId } });
+                if (!classExists) {
+                    throw new NotFoundException(`Class or ClassArm with ID ${finalClassId} not found`);
+                }
+            }
+        }
+
+        if (dto.subjectId) {
+            const subjectExists = await this.prisma.subject.findUnique({ where: { id: dto.subjectId } });
+            if (!subjectExists) throw new NotFoundException(`Subject with ID ${dto.subjectId} not found`);
+        }
+
+        if (dto.termId) {
+            const termExists = await this.prisma.term.findUnique({ where: { id: dto.termId } });
+            if (!termExists) throw new NotFoundException(`Academic Term with ID ${dto.termId} not found`);
+        }
+
         // Logic to create assessment and its questions
-        return await this.prisma.assessment.create({
+        const assessment = await this.prisma.assessment.create({
             data: {
                 schoolId,
-                classId: dto.classId,
-                classArmId: dto.classArmId,
+                classId: finalClassId,
+                classArmId: finalClassArmId,
                 subjectId: dto.subjectId,
                 teacherId: teacher.id,
                 termId: dto.termId,
                 title: dto.title,
                 description: dto.description,
                 type: dto.type,
+                status: dto.status || 'DRAFT',
                 dueDate: dto.dueDate ? new Date(dto.dueDate) : null,
                 maxScore: dto.maxScore,
+                isTimed: dto.isTimed || false,
+                duration: dto.duration || null,
+                hasIntegrity: dto.hasIntegrity || false,
+                autoSubmitOnTimeout: dto.autoSubmitOnTimeout !== undefined ? dto.autoSubmitOnTimeout : true,
+                violationThreshold: dto.violationThreshold !== undefined ? dto.violationThreshold : 1,
+                pointsPerViolation: dto.pointsPerViolation || 0,
                 questions: {
                     create: dto.questions.map(q => ({
                         text: q.text,
@@ -52,28 +97,67 @@ export class AssessmentsService {
                 }
             },
             include: {
-                questions: true
+                questions: true,
+                subject: true
             }
         });
+
+        // Notify students if it's published immediately
+        if (assessment.status === 'PUBLISHED') {
+            this.notificationService.emitAssessmentPublished({
+                schoolId,
+                classId: assessment.classId || undefined,
+                classArmId: assessment.classArmId || undefined,
+                assessmentTitle: assessment.title,
+                subjectName: assessment.subject?.name || 'Unknown',
+                assessmentId: assessment.id,
+                teacherName: `${user.firstName || ''} ${user.lastName || ''}`.trim(),
+                timestamp: new Date().toISOString(),
+            });
+        }
+
+        return assessment;
     }
 
-    async getClassAssessments(schoolId: string, classId: string, termId?: string) {
-        return this.prisma.assessment.findMany({
+    async getClassAssessments(schoolId: string, classId: string, termId?: string, studentId?: string) {
+        const assessments = await this.prisma.assessment.findMany({
             where: {
                 schoolId,
-                classId,
+                OR: [
+                    { classId },
+                    { classArmId: classId }
+                ],
+                status: 'PUBLISHED', // Only published assessments for general list (can be adjusted for teachers)
                 ...(termId ? { termId } : {}),
             },
             orderBy: { createdAt: 'desc' },
             include: {
                 _count: {
                     select: { submissions: true }
-                }
+                },
+                ...(studentId ? {
+                    submissions: {
+                        where: { studentId },
+                        select: { id: true, status: true, totalScore: true, submittedAt: true }
+                    }
+                } : {}),
+                subject: true,
+                class: true
             }
         });
+
+        if (studentId) {
+            return assessments.map(a => ({
+                ...a,
+                isSubmitted: a.submissions.length > 0,
+                submission: a.submissions[0] || null
+            }));
+        }
+
+        return assessments;
     }
 
-    async getAssessmentById(schoolId: string, assessmentId: string) {
+    async getAssessmentById(schoolId: string, assessmentId: string, user: UserWithContext) {
         const assessment = await this.prisma.assessment.findUnique({
             where: { id: assessmentId },
             include: {
@@ -82,9 +166,12 @@ export class AssessmentsService {
                 },
                 submissions: {
                     include: {
-                        student: true
+                        student: true,
+                        answers: true
                     }
-                }
+                },
+                subject: true,
+                class: true
             }
         });
 
@@ -92,7 +179,133 @@ export class AssessmentsService {
             throw new NotFoundException('Assessment not found');
         }
 
+        if (user.role === 'STUDENT') {
+            // SECURITY: Only allow the student to see their OWN submission, never others'
+            assessment.submissions = assessment.submissions.filter(s => s.student.userId === user.id);
+
+            // SECURITY: Hide correct answers for students before submitting
+            const hasSubmitted = assessment.submissions.length > 0;
+            if (!hasSubmitted) {
+                assessment.questions = assessment.questions.map(q => ({
+                    ...q,
+                    correctAnswer: undefined // Don't send answers to the client during the test!
+                })) as any;
+            }
+        }
+
         return assessment;
+    }
+
+    async startAssessment(schoolId: string, assessmentId: string, user: UserWithContext) {
+        const student = await this.prisma.student.findUnique({
+            where: { userId: user.id }
+        });
+
+        if (!student) {
+            throw new ForbiddenException('Student profile not found');
+        }
+
+        const assessment = await this.prisma.assessment.findUnique({
+            where: { id: assessmentId }
+        });
+
+        if (!assessment || assessment.schoolId !== schoolId) {
+            throw new NotFoundException('Assessment not found');
+        }
+
+        // Check if assessment is published
+        if (assessment.status !== 'PUBLISHED') {
+            throw new ForbiddenException('Assessment is not available');
+        }
+
+        // Single session enforcement: Generate a new token
+        const newSessionToken = uuidv4();
+
+        // Upsert the submission record
+        const submission = await this.prisma.assessmentSubmission.upsert({
+            where: {
+                assessmentId_studentId: {
+                    assessmentId,
+                    studentId: student.id
+                }
+            },
+            update: {
+                examSessionToken: newSessionToken,
+                // Restarting the timer if it's the FIRST time
+                startedAt: { set: undefined } // Don't overwrite startedAt if already set
+            },
+            create: {
+                assessmentId,
+                studentId: student.id,
+                examSessionToken: newSessionToken,
+                startedAt: new Date(),
+                status: 'SUBMITTED' // It starts as submitted to signal it's in progress but technically it is "IN_PROGRESS"
+            }
+        });
+
+        // If startedAt was already set, we don't overwrite it to prevent timer resets on refresh
+        let startedAt = submission.startedAt;
+        if (!startedAt) {
+            const updated = await this.prisma.assessmentSubmission.update({
+                where: { id: submission.id },
+                data: { startedAt: new Date() }
+            });
+            startedAt = updated.startedAt;
+        }
+
+        return {
+            examSessionToken: newSessionToken,
+            startedAt: startedAt?.toISOString(),
+            duration: assessment.isTimed ? assessment.duration : null
+        };
+    }
+
+    async logViolation(schoolId: string, assessmentId: string, type: string, user: UserWithContext) {
+        const student = await this.prisma.student.findUnique({
+            where: { userId: user.id }
+        });
+
+        if (!student) throw new ForbiddenException();
+
+        const submission = await this.prisma.assessmentSubmission.findUnique({
+            where: { assessmentId_studentId: { assessmentId, studentId: student.id } },
+            include: { assessment: true }
+        });
+
+        if (!submission) throw new NotFoundException('Submission not found');
+        if (submission.status === 'GRADED') throw new ForbiddenException('Already graded');
+
+        const assessment = submission.assessment;
+
+        // Log the violation
+        await this.prisma.assessmentViolation.create({
+            data: {
+                submissionId: submission.id,
+                type
+            }
+        });
+
+        // Update violation count and handle penalties
+        const newCount = submission.violationCount + 1;
+        let isFlagged = submission.isFlagged;
+        let pointDeductions = Number(submission.pointDeductions || 0);
+
+        if (newCount > (assessment.violationThreshold || 1)) {
+            isFlagged = true;
+            // Apply point deduction if configured
+            if (Number(assessment.pointsPerViolation) > 0) {
+                pointDeductions += Number(assessment.pointsPerViolation);
+            }
+        }
+
+        return this.prisma.assessmentSubmission.update({
+            where: { id: submission.id },
+            data: {
+                violationCount: newCount,
+                isFlagged,
+                pointDeductions
+            }
+        });
     }
 
     async submitAssessment(schoolId: string, assessmentId: string, dto: SubmitAssessmentDto, user: UserWithContext) {
@@ -113,17 +326,108 @@ export class AssessmentsService {
             throw new NotFoundException('Assessment not found');
         }
 
-        // Create submission with basic auto-grading for MCQs
+        const existingSubmission = await this.prisma.assessmentSubmission.findUnique({
+            where: {
+                assessmentId_studentId: {
+                    assessmentId,
+                    studentId: student.id
+                }
+            }
+        });
+
+        if (existingSubmission) {
+            // SINGLE SESSION ENFORCEMENT
+            if (dto.examSessionToken && existingSubmission.examSessionToken && dto.examSessionToken !== existingSubmission.examSessionToken) {
+                throw new ConflictException('Multiple sessions detected. This attempt is no longer valid.');
+            }
+
+            if (existingSubmission.status === 'GRADED') {
+                throw new ForbiddenException('You have already submitted this assessment.');
+            }
+
+            // TIMER VALIDATION
+            if (assessment.isTimed && assessment.duration && existingSubmission.startedAt) {
+                const now = new Date();
+                const diffMinutes = (now.getTime() - existingSubmission.startedAt.getTime()) / (1000 * 60);
+                
+                // Allow a small grace period (e.g., 2 minutes) for network latency
+                if (diffMinutes > assessment.duration + 2) {
+                    // Logic for auto-submit already handled by frontend, 
+                    // but server should technically block any LATE submissions
+                    this.logger.warn(`Late submission attempt by student ${student.id} for assessment ${assessmentId}`);
+                    // We might still allow it but mark as auto-submitted/late
+                }
+            }
+        }
+
+        // 1. Separate MCQs for instant grading and Short Answers for AI grading
+        const mcqs = assessment.questions.filter(q => q.type === 'MULTIPLE_CHOICE');
+        const shortAnswers = assessment.questions.filter(q => q.type === 'SHORT_ANSWER');
+
+        // 2. Perform AI grading for Short Answers if present
+        const aiGradingItems = dto.answers
+            .filter(ans => shortAnswers.some(sq => sq.id === ans.questionId))
+            .map(ans => {
+                const question = shortAnswers.find(sq => sq.id === ans.questionId)!;
+                return {
+                    question: question.text,
+                    studentAnswer: ans.text || '',
+                    sampleAnswer: question.correctAnswer || '',
+                    maxPoints: Number(question.points) || 1
+                };
+            });
+
+        let aiResults: any[] = [];
+        if (aiGradingItems.length > 0) {
+            try {
+                const gradeRes = await this.aiService.gradeShortAnswers(aiGradingItems);
+                aiResults = gradeRes.data;
+            } catch (err) {
+                this.logger.error(`AI Grading failed for submission: ${err}`);
+            }
+        }
+
         let totalScore = 0;
         const answers = dto.answers.map(ans => {
             const question = assessment.questions.find(q => q.id === ans.questionId);
             let isCorrect: boolean | null = null;
             let score = 0;
+            let feedback: string | undefined = undefined;
+            let gradedBy: 'AUTO' | 'TEACHER' | 'AI' = 'TEACHER';
 
-            if (question && question.type === 'MULTIPLE_CHOICE') {
-                isCorrect = ans.selectedOption === question.correctAnswer;
-                score = isCorrect ? Number(question.points) : 0;
-                totalScore += score;
+            if (question) {
+                if (question.type === 'MULTIPLE_CHOICE') {
+                    const optionsArray = Array.isArray(question.options) 
+                        ? question.options as string[] 
+                        : (typeof question.options === 'string' ? JSON.parse(question.options || '[]') : []);
+                    const getOptText = (val: string, options: string[]) => {
+                        if (!val) return '';
+                        const clean = val.trim();
+                        if (/^[A-D]$/i.test(clean)) {
+                            const idx = clean.toUpperCase().charCodeAt(0) - 65;
+                            return options[idx] || clean;
+                        }
+                        const match = clean.match(/^[A-D][\.\)]\s*(.*)/i);
+                        return match ? match[1] : clean;
+                    };
+                    const normExpected = getOptText(question.correctAnswer || '', optionsArray).toLowerCase();
+                    const normActual = getOptText(ans.selectedOption || '', optionsArray).toLowerCase();
+                    isCorrect = normExpected === normActual && normExpected !== '';
+
+                    score = isCorrect ? Number(question.points) : 0;
+                    totalScore += score;
+                    gradedBy = 'AUTO';
+                } else if (question.type === 'SHORT_ANSWER') {
+                    const aiResult = aiResults.find((res, i) => aiGradingItems[i]?.question === question.text);
+                    if (aiResult) {
+                        isCorrect = aiResult.isCorrect;
+                        score = Number(aiResult.score) || 0;
+                        feedback = aiResult.feedback;
+                        totalScore += score;
+                        gradedBy = 'AI';
+                    }
+                }
+                // Essay stays as gradedBy: TEACHER by default
             }
 
             return {
@@ -132,13 +436,14 @@ export class AssessmentsService {
                 selectedOption: ans.selectedOption,
                 isCorrect,
                 score,
-                gradedBy: (question?.type === 'MULTIPLE_CHOICE') ? 'AUTO' : 'TEACHER'
+                aiFeedback: feedback,
+                gradedBy
             };
         });
 
         // Use transaction to ensure assessment submission
-        return this.prisma.$transaction(async (tx) => {
-            const submission = await tx.assessmentSubmission.create({
+        const submission = await this.prisma.$transaction(async (tx) => {
+            const sub = await tx.assessmentSubmission.create({
                 data: {
                     assessmentId,
                     studentId: student.id,
@@ -153,8 +458,27 @@ export class AssessmentsService {
                 }
             });
 
-            return submission;
+            return sub;
         });
+
+        // --- Emit real-time notification to the teacher ---
+        try {
+            const subject = await this.prisma.subject.findUnique({ where: { id: assessment.subjectId }, select: { name: true } });
+            this.notificationService.emitSubmissionNotification({
+                schoolId,
+                teacherId: assessment.teacherId,
+                studentName: `${student.firstName || ''} ${student.lastName || ''}`.trim(),
+                assessmentTitle: assessment.title,
+                subjectName: subject?.name || 'Unknown Subject',
+                assessmentId,
+                submissionId: submission.id,
+                timestamp: new Date().toISOString(),
+            });
+        } catch (notifErr) {
+            this.logger.warn(`Failed to emit submission notification: ${notifErr}`);
+        }
+
+        return submission;
     }
 
     async getSubmissionById(schoolId: string, submissionId: string) {
@@ -202,6 +526,16 @@ export class AssessmentsService {
 
         if (!submission || submission.assessment.schoolId !== schoolId) {
             throw new NotFoundException('Submission not found');
+        }
+
+        // SECURITY: Prevent unauthorized teachers from modifying other teachers' assessments
+        if (user.role === 'TEACHER') {
+            const teacherProfile = await this.prisma.teacher.findUnique({
+                where: { userId_schoolId: { userId: user.id, schoolId } }
+            });
+            if (!teacherProfile || submission.assessment.teacherId !== teacherProfile.id) {
+                throw new ForbiddenException('You do not have permission to grade this assessment');
+            }
         }
 
         const currentTotalScore = dto.totalScore !== undefined ? dto.totalScore : Number(submission.totalScore);
@@ -271,9 +605,56 @@ export class AssessmentsService {
                         }
                     });
                 }
+
+                // Notify Student
+                this.notificationService.emitGradePublished({
+                    schoolId,
+                    studentId: submission.studentId,
+                    assessmentTitle: assessment.title,
+                    subjectName: assessment.subject.name,
+                    score: Number(currentTotalScore),
+                    maxScore: Number(assessment.maxScore),
+                    timestamp: new Date().toISOString(),
+                });
             }
 
             return updatedSubmission;
+        });
+    }
+
+    async deleteAssessment(schoolId: string, assessmentId: string, user: UserWithContext) {
+        const assessment = await this.prisma.assessment.findUnique({
+            where: { id: assessmentId },
+            include: {
+                _count: {
+                    select: { submissions: true }
+                }
+            }
+        });
+
+        if (!assessment || assessment.schoolId !== schoolId) {
+            throw new NotFoundException('Assessment not found');
+        }
+
+        // SECURITY: Prevent unauthorized teachers from deleting other teachers' assessments
+        if (user.role === 'TEACHER') {
+            const teacherProfile = await this.prisma.teacher.findUnique({
+                where: { userId_schoolId: { userId: user.id, schoolId } }
+            });
+            if (!teacherProfile || assessment.teacherId !== teacherProfile.id) {
+                throw new ForbiddenException('You do not have permission to delete this assessment');
+            }
+        }
+
+        // Logic: Cannot delete if it has submissions (to protect student data)
+        // This follows the user requirement of "can't be deleted if it was published and distributed" 
+        // as submission count indicates it reached students.
+        if (assessment._count.submissions > 0) {
+            throw new BadRequestException('Cannot delete assessment because it already has student submissions. Please archive it instead or contact administration.');
+        }
+
+        return this.prisma.assessment.delete({
+            where: { id: assessmentId }
         });
     }
 }

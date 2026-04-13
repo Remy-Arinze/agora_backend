@@ -50,7 +50,7 @@ export class ResourcesService {
     schoolId: string,
     schoolType?: 'PRIMARY' | 'SECONDARY' | 'TERTIARY'
   ): Promise<ClassLevelDto[]> {
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -87,7 +87,7 @@ export class ResourcesService {
     classLevelId?: string,
     schoolType?: 'PRIMARY' | 'SECONDARY' | 'TERTIARY'
   ): Promise<ClassArmDto[]> {
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -150,7 +150,7 @@ export class ResourcesService {
     schoolId: string,
     schoolType: 'PRIMARY' | 'SECONDARY' | 'TERTIARY'
   ): Promise<{ created: number; message: string }> {
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -286,7 +286,7 @@ export class ResourcesService {
   }
 
   async createClassArm(schoolId: string, dto: CreateClassArmDto): Promise<ClassArmDto> {
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -350,7 +350,7 @@ export class ResourcesService {
 
   // Rooms
   async getRooms(schoolId: string): Promise<RoomDto[]> {
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -377,7 +377,7 @@ export class ResourcesService {
   }
 
   async createRoom(schoolId: string, dto: CreateRoomDto): Promise<RoomDto> {
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -425,7 +425,7 @@ export class ResourcesService {
     classLevelId?: string,
     termId?: string
   ): Promise<SubjectDto[]> {
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -550,7 +550,7 @@ export class ResourcesService {
   }
 
   async createSubject(schoolId: string, dto: CreateSubjectDto): Promise<SubjectDto> {
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -630,7 +630,7 @@ export class ResourcesService {
     subjectId: string,
     dto: UpdateSubjectDto
   ): Promise<SubjectDto> {
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -715,7 +715,7 @@ export class ResourcesService {
   }
 
   async deleteSubject(schoolId: string, subjectId: string): Promise<void> {
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -749,7 +749,7 @@ export class ResourcesService {
     subjectId: string,
     teacherId: string
   ): Promise<SubjectDto> {
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -852,7 +852,7 @@ export class ResourcesService {
     subjectId: string,
     teacherId: string
   ): Promise<SubjectDto> {
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -909,7 +909,7 @@ export class ResourcesService {
     schoolId: string,
     schoolType?: 'PRIMARY' | 'SECONDARY' | 'TERTIARY'
   ): Promise<any[]> {
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -993,7 +993,7 @@ export class ResourcesService {
     schoolId: string,
     dto: AutoGenerateSubjectsDto
   ): Promise<AutoGenerateSubjectsResponseDto> {
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -1068,7 +1068,7 @@ export class ResourcesService {
     subjectId: string,
     sessionId?: string
   ): Promise<SubjectClassAssignmentsDto> {
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -1189,7 +1189,7 @@ export class ResourcesService {
     subjectId: string,
     dto: BulkClassSubjectAssignmentDto
   ): Promise<{ updated: number; removed: number }> {
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -1315,7 +1315,7 @@ export class ResourcesService {
     classArmId: string,
     sessionId?: string
   ): Promise<void> {
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -1387,7 +1387,7 @@ export class ResourcesService {
       message: string;
     }>;
   }> {
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -1590,7 +1590,7 @@ export class ResourcesService {
     termId: string,
     excludeTeacherIds: string[] = []
   ): Promise<{ id: string; firstName: string; lastName: string; periodCount: number } | null> {
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }

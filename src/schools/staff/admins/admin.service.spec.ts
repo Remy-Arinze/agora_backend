@@ -29,7 +29,7 @@ describe('AdminService', () => {
         {
           provide: SchoolRepository,
           useValue: {
-            findByIdOrSubdomain: jest.fn(),
+            findById: jest.fn(),
           },
         },
         {
@@ -120,7 +120,7 @@ describe('AdminService', () => {
     };
 
     it('should successfully add an admin', async () => {
-      schoolRepository.findByIdOrSubdomain.mockResolvedValue(mockSchool as any);
+      schoolRepository.findById.mockResolvedValue(mockSchool as any);
       staffValidator.validateStaffData.mockReturnValue(undefined);
       staffValidator.validateEmailUniqueInSchool.mockResolvedValue(undefined);
       staffValidator.validatePhoneUniqueInSchool.mockResolvedValue(undefined);
@@ -144,13 +144,13 @@ describe('AdminService', () => {
 
       const result = await service.addAdmin('school-1', mockAdminData, mockUser);
 
-      expect(schoolRepository.findByIdOrSubdomain).toHaveBeenCalledWith('school-1');
+      expect(schoolRepository.findById).toHaveBeenCalledWith('school-1');
       expect(staffValidator.validateStaffData).toHaveBeenCalledWith(mockAdminData);
       expect(result).toBeDefined();
     });
 
     it('should throw BadRequestException if school not found', async () => {
-      schoolRepository.findByIdOrSubdomain.mockResolvedValue(null);
+      schoolRepository.findById.mockResolvedValue(null);
 
       const mockUser = { id: 'user-1' } as any;
       await expect(service.addAdmin('invalid-school', mockAdminData, mockUser)).rejects.toThrow(
@@ -159,7 +159,7 @@ describe('AdminService', () => {
     });
 
     it('should throw ConflictException if email already exists', async () => {
-      schoolRepository.findByIdOrSubdomain.mockResolvedValue(mockSchool as any);
+      schoolRepository.findById.mockResolvedValue(mockSchool as any);
       staffValidator.validateEmailUniqueInSchool.mockRejectedValue(
         new ConflictException('Email already exists')
       );
@@ -178,7 +178,7 @@ describe('AdminService', () => {
     };
 
     it('should successfully update an admin', async () => {
-      schoolRepository.findByIdOrSubdomain.mockResolvedValue(mockSchool as any);
+      schoolRepository.findById.mockResolvedValue(mockSchool as any);
       staffRepository.findAdminById.mockResolvedValue(mockAdmin as any);
       staffRepository.updateAdmin.mockResolvedValue({
         ...mockAdmin,
@@ -198,7 +198,7 @@ describe('AdminService', () => {
     });
 
     it('should throw BadRequestException if admin not found', async () => {
-      schoolRepository.findByIdOrSubdomain.mockResolvedValue(mockSchool as any);
+      schoolRepository.findById.mockResolvedValue(mockSchool as any);
       staffRepository.findAdminById.mockResolvedValue(null);
 
       const mockUser = { id: 'user-1' } as any;
@@ -217,7 +217,7 @@ describe('AdminService', () => {
     };
 
     it('should successfully delete an admin', async () => {
-      schoolRepository.findByIdOrSubdomain.mockResolvedValue(mockSchool as any);
+      schoolRepository.findById.mockResolvedValue(mockSchool as any);
       staffRepository.findAdminById.mockResolvedValue(mockAdmin as any);
       staffRepository.deleteAdmin.mockResolvedValue(mockAdmin as any);
 
@@ -231,7 +231,7 @@ describe('AdminService', () => {
 
     it('should throw BadRequestException if admin is principal and active', async () => {
       const principalAdmin = { ...mockAdmin, role: 'Principal', user: { accountStatus: 'ACTIVE' } };
-      schoolRepository.findByIdOrSubdomain.mockResolvedValue(mockSchool as any);
+      schoolRepository.findById.mockResolvedValue(mockSchool as any);
       staffRepository.findAdminById.mockResolvedValue(principalAdmin as any);
       staffRepository.findAdminsBySchool.mockResolvedValue([principalAdmin] as any);
       (prisma.schoolAdmin.findFirst as jest.Mock).mockResolvedValue(principalAdmin as any);

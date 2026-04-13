@@ -31,10 +31,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     }
 
     // Invalidate token if password was changed after this token was issued (log out other sessions)
+    // Only enforced if both the claim and the date exist to support pre-migration tokens
     if (
       user.passwordChangedAt &&
-      (payload.pwdChangedAt == null ||
-        payload.pwdChangedAt < Math.floor(user.passwordChangedAt.getTime() / 1000))
+      payload.pwdChangedAt !== undefined &&
+      payload.pwdChangedAt < Math.floor(user.passwordChangedAt.getTime() / 1000)
     ) {
       throw new UnauthorizedException('Session expired. Please log in again.');
     }

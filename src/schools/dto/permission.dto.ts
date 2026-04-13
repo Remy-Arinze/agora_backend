@@ -1,32 +1,10 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsEnum, IsArray, IsString, IsOptional } from 'class-validator';
 
-export enum PermissionResource {
-  OVERVIEW = 'OVERVIEW',
-  ANALYTICS = 'ANALYTICS',
-  SUBSCRIPTIONS = 'SUBSCRIPTIONS',
-  STUDENTS = 'STUDENTS',
-  STAFF = 'STAFF',
-  CLASSES = 'CLASSES',
-  SUBJECTS = 'SUBJECTS',
-  TIMETABLES = 'TIMETABLES',
-  CALENDAR = 'CALENDAR',
-  ADMISSIONS = 'ADMISSIONS',
-  SESSIONS = 'SESSIONS',
-  EVENTS = 'EVENTS',
-  // New resources for complete coverage
-  GRADES = 'GRADES',
-  CURRICULUM = 'CURRICULUM',
-  RESOURCES = 'RESOURCES',
-  TRANSFERS = 'TRANSFERS',
-  INTEGRATIONS = 'INTEGRATIONS',
-}
+import { PermissionResource, PermissionType } from '@prisma/client';
 
-export enum PermissionType {
-  READ = 'READ',
-  WRITE = 'WRITE',
-  ADMIN = 'ADMIN',
-}
+export { PermissionResource, PermissionType };
+
 
 /**
  * Roles that have permanent full access (cannot be edited)

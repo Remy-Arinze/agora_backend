@@ -38,31 +38,12 @@ export class SuperAdminSchoolsService {
   async createSchool(createSchoolDto: CreateSchoolDto): Promise<SchoolDto> {
     const { owner, admins, levels, ...schoolData } = createSchoolDto;
 
-    // Sanitize and validate school data
+    // Sanitize school data (subdomain is now purged)
     const sanitizedSchoolData = this.sanitizeSchoolData(schoolData);
-
-    // Generate subdomain if not provided
-    if (!sanitizedSchoolData.subdomain) {
-      sanitizedSchoolData.subdomain = this.generateSubdomainFromName(sanitizedSchoolData.name);
-
-      // Ensure uniqueness by appending a number if needed
-      let baseSubdomain = sanitizedSchoolData.subdomain;
-      let counter = 1;
-      while (await this.prisma.school.findUnique({ where: { subdomain: sanitizedSchoolData.subdomain } })) {
-        sanitizedSchoolData.subdomain = `${baseSubdomain}-${counter}`;
-        counter++;
-        // Safety check to prevent infinite loop
-        if (counter > 1000) {
-          throw new BadRequestException('Unable to generate unique subdomain. Please provide one manually.');
-        }
-      }
-    }
 
     // Validate school data
     this.schoolValidator.validateSchoolData(sanitizedSchoolData);
 
-    // Check if subdomain already exists
-    await this.schoolValidator.validateSubdomainUnique(sanitizedSchoolData.subdomain);
 
     // Validate and sanitize school email if provided
     if (sanitizedSchoolData.email) {
@@ -310,7 +291,6 @@ export class SuperAdminSchoolsService {
     if (search) {
       where.OR = [
         { name: { contains: search, mode: 'insensitive' } },
-        { subdomain: { contains: search, mode: 'insensitive' } },
         { city: { contains: search, mode: 'insensitive' } },
         { state: { contains: search, mode: 'insensitive' } },
       ];
@@ -394,10 +374,10 @@ export class SuperAdminSchoolsService {
   }
 
   /**
-   * Get school by ID or subdomain
+   * Get school by ID
    */
-  async findOne(identifier: string): Promise<SchoolDto> {
-    const school = await this.schoolRepository.findByIdOrSubdomain(identifier);
+  async findOne(id: string): Promise<SchoolDto> {
+    const school = await this.schoolRepository.findById(id);
 
     if (!school) {
       throw new BadRequestException('School not found');
@@ -463,16 +443,8 @@ export class SuperAdminSchoolsService {
           throw new BadRequestException('School not found');
         }
 
-        // Check if subdomain is being changed
-        if (sanitizedSchoolData.subdomain && sanitizedSchoolData.subdomain !== existingSchool.subdomain) {
-          // Validate subdomain uniqueness (check outside transaction context but before update)
-          const subdomainConflict = await tx.school.findUnique({
-            where: { subdomain: sanitizedSchoolData.subdomain },
-          });
-          if (subdomainConflict && subdomainConflict.id !== id) {
-            throw new ConflictException('School with this subdomain already exists');
-          }
-        }
+        // Subdomain is no longer changeable by user
+
 
         // Check if email is being changed (compare sanitized versions)
         const oldEmail = existingSchool.email
@@ -783,7 +755,6 @@ export class SuperAdminSchoolsService {
   private sanitizeSchoolData(data: any): any {
     return {
       name: data.name ? this.sanitizeString(data.name, 2, 200) : undefined,
-      subdomain: data.subdomain ? this.sanitizeSubdomain(data.subdomain) : undefined,
       domain: data.domain ? this.sanitizeString(data.domain, 0, 255) : undefined,
       address: data.address ? this.sanitizeString(data.address, 0, 500) : undefined,
       city: data.city ? this.sanitizeString(data.city, 0, 100) : undefined,
@@ -891,66 +862,5 @@ export class SuperAdminSchoolsService {
     return sanitized;
   }
 
-  /**
-   * Sanitize subdomain input
-   */
-  private sanitizeSubdomain(subdomain: string): string {
-    if (!subdomain || typeof subdomain !== 'string') {
-      throw new BadRequestException('Invalid subdomain input');
-    }
 
-    // Convert to lowercase and replace spaces/special chars with hyphens
-    let sanitized = subdomain.toLowerCase().trim();
-
-    // Remove all characters except lowercase letters, numbers, and hyphens
-    sanitized = sanitized.replace(/[^a-z0-9-]/g, '-');
-
-    // Remove consecutive hyphens
-    sanitized = sanitized.replace(/-+/g, '-');
-
-    // Remove leading and trailing hyphens
-    sanitized = sanitized.replace(/^-+|-+$/g, '');
-
-    // Validate length
-    if (sanitized.length < 3 || sanitized.length > 50) {
-      throw new BadRequestException('Subdomain must be between 3 and 50 characters');
-    }
-
-    return sanitized;
-  }
-
-  /**
-   * Generate subdomain from school name
-   */
-  private generateSubdomainFromName(name: string): string {
-    if (!name || typeof name !== 'string') {
-      throw new BadRequestException('School name is required to generate subdomain');
-    }
-
-    // Convert to lowercase and replace spaces/special chars with hyphens
-    let subdomain = name.toLowerCase().trim();
-
-    // Remove all characters except lowercase letters, numbers, and hyphens
-    subdomain = subdomain.replace(/[^a-z0-9-]/g, '-');
-
-    // Remove consecutive hyphens
-    subdomain = subdomain.replace(/-+/g, '-');
-
-    // Remove leading and trailing hyphens
-    subdomain = subdomain.replace(/^-+|-+$/g, '');
-
-    // Truncate to 50 characters
-    subdomain = subdomain.substring(0, 50);
-
-    // Remove trailing hyphen if exists
-    subdomain = subdomain.replace(/-+$/, '');
-
-    // Ensure minimum length
-    if (subdomain.length < 3) {
-      subdomain = subdomain + '-school';
-    }
-
-    // Add timestamp suffix to ensure uniqueness if needed (will be checked later)
-    return subdomain;
-  }
 }

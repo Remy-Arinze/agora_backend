@@ -1416,7 +1416,7 @@ export class FacultyService {
    * Validate school exists and has tertiary
    */
   private async validateSchoolTertiary(schoolId: string) {
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
