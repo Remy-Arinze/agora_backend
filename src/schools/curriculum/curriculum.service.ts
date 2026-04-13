@@ -1621,10 +1621,11 @@ export class CurriculumService {
     if (!targetAgoraSubjectId) return [];
 
     // 3. Fetch published Agora curricula for that global subject
+    const normalizedGradeLevel = gradeLevel.replace(/\s+/g, '_');
     const curricula = await (this.prisma as any).agoraCurriculum.findMany({
       where: {
         subjectId: targetAgoraSubjectId,
-        gradeLevel,
+        gradeLevel: normalizedGradeLevel,
         status: 'PUBLISHED'
       },
       include: {
@@ -1666,14 +1667,33 @@ export class CurriculumService {
 
     if (!curriculum) throw new NotFoundException('Curriculum not found');
 
-    // Parse the overview from consolidationNotes JSON string
-    let overview = null;
+    // 5. Parse the overview (Handle both legacy JSON and new Markdown format)
+    let overview: any = { description: '', themes: [], progressionNotes: '' };
+    const notes = curriculum.consolidationNotes || '';
+
     try {
-      if (curriculum.consolidationNotes) {
-        overview = JSON.parse(curriculum.consolidationNotes);
+      if (notes.startsWith('{')) {
+        const parsed = JSON.parse(notes);
+        overview = {
+          description: parsed.description || '',
+          themes: parsed.themes || [],
+          progressionNotes: parsed.progressionNotes || '',
+        };
+      } else if (notes.includes('# Description')) {
+        overview = {
+          description: notes.split('# Description')[1]?.split('# Theme')[0]?.trim() || '',
+          themes: notes.split('# Themes')[1]?.split('# Progression Notes')[0]
+            ?.trim()
+            ?.split('\n')
+            .map((t: string) => t.replace(/^- /, '').trim())
+            .filter(Boolean) || [],
+          progressionNotes: notes.split('# Progression Notes')[1]?.trim() || '',
+        };
+      } else {
+        overview.description = notes;
       }
     } catch (e) {
-      overview = { description: curriculum.consolidationNotes };
+      overview.description = notes;
     }
 
     // Group topics by term
