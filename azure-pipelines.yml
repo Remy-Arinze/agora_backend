@@ -1,7 +1,7 @@
 trigger:
   branches:
     include:
-      - master
+      - dev
       - staging
 
 pool:
@@ -11,8 +11,8 @@ pool:
 # Conditional variables: set targets based on branch
 # ──────────────────────────────────────────────
 variables:
-  # Dev environment (master branch)
-  ${{ if eq(variables['Build.SourceBranchName'], 'master') }}:
+  # Dev environment (dev branch)
+  ${{ if eq(variables['Build.SourceBranchName'], 'dev') }}:
     azureSubscription: 'agora-current-sc'
     apiAppName: 'agora-api-dev'
     environmentName: 'Dev'
@@ -60,7 +60,7 @@ stages:
         echo "=== DEPLOYMENT INFO ==="
         echo "Environment: $(environmentName)"
         echo "Target App:  $(apiAppName)"
-        echo "Branch:      $(Build.SourceBranchName)"
+        echo "Branch:       $(Build.SourceBranchName)"
         echo "========================"
         npm run build
       displayName: 'Build NestJS'
