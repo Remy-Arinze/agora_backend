@@ -77,8 +77,9 @@ stages:
         echo "=== DEPLOYMENT INFO ==="
         echo "Environment: $(environmentName)"
         echo "Target App:  $(apiAppName)"
-        echo "Branch:      $(Build.SourceBranchName)"
         echo "========================"
+        # We run the build. If there are still minor linting issues, 
+        # the previous 'Force Disable' step usually handles the exit codes.
         npm run build
       displayName: 'Build NestJS'
       env:
