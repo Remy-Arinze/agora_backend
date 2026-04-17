@@ -40,13 +40,13 @@ stages:
     - script: npx prisma generate --schema=prisma/schema.prisma
       displayName: 'Generate Prisma Client'
 
-    # 🚀 NEW STEP: Fixes the "School.subdomain does not exist" error
     - script: |
         echo "Applying database migrations to $(environmentName)..."
         npx prisma migrate deploy --schema=prisma/schema.prisma
       displayName: 'Migrate Database'
       env:
-        DATABASE_URL: $(DATABASE_URL)
+        # Prisma expects "DB_URL" based on your schema.prisma file
+        DB_URL: $(DATABASE_URL)
 
     - bash: |
         path="tsconfig.json"
