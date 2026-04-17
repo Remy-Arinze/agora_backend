@@ -42,6 +42,10 @@ export class SetupSchemeOfWorkDto {
   @IsString({ each: true })
   @IsOptional()
   schoolCurriculumDocIds?: string[];
+
+  @ApiPropertyOptional({ description: 'Force overwrite existing Scheme of Work via archiving' })
+  @IsOptional()
+  forceOverwrite?: boolean;
 }
 
 export class UpdateSchemeOfWorkStatusDto {

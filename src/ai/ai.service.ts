@@ -1807,85 +1807,135 @@ Return as JSON: {"questions": [{"text": "...", "type": "MULTIPLE_CHOICE | SHORT_
         data: { status: AgoraCurriculumSourceStatus.PARSING },
       });
 
-      let textToParse = 'No content available for AI to parse.';
+      let rawText = 'No content available for AI to parse.';
 
       // REAL extraction logic for PDF files
       if (source.manualContent) {
         if (onProgress) await onProgress('Preparing manual content...');
-        textToParse = JSON.stringify(source.manualContent);
+        rawText = JSON.stringify(source.manualContent);
       } else if (source.fileUrl && source.fileType === 'PDF') {
         this.logger.log(`Performing real PDF text extraction for source: ${sourceId}`);
         if (onProgress) await onProgress('AI is extracting text from PDF (this might take a minute)...');
-        const rawText = await DocumentExtractor.extractTextFromPdfUrl(source.fileUrl);
-        textToParse = DocumentExtractor.prepareTextForLLM(rawText);
+        rawText = await DocumentExtractor.extractTextFromPdfUrl(source.fileUrl);
       } else if (source.fileUrl) {
         // Fallback for non-PDF or other types if we don't have extractors yet
-        textToParse = `[Simulated text extraction from ${source.fileType} at ${source.fileUrl}]`;
+        rawText = `[Simulated text extraction from ${source.fileType} at ${source.fileUrl}]`;
       }
 
-      this.logger.log(`Invoking AI for curriculum parsing (${textToParse.length} characters)`);
+      // Clean text without arbitrary truncation limit
+      let cleanedText = rawText.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '').replace(/\s+/g, ' ').trim();
+      
+      // Chunk the text to prevent token limit dropouts (approx 25k tokens per chunk)
+      const MAX_CHUNK_LENGTH = 100000; 
+      const textChunks = [];
+      for (let i = 0; i < cleanedText.length; i += MAX_CHUNK_LENGTH) {
+        textChunks.push(cleanedText.substring(i, i + MAX_CHUNK_LENGTH));
+      }
+
+      this.logger.log(`Invoking AI for curriculum parsing (${textChunks.length} chunks)`);
       if (onProgress) await onProgress('AI is organizing content into structured topics...');
 
-      const response = await this.openai!.chat.completions.create({
-        model: this.model,
-        messages: [
-          {
-            role: 'system',
-            content: `You are an expert academic curriculum parser. 
-            Your goal is to extract structured topics, subtopics, learning objectives, and suggested resources from the text.
-            
-            IMPORTANT RULE:
-            You must ONLY extract the curriculum data for the target grade: ${source.gradeLevel}.
-            If the document contains information for multiple classes or grades, STRICTLY IGNORE everything except ${source.gradeLevel}.
-            Do not extract other grades if the target is ${source.gradeLevel}.
-            
-            JSON FORMAT RULE:
-            Your response MUST be a single JSON object with a "results" array. 
-            The array must contain exactly ONE item.
-            The item must have the following fields:
-            - "gradeLevel" (string: "${source.gradeLevel}")
-            - "topics" (array of objects):
-                - "title" (string): The topic or week title
-                - "subTopics" (array of strings): Specific sub-themes
-                - "learningOutcomes" (array of strings): Formal objectives
-                - "studentFriendlyOutcomes" (array of strings): Simplified objectives
-                - "suggestedActivities" (array of strings)
-                - "resources" (array of strings)
-                - "assessmentType" (string)
-            `,
+      const allTopics = [];
+
+      for (let i = 0; i < textChunks.length; i++) {
+        const textChunk = textChunks[i];
+        if (onProgress && textChunks.length > 1) {
+            await onProgress(`AI is parsing chunk ${i + 1} of ${textChunks.length}...`);
+        }
+
+        const response = await this.openai!.chat.completions.create({
+          model: this.model,
+          messages: [
+            {
+              role: 'system',
+              content: `You are an expert academic curriculum parser. 
+              Your goal is to extract structured topics, subtopics, learning objectives, and suggested resources from the text.
+              
+              IMPORTANT RULE:
+              You must ONLY extract the curriculum data for the target grade: ${source.gradeLevel}.
+              If the document contains information for multiple classes or grades, STRICTLY IGNORE everything except ${source.gradeLevel}.
+              Do not extract other grades if the target is ${source.gradeLevel}.
+              `,
+            },
+            { role: 'user', content: `Parse the following curriculum material:\n\n${textChunk}` },
+          ],
+          response_format: {
+            type: 'json_schema',
+            json_schema: {
+              name: 'curriculum_extraction',
+              strict: true,
+              schema: {
+                type: 'object',
+                properties: {
+                  results: {
+                    type: 'array',
+                    items: {
+                      type: 'object',
+                      properties: {
+                        gradeLevel: { type: 'string' },
+                        topics: {
+                          type: 'array',
+                          items: {
+                            type: 'object',
+                            properties: {
+                              title: { type: 'string' },
+                              subTopics: { type: 'array', items: { type: 'string' } },
+                              learningOutcomes: { type: 'array', items: { type: 'string' } },
+                              studentFriendlyOutcomes: { type: 'array', items: { type: 'string' } },
+                              suggestedActivities: { type: 'array', items: { type: 'string' } },
+                              resources: { type: 'array', items: { type: 'string' } },
+                              assessmentType: { type: 'string' }
+                            },
+                            required: ["title", "subTopics", "learningOutcomes", "studentFriendlyOutcomes", "suggestedActivities", "resources", "assessmentType"],
+                            additionalProperties: false
+                          }
+                        }
+                      },
+                      required: ["gradeLevel", "topics"],
+                      additionalProperties: false
+                    }
+                  }
+                },
+                required: ["results"],
+                additionalProperties: false
+              }
+            }
           },
-          { role: 'user', content: `Parse the following curriculum material:\n\n${textToParse}` },
-        ],
-        response_format: { type: 'json_object' as const },
-        temperature: 0.1, // Low temperature for high precision extraction
-      });
+          temperature: 0.1, // Low temperature for high precision extraction
+        });
+
+        const resultText = response.choices[0]?.message?.content || '{}';
+        const parsedData = JSON.parse(resultText) as MultiGradeParseResult;
+
+        if (parsedData.results && parsedData.results.length > 0) {
+          const primaryGradeResult = parsedData.results.find(res => res.gradeLevel === source.gradeLevel) || parsedData.results[0];
+          if (primaryGradeResult && primaryGradeResult.topics) {
+            allTopics.push(...primaryGradeResult.topics);
+          }
+        }
+      }
 
       this.metricsService.curriculumUploadsTotal.inc({
         file_type: source.manualContent ? 'manual' : (source.fileType || 'file'),
         status: 'success'
       });
 
-      const resultText = response.choices[0]?.message?.content || '{}';
-      const parsedData = JSON.parse(resultText) as MultiGradeParseResult;
-
-      if (!parsedData.results || parsedData.results.length === 0) {
-        throw new Error('AI returned an empty results array for the curriculum.');
+      if (allTopics.length === 0) {
+        throw new Error('AI returned an empty results array for the curriculum across all chunks.');
       }
 
       // 1. Update the ORIGINAL source with the extracted topics
-      const primaryGradeResult = parsedData.results.find(res => res.gradeLevel === source.gradeLevel) || parsedData.results[0];
-
       await this.prisma.agoraCurriculumSource.update({
         where: { id: sourceId },
         data: {
-          parsedData: { topics: primaryGradeResult.topics } as any,
+          parsedData: { topics: allTopics } as any,
           status: AgoraCurriculumSourceStatus.PARSED,
         },
       });
 
       this.logger.log(`Parsed main Curriculum Source [${sourceId}] successfully using Lois. Target Grade: ${source.gradeLevel}`);
 
-      return parsedData;
+      return { results: [{ gradeLevel: source.gradeLevel, topics: allTopics }] };
     } catch (error) {
       this.logger.error(`Error parsing curriculum: ${error}`);
       throw error;
@@ -1956,7 +2006,62 @@ Return as JSON: {"questions": [{"text": "...", "type": "MULTIPLE_CHOICE | SHORT_
           },
           { role: 'user', content: `Consolidate these ${subjectName} (${gradeLevel}) sources into a unified full-year curriculum:\n\n${combinedPayloads}` },
         ],
-        response_format: { type: 'json_object' as const },
+        response_format: {
+          type: 'json_schema',
+          json_schema: {
+            name: 'consolidate_curriculum',
+            strict: true,
+            schema: {
+              type: 'object',
+              properties: {
+                curriculumOverview: {
+                  type: 'object',
+                  properties: {
+                    description: { type: 'string' },
+                    themes: { type: 'array', items: { type: 'string' } },
+                    progressionNotes: { type: 'string' }
+                  },
+                  required: ['description', 'themes', 'progressionNotes'],
+                  additionalProperties: false
+                },
+                terms: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      term: { type: 'number' },
+                      termTitle: { type: 'string' },
+                      termSummary: { type: 'string' },
+                      topics: {
+                        type: 'array',
+                        items: {
+                          type: 'object',
+                          properties: {
+                            title: { type: 'string' },
+                            description: { type: 'string' },
+                            subTopics: { type: 'array', items: { type: 'string' } },
+                            learningOutcomes: { type: 'array', items: { type: 'string' } },
+                            studentFriendlyOutcomes: { type: 'array', items: { type: 'string' } },
+                            suggestedActivities: { type: 'array', items: { type: 'string' } },
+                            resources: { type: 'array', items: { type: 'string' } },
+                            assessmentType: { type: 'string' },
+                            order: { type: 'number' }
+                          },
+                          required: ['title', 'description', 'subTopics', 'learningOutcomes', 'studentFriendlyOutcomes', 'suggestedActivities', 'resources', 'assessmentType', 'order'],
+                          additionalProperties: false
+                        }
+                      }
+                    },
+                    required: ['term', 'termTitle', 'termSummary', 'topics'],
+                    additionalProperties: false
+                  }
+                }
+              },
+              required: ['curriculumOverview', 'terms'],
+              additionalProperties: false
+            }
+          }
+        },
         temperature: 0.3,
       });
 
@@ -2130,7 +2235,38 @@ ${overview.progressionNotes || ''}
           },
           { role: 'user', content: JSON.stringify(modelInput) },
         ],
-        response_format: { type: 'json_object' as const },
+        response_format: {
+          type: 'json_schema',
+          json_schema: {
+            name: 'scheme_of_work_generation',
+            strict: true,
+            schema: {
+              type: 'object',
+              properties: {
+                weeks: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      weekNumber: { type: 'number' },
+                      topic: { type: 'string' },
+                      subTopics: { type: 'array', items: { type: 'string' } },
+                      learningOutcomes: { type: 'array', items: { type: 'string' } },
+                      studentFriendlyOutcomes: { type: 'array', items: { type: 'string' } },
+                      suggestedActivities: { type: 'array', items: { type: 'string' } },
+                      resources: { type: 'array', items: { type: 'string' } },
+                      assessmentType: { type: 'string' }
+                    },
+                    required: ['weekNumber', 'topic', 'subTopics', 'learningOutcomes', 'studentFriendlyOutcomes', 'suggestedActivities', 'resources', 'assessmentType'],
+                    additionalProperties: false
+                  }
+                }
+              },
+              required: ['weeks'],
+              additionalProperties: false
+            }
+          }
+        },
       });
 
       const resultText = response.choices[0]?.message?.content || '{}';
@@ -2227,15 +2363,6 @@ ${overview.progressionNotes || ''}
         EXTRACT TOPICS:
         For each grade found, extract the curriculum outline (topics, subtopics, etc).
         
-        RETURN JSON:
-        {
-          "gradesDetected": ["JSS_1", "JSS_2"], // Use standard codes
-          "payloads": {
-             "JSS_1": { "topics": [...] },
-             "JSS_2": { "topics": [...] }
-          }
-        }
-        
         DOCUMENT TEXT:
         ${textToParse}
       `;
@@ -2243,11 +2370,53 @@ ${overview.progressionNotes || ''}
       const response = await this.openai!.chat.completions.create({
         model: this.model,
         messages: [{ role: 'system', content: prompt }],
-        response_format: { type: 'json_object' },
+        response_format: {
+          type: 'json_schema',
+          json_schema: {
+            name: 'school_curriculum_extraction',
+            strict: true,
+            schema: {
+              type: 'object',
+              properties: {
+                results: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      gradeLevel: { type: 'string' },
+                      topics: {
+                        type: 'array',
+                        items: {
+                          type: 'object',
+                          properties: {
+                            title: { type: 'string' },
+                            subTopics: { type: 'array', items: { type: 'string' } },
+                            learningOutcomes: { type: 'array', items: { type: 'string' } },
+                            studentFriendlyOutcomes: { type: 'array', items: { type: 'string' } },
+                            suggestedActivities: { type: 'array', items: { type: 'string' } },
+                            resources: { type: 'array', items: { type: 'string' } },
+                            assessmentType: { type: 'string' }
+                          },
+                          required: ['title', 'subTopics', 'learningOutcomes', 'studentFriendlyOutcomes', 'suggestedActivities', 'resources', 'assessmentType'],
+                          additionalProperties: false
+                        }
+                      }
+                    },
+                    required: ['gradeLevel', 'topics'],
+                    additionalProperties: false
+                  }
+                }
+              },
+              required: ['results'],
+              additionalProperties: false
+            }
+          }
+        },
       });
 
       const result = JSON.parse(response.choices[0]?.message?.content || '{}');
-      const grades = result.gradesDetected || [];
+      const resultsArray = result.results || [];
+      const grades = resultsArray.map((r: any) => r.gradeLevel);
 
       if (grades.length === 0) {
         await (this.prisma as any).schoolCurriculumDoc.update({
@@ -2258,10 +2427,11 @@ ${overview.progressionNotes || ''}
       }
 
       // Handle Splitting: If multiple grades found, create extra records
-      for (const grade of grades) {
-        const parsedData = result.payloads?.[grade] || {};
+      for (const gradeResult of resultsArray) {
+        const grade = gradeResult.gradeLevel;
+        const parsedData = { topics: gradeResult.topics || [] };
 
-        if (grade === doc.gradeLevel) {
+        if (grade === doc.gradeLevel || resultsArray.length === 1 && doc.gradeLevel) {
           // Update the original record
           await (this.prisma as any).schoolCurriculumDoc.update({
             where: { id: docId },

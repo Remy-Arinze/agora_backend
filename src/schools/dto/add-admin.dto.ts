@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsEmail, IsOptional, IsArray, ValidateNested, MinLength, MaxLength } from 'class-validator';
+import { IsString, IsEmail, IsOptional, IsArray, ValidateNested, MinLength, MaxLength, IsNotEmpty } from 'class-validator';
 import { Type, Transform } from 'class-transformer';
 import { AdminRole } from './create-school.dto';
 import { PermissionResource, PermissionType } from './permission.dto';
@@ -33,27 +33,31 @@ export class AdminPermissionDto {
 
 export class AddAdminDto {
   @ApiProperty({ description: 'Admin first name' })
-  @IsString()
-  @MaxLength(50)
+  @IsString({ message: 'First name must be a string' })
+  @IsNotEmpty({ message: 'First name is required' })
+  @MaxLength(50, { message: 'First name cannot exceed 50 characters' })
   @Transform(({ value }) => sanitizeString(value, 50))
   firstName: string;
 
   @ApiProperty({ description: 'Admin last name' })
-  @IsString()
-  @MaxLength(50)
+  @IsString({ message: 'Last name must be a string' })
+  @IsNotEmpty({ message: 'Last name is required' })
+  @MaxLength(50, { message: 'Last name cannot exceed 50 characters' })
   @Transform(({ value }) => sanitizeString(value, 50))
   lastName: string;
 
   @ApiProperty({ description: 'Admin email' })
-  @IsEmail()
-  @MaxLength(255)
+  @IsEmail({}, { message: 'Please provide a valid email address' })
+  @IsNotEmpty({ message: 'Admin email is required' })
+  @MaxLength(255, { message: 'Email cannot exceed 255 characters' })
   @Transform(({ value }) => sanitizeEmail(value) ?? value ?? '')
   email: string;
 
   @ApiProperty({ description: 'Admin phone number' })
-  @IsString()
-  @MinLength(10)
-  @MaxLength(20)
+  @IsString({ message: 'Phone number must be a string' })
+  @IsNotEmpty({ message: 'Phone number is required' })
+  @MinLength(10, { message: 'Phone number must be at least 10 characters' })
+  @MaxLength(20, { message: 'Phone number cannot exceed 20 characters' })
   @Transform(({ value }) => sanitizePhone(value) ?? '')
   phone: string;
 
@@ -62,8 +66,9 @@ export class AddAdminDto {
       'Admin role (can be enum value or custom role string like "Bursar", "Vice Principal", etc.)',
     example: 'BURSAR or "Dean of Students"',
   })
-  @IsString()
-  @MaxLength(50)
+  @IsString({ message: 'Role must be a string' })
+  @IsNotEmpty({ message: 'Role is required' })
+  @MaxLength(50, { message: 'Role cannot exceed 50 characters' })
   @Transform(({ value }) => sanitizeString(value, 50))
   role: string; // Changed to string to accept custom roles
 

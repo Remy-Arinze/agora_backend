@@ -537,4 +537,16 @@ export class CurriculumController {
     const data = await this.curriculumService.getSchoolCurriculumDocs(schoolId, subjectId);
     return ResponseDto.ok(data, 'School curriculum documents retrieved successfully');
   }
+  @Delete('documents/:docId')
+  @RequirePermission(PermissionResource.CURRICULUM, PermissionType.WRITE)
+  @ApiOperation({ summary: "Delete a curriculum document" })
+  @ApiResponse({ status: 200, description: 'Document deleted successfully' })
+  async deleteDocument(
+    @Param('schoolId') schoolId: string,
+    @Param('docId') docId: string,
+    @CurrentUser() user: UserWithContext
+  ): Promise<ResponseDto<void>> {
+    await this.curriculumService.deleteSchoolCurriculumDoc(schoolId, docId, user.id);
+    return ResponseDto.ok(undefined, 'Document deleted successfully');
+  }
 }

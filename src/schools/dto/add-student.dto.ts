@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsEmail, IsOptional, IsDateString, MaxLength, MinLength } from 'class-validator';
+import { IsString, IsEmail, IsOptional, IsDateString, MaxLength, MinLength, IsNotEmpty } from 'class-validator';
 import { Transform } from 'class-transformer';
 import {
   sanitizeString,
@@ -10,8 +10,9 @@ import {
 
 export class AddStudentDto {
   @ApiProperty({ description: 'Student first name' })
-  @IsString()
-  @MaxLength(50)
+  @IsString({ message: 'First name must be a string' })
+  @IsNotEmpty({ message: 'First name is required' })
+  @MaxLength(50, { message: 'First name cannot exceed 50 characters' })
   @Transform(({ value }) => sanitizeString(value, 50))
   firstName: string;
 
@@ -23,18 +24,21 @@ export class AddStudentDto {
   middleName?: string;
 
   @ApiProperty({ description: 'Student last name' })
-  @IsString()
-  @MaxLength(50)
+  @IsString({ message: 'Last name must be a string' })
+  @IsNotEmpty({ message: 'Last name is required' })
+  @MaxLength(50, { message: 'Last name cannot exceed 50 characters' })
   @Transform(({ value }) => sanitizeString(value, 50))
   lastName: string;
 
   @ApiProperty({ description: 'Student date of birth' })
-  @IsDateString()
+  @IsDateString({}, { message: 'Please provide a valid date of birth' })
+  @IsNotEmpty({ message: 'Date of birth is required' })
   dateOfBirth: string;
 
   @ApiProperty({ description: 'Student email' })
-  @IsEmail()
-  @MaxLength(255)
+  @IsEmail({}, { message: 'Please provide a valid email address' })
+  @IsNotEmpty({ message: 'Student email is required' })
+  @MaxLength(255, { message: 'Email cannot exceed 255 characters' })
   @Transform(({ value }) => sanitizeEmail(value))
   email: string;
 
@@ -53,14 +57,16 @@ export class AddStudentDto {
   address?: string;
 
   @ApiProperty({ description: 'Nationality (e.g. Nigerian, Ghanaian)' })
-  @IsString()
-  @MaxLength(100)
+  @IsString({ message: 'Nationality must be a string' })
+  @IsNotEmpty({ message: 'Nationality is required' })
+  @MaxLength(100, { message: 'Nationality cannot exceed 100 characters' })
   @Transform(({ value }) => sanitizeString(value, 100))
   nationality: string;
 
   @ApiProperty({ description: 'State or region (e.g. Lagos, Abuja)' })
-  @IsString()
-  @MaxLength(100)
+  @IsString({ message: 'State or region must be a string' })
+  @IsNotEmpty({ message: 'State or region is required' })
+  @MaxLength(100, { message: 'State cannot exceed 100 characters' })
   @Transform(({ value }) => sanitizeString(value, 100))
   state: string;
 
@@ -92,15 +98,17 @@ export class AddStudentDto {
 
   // Parent/Guardian Information
   @ApiProperty({ description: 'Parent/Guardian name' })
-  @IsString()
-  @MaxLength(100)
+  @IsString({ message: 'Parent/Guardian name must be a string' })
+  @IsNotEmpty({ message: 'Parent/Guardian name is required' })
+  @MaxLength(100, { message: 'Parent name cannot exceed 100 characters' })
   @Transform(({ value }) => sanitizeString(value, 100))
   parentName: string;
 
   @ApiProperty({ description: 'Parent/Guardian phone' })
-  @IsString()
-  @MinLength(10)
-  @MaxLength(20)
+  @IsString({ message: 'Parent/Guardian phone must be a string' })
+  @IsNotEmpty({ message: 'Parent/Guardian phone is required' })
+  @MinLength(10, { message: 'Parent phone must be at least 10 characters' })
+  @MaxLength(20, { message: 'Parent phone cannot exceed 20 characters' })
   @Transform(({ value }) => sanitizePhone(value) ?? '')
   parentPhone: string;
 
@@ -112,8 +120,9 @@ export class AddStudentDto {
   parentEmail?: string;
 
   @ApiProperty({ description: 'Relationship to student (e.g., Father, Mother, Guardian)' })
-  @IsString()
-  @MaxLength(50)
+  @IsString({ message: 'Relationship must be a string' })
+  @IsNotEmpty({ message: 'Relationship to student is required' })
+  @MaxLength(50, { message: 'Relationship cannot exceed 50 characters' })
   @Transform(({ value }) => sanitizeString(value, 50))
   parentRelationship: string;
 

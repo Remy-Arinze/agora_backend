@@ -68,21 +68,9 @@ export class CurriculumProcessor extends WorkerHost {
         data: { status: AgoraCurriculumSourceStatus.PARSING },
       });
 
-      /**
-       * 2. Call AI Service with a hard timeout (3 minutes for heavy PDFs).
-       * If AI hangs, the timeout rejects and the catch block marks source as FAILED,
-       * freeing the slot for the next job in the queue.
-       */
-      const MAX_PARSE_TIMEOUT_MS = 180000;
-
-      await Promise.race([
-        this.aiService.parseCurriculumDocument(sourceId, async (step) => {
-          await job.updateProgress({ step });
-        }),
-        new Promise((_, reject) => {
-          setTimeout(() => reject(new Error('Processing timed out after 3 minutes')), MAX_PARSE_TIMEOUT_MS);
-        })
-      ]);
+      await this.aiService.parseCurriculumDocument(sourceId, async (step) => {
+        await job.updateProgress({ step });
+      });
 
       // 3. Mid-flight check: Was it successful?
       const finalCheck = await this.prisma.agoraCurriculumSource.findUnique({ where: { id: sourceId } });

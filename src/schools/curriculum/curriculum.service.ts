@@ -1424,7 +1424,13 @@ export class CurriculumService {
     });
 
     if (existing) {
-      throw new ConflictException('A Scheme of Work already exists for this subject and term.');
+      if (dto.forceOverwrite) {
+        await (this.prisma as any).schemeOfWork.delete({
+          where: { id: existing.id }
+        });
+      } else {
+        throw new ConflictException('A Scheme of Work already exists for this subject and term. Pass forceOverwrite to replace it.');
+      }
     }
 
     // PATH A: Agora Curriculum (Free)
@@ -1823,6 +1829,22 @@ export class CurriculumService {
         ...(subjectId && { subjectId }),
       },
       orderBy: { createdAt: 'desc' },
+    });
+  }
+  /**
+   * Delete a school curriculum document
+   */
+  async deleteSchoolCurriculumDoc(schoolId: string, docId: string, userId: string) {
+    const doc = await (this.prisma as any).schoolCurriculumDoc.findFirst({
+      where: { id: docId, schoolId }
+    });
+
+    if (!doc) {
+      throw new NotFoundException('Document not found');
+    }
+
+    await (this.prisma as any).schoolCurriculumDoc.delete({
+      where: { id: docId }
     });
   }
 }
