@@ -8,20 +8,28 @@ pool:
   vmImage: 'ubuntu-latest'
 
 # ────────────────────────────────────────────
-# Conditional variables: set targets based on branch
+# Conditional variables: set targets and load groups based on branch
 # ──────────────────────────────────────────────
 variables:
   # Dev environment (dev branch)
-  ${{ if eq(variables['Build.SourceBranchName'], 'dev') }}:
-    azureSubscription: 'agora-current-sc'
-    apiAppName: 'agora-api-dev'
-    environmentName: 'Dev'
+  - ${{ if eq(variables['Build.SourceBranchName'], 'dev') }}:
+    - group: agora-dev-rg
+    - name: azureSubscription
+      value: 'agora-current-sc'
+    - name: apiAppName
+      value: 'agora-api-dev'
+    - name: environmentName
+      value: 'Dev'
 
   # Staging environment (staging branch)
-  ${{ if eq(variables['Build.SourceBranchName'], 'staging') }}:
-    azureSubscription: 'agora-current-sc-stg'
-    apiAppName: 'agora-api-stg'
-    environmentName: 'Staging'
+  - ${{ if eq(variables['Build.SourceBranchName'], 'staging') }}:
+    - group: agora-stg-rg
+    - name: azureSubscription
+      value: 'agora-current-sc-stg'
+    - name: apiAppName
+      value: 'agora-api-stg'
+    - name: environmentName
+      value: 'Staging'
 
 stages:
 - stage: Backend
@@ -45,8 +53,9 @@ stages:
         npx prisma migrate deploy --schema=prisma/schema.prisma
       displayName: 'Migrate Database'
       env:
-        # Prisma expects "DB_URL" based on your schema.prisma file
-        DB_URL: $(DATABASE_URL)
+        # Prisma expects "DB_URL" all-caps. 
+        # We pull the value from your Variable Group's "DB_Url".
+        DB_URL: $(DB_Url)
 
     - bash: |
         path="tsconfig.json"
@@ -68,7 +77,7 @@ stages:
         echo "=== DEPLOYMENT INFO ==="
         echo "Environment: $(environmentName)"
         echo "Target App:  $(apiAppName)"
-        echo "Branch:       $(Build.SourceBranchName)"
+        echo "Branch:      $(Build.SourceBranchName)"
         echo "========================"
         npm run build
       displayName: 'Build NestJS'
