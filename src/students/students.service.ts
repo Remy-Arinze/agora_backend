@@ -10,6 +10,7 @@ import { StudentDto, StudentWithEnrollmentDto } from './dto/student.dto';
 import { PaginationDto, PaginatedResponseDto } from '../common/dto/pagination.dto';
 import { ClassType } from '../schools/dto/create-class.dto';
 import { UserWithContext } from '../auth/types/user-with-context.type';
+import { LiveStatusService } from '../live-status/live-status.service';
 import { TimetableService } from '../timetable/timetable.service';
 import { GradesService } from '../grades/grades.service';
 import { EventService } from '../events/event.service';
@@ -23,6 +24,7 @@ export class StudentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly timetableService: TimetableService,
+    private readonly liveStatusService: LiveStatusService,
     private readonly gradesService: GradesService,
     private readonly eventService: EventService,
     private readonly cloudinaryService: CloudinaryService
@@ -142,7 +144,7 @@ export class StudentsService {
                 select: {
                   id: true,
                   name: true,
-                  subdomain: true,
+                  
                 },
               },
             },
@@ -159,8 +161,14 @@ export class StudentsService {
       }),
     ]);
 
-    const response = new PaginatedResponseDto<StudentWithEnrollmentDto>();
-    response.data = students.map((student) => ({
+    const studentIds = students.map(s => s.id);
+    const liveActivities = await this.liveStatusService.getCurrentActivities(
+      tenantId,
+      studentIds,
+      'STUDENT'
+    );
+
+    const data = students.map((student) => ({
       ...this.toDto(student),
       enrollment: student.enrollments[0]
         ? {
@@ -171,7 +179,11 @@ export class StudentsService {
           school: student.enrollments[0].school,
         }
         : undefined,
+      currentActivity: liveActivities[student.id] || null,
     }));
+
+    const response = new PaginatedResponseDto<StudentWithEnrollmentDto>();
+    response.data = data;
     response.total = total;
     response.page = page;
     response.limit = limit;
@@ -211,7 +223,7 @@ export class StudentsService {
               select: {
                 id: true,
                 name: true,
-                subdomain: true,
+                
               },
             },
           },
@@ -225,6 +237,12 @@ export class StudentsService {
       throw new NotFoundException(`Student with ID ${id} not found`);
     }
 
+    const liveActivities = await this.liveStatusService.getCurrentActivities(
+      tenantId,
+      [student.id],
+      'STUDENT'
+    );
+
     return {
       ...this.toDto(student),
       enrollment: student.enrollments[0]
@@ -236,6 +254,7 @@ export class StudentsService {
           school: student.enrollments[0].school,
         }
         : undefined,
+      currentActivity: liveActivities[student.id] || null,
     };
   }
 
@@ -261,7 +280,7 @@ export class StudentsService {
               select: {
                 id: true,
                 name: true,
-                subdomain: true,
+                
               },
             },
           },
@@ -280,6 +299,12 @@ export class StudentsService {
       throw new NotFoundException(`Student with UID ${uid} not found in this school`);
     }
 
+    const liveActivities = await this.liveStatusService.getCurrentActivities(
+      tenantId,
+      [student.id],
+      'STUDENT'
+    );
+
     return {
       ...this.toDto(student),
       enrollment: {
@@ -289,6 +314,7 @@ export class StudentsService {
         enrollmentDate: student.enrollments[0].enrollmentDate.toISOString(),
         school: student.enrollments[0].school,
       },
+      currentActivity: liveActivities[student.id] || null,
     };
   }
 
@@ -318,7 +344,7 @@ export class StudentsService {
               select: {
                 id: true,
                 name: true,
-                subdomain: true,
+                
               },
             },
           },
@@ -416,7 +442,7 @@ export class StudentsService {
               select: {
                 id: true,
                 name: true,
-                subdomain: true,
+                
                 hasPrimary: true,
                 hasSecondary: true,
                 hasTertiary: true,
@@ -485,7 +511,7 @@ export class StudentsService {
               select: {
                 id: true,
                 name: true,
-                subdomain: true,
+                
               },
             },
             class: {
@@ -1504,7 +1530,7 @@ export class StudentsService {
           select: {
             id: true,
             name: true,
-            subdomain: true,
+            
           },
         },
         class: {
@@ -2257,7 +2283,7 @@ export class StudentsService {
               select: {
                 id: true,
                 name: true,
-                subdomain: true,
+                
                 logo: true,
                 hasPrimary: true,
                 hasSecondary: true,
@@ -2389,7 +2415,7 @@ export class StudentsService {
               select: {
                 id: true,
                 name: true,
-                subdomain: true,
+                
               },
             },
           },
@@ -2515,5 +2541,128 @@ export class StudentsService {
     });
 
     return this.toDto(updatedStudent);
+  }
+
+  /**
+   * Get dashboard statistics for current student (Pulse and Distribution)
+   * Scoped to current school and active term
+   */
+  async getMyDashboardStats(user: UserWithContext): Promise<any> {
+    if (!user.id) {
+      throw new BadRequestException('User ID is missing');
+    }
+
+    // Find student by userId
+    const student = await this.prisma.student.findFirst({
+      where: { userId: user.id },
+      include: {
+        enrollments: {
+          where: {
+            isActive: true,
+            ...(user.currentSchoolId ? { schoolId: user.currentSchoolId } : {}),
+          },
+          include: {
+            class: true,
+            classArm: {
+                include: { classLevel: true }
+            }
+          },
+          orderBy: { enrollmentDate: 'desc' },
+          take: 1
+        },
+      },
+    });
+
+    if (!student || student.enrollments.length === 0) {
+      return { 
+        averageScore: 0, 
+        subjectBreakdown: [],
+        totalGrades: 0,
+        recentGradesCount: 0
+      };
+    }
+
+    const enrollment = student.enrollments[0];
+    const enrollmentId = enrollment.id;
+    const schoolId = enrollment.schoolId;
+
+    // Determine schoolType for correct session lookup
+    let schoolType: string | null = null;
+    if (enrollment.classArm?.classLevel?.type) {
+      schoolType = enrollment.classArm.classLevel.type;
+    } else if (enrollment.class?.type) {
+      schoolType = enrollment.class.type;
+    }
+
+    // Find active term for this school and schoolType
+    const activeSession = await this.prisma.academicSession.findFirst({
+      where: {
+        schoolId,
+        status: 'ACTIVE',
+        ...(schoolType ? { schoolType } : {}),
+      },
+      include: {
+        terms: {
+          where: { status: 'ACTIVE' },
+          take: 1,
+        },
+      },
+    });
+
+    const activeTermId = activeSession?.terms[0]?.id;
+
+    // Get all published grades for this enrollment and term
+    const grades = await this.prisma.grade.findMany({
+      where: {
+        enrollmentId,
+        isPublished: true,
+        ...(activeTermId ? { termId: activeTermId } : {}),
+      },
+    });
+
+    // Calculate Pulse (Weighted Average) and Distribution
+    let totalScore = 0;
+    let totalMaxScore = 0;
+    const subjectMap: Record<string, { total: number; max: number; count: number }> = {};
+    
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    let recentGradesCount = 0;
+
+    grades.forEach(grade => {
+      const score = Number(grade.score);
+      const max = Number(grade.maxScore);
+      totalScore += score;
+      totalMaxScore += max;
+
+      const subjectName = grade.subject || 'General';
+      if (!subjectMap[subjectName]) {
+        subjectMap[subjectName] = { total: 0, max: 0, count: 0 };
+      }
+      subjectMap[subjectName].total += score;
+      subjectMap[subjectName].max += max;
+      subjectMap[subjectName].count += 1;
+      
+      if (grade.updatedAt >= sevenDaysAgo) {
+        recentGradesCount++;
+      }
+    });
+
+    const averageScore = totalMaxScore > 0 
+      ? Math.round((totalScore / totalMaxScore) * 100) 
+      : 0;
+
+    const subjectBreakdown = Object.entries(subjectMap).map(([name, data]) => ({
+      name,
+      percentage: data.max > 0 ? Math.round((data.total / data.max) * 100) : 0,
+      count: data.count,
+    })).sort((a, b) => b.percentage - a.percentage);
+
+    return {
+      averageScore,
+      subjectBreakdown,
+      totalGrades: grades.length,
+      recentGradesCount,
+    };
   }
 }

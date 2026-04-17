@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { CurrentActivityDto } from '../../common/dto/current-activity.dto';
 
 export class StudentDto {
   @ApiProperty({ example: 'clx1234567890', description: 'Student ID' })
@@ -89,7 +90,10 @@ export class StudentWithEnrollmentDto extends StudentDto {
     school: {
       id: string;
       name: string;
-      subdomain: string;
+      
     };
   };
+
+  @ApiPropertyOptional({ description: 'Current live activity from timetable', type: CurrentActivityDto, nullable: true })
+  currentActivity?: CurrentActivityDto | null;
 }

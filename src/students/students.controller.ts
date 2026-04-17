@@ -41,11 +41,16 @@ import { ImportSummaryDto } from '../onboarding/dto/bulk-import.dto';
 import { ApiConsumes } from '@nestjs/swagger';
 import { AuthService } from '../auth/auth.service';
 import { PrismaService } from '../database/prisma.service';
+import { Throttle } from '@nestjs/throttler';
 
+/**
+ * standard tier: Student data listing and entity fetches.
+ */
 @ApiTags('students')
 @Controller('students')
 @UseGuards(JwtAuthGuard, TenantGuard)
 @ApiBearerAuth('JWT-auth')
+@Throttle({ standard: {} })
 export class StudentsController {
   constructor(
     private readonly studentsService: StudentsService,

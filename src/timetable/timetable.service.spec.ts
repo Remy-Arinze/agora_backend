@@ -22,7 +22,7 @@ describe('TimetableService', () => {
         {
           provide: SchoolRepository,
           useValue: {
-            findByIdOrSubdomain: jest.fn(),
+            findById: jest.fn(),
           },
         },
       ],
@@ -66,7 +66,7 @@ describe('TimetableService', () => {
         schoolId: mockSchoolId,
       };
 
-      schoolRepository.findByIdOrSubdomain.mockResolvedValue(mockSchool as any);
+      schoolRepository.findById.mockResolvedValue(mockSchool as any);
       (prisma.term.findUnique as jest.Mock).mockResolvedValue(mockTerm as any);
       (prisma.class.findUnique as jest.Mock).mockResolvedValue(mockClass as any);
       (prisma as any).timetablePeriod = {
@@ -76,12 +76,12 @@ describe('TimetableService', () => {
 
       const result = await service.createPeriod(mockSchoolId, mockDto);
 
-      expect(schoolRepository.findByIdOrSubdomain).toHaveBeenCalledWith(mockSchoolId);
+      expect(schoolRepository.findById).toHaveBeenCalledWith(mockSchoolId);
       expect(result).toHaveProperty('id', 'period-1');
     });
 
     it('should throw BadRequestException if school not found', async () => {
-      schoolRepository.findByIdOrSubdomain.mockResolvedValue(null);
+      schoolRepository.findById.mockResolvedValue(null);
 
       await expect(service.createPeriod(mockSchoolId, mockDto)).rejects.toThrow(
         BadRequestException
@@ -90,7 +90,7 @@ describe('TimetableService', () => {
 
     it('should throw NotFoundException if term not found', async () => {
       const mockSchool = TestUtils.createMockSchool({ id: mockSchoolId });
-      schoolRepository.findByIdOrSubdomain.mockResolvedValue(mockSchool as any);
+      schoolRepository.findById.mockResolvedValue(mockSchool as any);
       (prisma.term.findUnique as jest.Mock).mockResolvedValue(null);
 
       await expect(service.createPeriod(mockSchoolId, mockDto)).rejects.toThrow(NotFoundException);
@@ -103,7 +103,7 @@ describe('TimetableService', () => {
         academicSession: { schoolId: mockSchoolId },
       };
 
-      schoolRepository.findByIdOrSubdomain.mockResolvedValue(mockSchool as any);
+      schoolRepository.findById.mockResolvedValue(mockSchool as any);
       (prisma.term.findUnique as jest.Mock).mockResolvedValue(mockTerm as any);
 
       const invalidDto = { ...mockDto };

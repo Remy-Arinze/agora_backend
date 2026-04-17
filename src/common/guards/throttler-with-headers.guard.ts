@@ -80,7 +80,7 @@ export class ThrottlerWithHeadersGuard extends ThrottlerGuard {
     this.addThrottleHeaders(response, throttlerLimitDetail);
     
     // Call parent to throw the exception
-    super.throwThrottlingException(context, throttlerLimitDetail);
+    await super.throwThrottlingException(context, throttlerLimitDetail);
   }
 
   /**

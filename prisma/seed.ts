@@ -169,24 +169,7 @@ async function main() {
   console.log('\n🔧 Seeding Tools...');
 
   const tools = [
-    {
-      slug: 'prepmaster',
-      name: 'PrepMaster',
-      description: 'AI-powered study companion for students. Generate flashcards, summaries, and quizzes from curriculum.',
-      icon: '🧠',
-      monthlyPrice: 0, // Included in Starter+
-      yearlyPrice: 0,
-      isCore: false,
-      features: [
-        { name: 'AI Flashcards', description: 'Generate flashcards from curriculum topics' },
-        { name: 'Study Summaries', description: 'AI-generated topic summaries' },
-        { name: 'Quick Quizzes', description: 'Self-assessment quizzes' },
-        { name: 'Spaced Repetition', description: 'Smart review scheduling' },
-        { name: 'Progress Tracking', description: 'Track study progress' },
-      ],
-      targetRoles: ['STUDENT'],
-      sortOrder: 1,
-    },
+
     {
       slug: 'agora-ai',
       name: 'Agora AI',
@@ -206,25 +189,7 @@ async function main() {
       targetRoles: ['TEACHER', 'SCHOOL_ADMIN'],
       sortOrder: 2,
     },
-    {
-      slug: 'bursary',
-      name: 'Bursary Pro',
-      description: 'Comprehensive financial management. Track fees, generate invoices, manage payments and expenses.',
-      icon: '💸',
-      monthlyPrice: 0, // Basic in FREE, full in Starter+
-      yearlyPrice: 0,
-      isCore: true, // Basic version always available
-      features: [
-        { name: 'Fee Structures', description: 'Define fees by class and term' },
-        { name: 'Invoice Generation', description: 'Auto-generate student invoices' },
-        { name: 'Payment Tracking', description: 'Track cash, transfer, and online payments' },
-        { name: 'Online Payments', description: 'Paystack integration' },
-        { name: 'Expense Tracking', description: 'Track school expenses' },
-        { name: 'Financial Reports', description: 'Income, expense, and cash flow reports' },
-      ],
-      targetRoles: ['SCHOOL_ADMIN'],
-      sortOrder: 3,
-    },
+
     {
       slug: 'rollcall',
       name: 'RollCall',
@@ -284,7 +249,7 @@ async function main() {
         { text: '10 Teachers', included: true },
         { text: '2 Admin Users', included: true },
         { text: 'Core Management Platform', included: true },
-        { text: 'Agora AI Generation', included: false },
+        { text: 'Agora AI Assistant', included: false },
         { text: 'Automated AI Grading', included: false },
         { text: 'Detailed AI Analytics', included: false },
       ],
@@ -293,8 +258,8 @@ async function main() {
       tierCode: 'PRO',
       name: 'Pro',
       description: 'Unlock the power of Agora AI',
-      monthlyPrice: 15000,
-      yearlyPrice: 150000,
+      monthlyPrice: 20000,
+      yearlyPrice: 200000,
       highlight: true,
       cta: 'Upgrade to Pro',
       accent: 'blue',
@@ -317,8 +282,8 @@ async function main() {
       tierCode: 'PRO_PLUS',
       name: 'Pro+',
       description: 'Advanced features for scaling institutions',
-      monthlyPrice: 45000,
-      yearlyPrice: 450000,
+      monthlyPrice: 50000,
+      yearlyPrice: 500000,
       highlight: false,
       cta: 'Upgrade to Pro+',
       accent: 'amber',

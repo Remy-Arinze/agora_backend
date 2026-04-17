@@ -24,7 +24,7 @@ describe('EventService', () => {
         {
           provide: SchoolRepository,
           useValue: {
-            findByIdOrSubdomain: jest.fn(),
+            findById: jest.fn(),
           },
         },
         {
@@ -68,19 +68,19 @@ describe('EventService', () => {
         schoolId: mockSchoolId,
       };
 
-      schoolRepository.findByIdOrSubdomain.mockResolvedValue(mockSchool as any);
+      schoolRepository.findById.mockResolvedValue(mockSchool as any);
       (prisma as any).event = {
         create: jest.fn().mockResolvedValue(mockEvent),
       };
 
       const result = await service.createEvent(mockSchoolId, mockDto);
 
-      expect(schoolRepository.findByIdOrSubdomain).toHaveBeenCalledWith(mockSchoolId);
+      expect(schoolRepository.findById).toHaveBeenCalledWith(mockSchoolId);
       expect(result).toHaveProperty('id', 'event-1');
     });
 
     it('should throw BadRequestException if school not found', async () => {
-      schoolRepository.findByIdOrSubdomain.mockResolvedValue(null);
+      schoolRepository.findById.mockResolvedValue(null);
 
       await expect(service.createEvent(mockSchoolId, mockDto)).rejects.toThrow(
         BadRequestException
@@ -89,7 +89,7 @@ describe('EventService', () => {
 
     it('should throw BadRequestException if start date is after end date', async () => {
       const mockSchool = TestUtils.createMockSchool({ id: mockSchoolId });
-      schoolRepository.findByIdOrSubdomain.mockResolvedValue(mockSchool as any);
+      schoolRepository.findById.mockResolvedValue(mockSchool as any);
 
       const invalidDto = {
         ...mockDto,
@@ -108,7 +108,7 @@ describe('EventService', () => {
         hasPrimary: false,
         hasSecondary: true,
       });
-      schoolRepository.findByIdOrSubdomain.mockResolvedValue(mockSchool as any);
+      schoolRepository.findById.mockResolvedValue(mockSchool as any);
 
       await expect(service.createEvent(mockSchoolId, mockDto)).rejects.toThrow(
         BadRequestException

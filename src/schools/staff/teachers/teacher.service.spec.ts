@@ -28,7 +28,7 @@ describe('TeacherService', () => {
         {
           provide: SchoolRepository,
           useValue: {
-            findByIdOrSubdomain: jest.fn(),
+            findById: jest.fn(),
           },
         },
         {
@@ -110,7 +110,7 @@ describe('TeacherService', () => {
     };
 
     it('should successfully add a teacher', async () => {
-      schoolRepository.findByIdOrSubdomain.mockResolvedValue(mockSchool as any);
+      schoolRepository.findById.mockResolvedValue(mockSchool as any);
       staffValidator.validateStaffData.mockReturnValue(undefined);
       staffValidator.validateEmailUniqueInSchool.mockResolvedValue(undefined);
       staffValidator.validatePhoneUniqueInSchool.mockResolvedValue(undefined);
@@ -136,13 +136,13 @@ describe('TeacherService', () => {
 
       const result = await service.addTeacher('school-1', mockTeacherData);
 
-      expect(schoolRepository.findByIdOrSubdomain).toHaveBeenCalledWith('school-1');
+      expect(schoolRepository.findById).toHaveBeenCalledWith('school-1');
       expect(staffValidator.validateStaffData).toHaveBeenCalledWith(mockTeacherData);
       expect(result).toBeDefined();
     });
 
     it('should throw BadRequestException if school not found', async () => {
-      schoolRepository.findByIdOrSubdomain.mockResolvedValue(null);
+      schoolRepository.findById.mockResolvedValue(null);
 
       await expect(service.addTeacher('invalid-school', mockTeacherData)).rejects.toThrow(
         BadRequestException
@@ -158,7 +158,7 @@ describe('TeacherService', () => {
     };
 
     it('should successfully update a teacher', async () => {
-      schoolRepository.findByIdOrSubdomain.mockResolvedValue(mockSchool as any);
+      schoolRepository.findById.mockResolvedValue(mockSchool as any);
       staffRepository.findTeacherById.mockResolvedValue(mockTeacher as any);
       staffRepository.updateTeacher.mockResolvedValue({
         ...mockTeacher,
@@ -186,7 +186,7 @@ describe('TeacherService', () => {
     };
 
     it('should successfully delete a teacher', async () => {
-      schoolRepository.findByIdOrSubdomain.mockResolvedValue(mockSchool as any);
+      schoolRepository.findById.mockResolvedValue(mockSchool as any);
       staffRepository.findTeacherById.mockResolvedValue(mockTeacher as any);
       staffRepository.deleteTeacher.mockResolvedValue(mockTeacher as any);
 

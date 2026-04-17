@@ -69,18 +69,7 @@ export class SchoolRegistrationService {
             );
         }
 
-        // 5. Generate subdomain from school name
-        let subdomain = this.generateSubdomainFromName(sanitizedName);
-        let counter = 1;
-        while (await this.prisma.school.findUnique({ where: { subdomain } })) {
-            subdomain = `${this.generateSubdomainFromName(sanitizedName)}-${counter}`;
-            counter++;
-            if (counter > 100) {
-                throw new BadRequestException('Unable to generate unique subdomain. Please contact support.');
-            }
-        }
-
-        // 6. Generate IDs
+        // 5. Generate IDs
         const schoolId = await this.idGenerator.generateSchoolId();
         const ownerAdminId = await this.idGenerator.generatePrincipalId();
         const ownerPublicId = await this.idGenerator.generatePublicId(sanitizedName, 'admin');
@@ -96,7 +85,6 @@ export class SchoolRegistrationService {
                     data: {
                         name: sanitizedName,
                         schoolId,
-                        subdomain,
                         email: sanitizedSchoolEmail,
                         phone: schoolPhone.trim(),
                         address: address?.trim() || null,
@@ -216,14 +204,4 @@ export class SchoolRegistrationService {
         return sanitized.slice(0, maxLength);
     }
 
-    private generateSubdomainFromName(name: string): string {
-        return name
-            .toLowerCase()
-            .trim()
-            .replace(/[^a-z0-9\s-]/g, '')
-            .replace(/\s+/g, '-')
-            .replace(/-+/g, '-')
-            .replace(/^-|-$/g, '')
-            .slice(0, 50);
-    }
 }

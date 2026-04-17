@@ -24,7 +24,7 @@ export class EventService {
    * Create a one-off event
    */
   async createEvent(schoolId: string, dto: CreateEventDto, createdBy?: string): Promise<EventDto> {
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -108,7 +108,7 @@ export class EventService {
     endDate: Date,
     schoolType?: 'PRIMARY' | 'SECONDARY' | 'TERTIARY'
   ): Promise<EventDto[]> {
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -163,7 +163,7 @@ export class EventService {
     days: number = 7,
     schoolType?: 'PRIMARY' | 'SECONDARY' | 'TERTIARY'
   ): Promise<EventDto[]> {
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -209,7 +209,7 @@ export class EventService {
     eventId: string,
     dto: Partial<CreateEventDto>
   ): Promise<EventDto> {
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -259,7 +259,7 @@ export class EventService {
    * Delete an event
    */
   async deleteEvent(schoolId: string, eventId: string): Promise<void> {
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }

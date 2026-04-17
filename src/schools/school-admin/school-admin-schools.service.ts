@@ -29,6 +29,7 @@ import { CloudinaryService } from '../../storage/cloudinary/cloudinary.service';
 import { EmailService } from '../../email/email.service';
 import { randomBytes } from 'crypto';
 import { isPrincipalRole } from '../dto/permission.dto';
+import { LiveStatusService } from '../../live-status/live-status.service';
 
 /** Max staff records fetched per type (admins + teachers) to avoid unbounded memory; full server-side pagination would require a union query. */
 const STAFF_FETCH_CAP = 500;
@@ -49,7 +50,8 @@ export class SchoolAdminSchoolsService {
     private readonly schoolMapper: SchoolMapper,
     private readonly cloudinaryService: CloudinaryService,
     private readonly emailService: EmailService,
-    private readonly configService: ConfigService
+    private readonly configService: ConfigService,
+    private readonly liveStatusService: LiveStatusService
   ) { }
 
   /**
@@ -796,35 +798,53 @@ export class SchoolAdminSchoolsService {
       }),
     ];
 
-    // Apply additional search on subject field (for teachers)
-    let filteredStaff = allStaff;
-    if (search) {
-      filteredStaff = allStaff.filter((staff) => {
-        const searchLower = search.toLowerCase();
-        return (
-          staff.firstName.toLowerCase().includes(searchLower) ||
-          staff.lastName.toLowerCase().includes(searchLower) ||
-          staff.email?.toLowerCase().includes(searchLower) ||
-          staff.subject?.toLowerCase().includes(searchLower)
-        );
-      });
-    }
+    // Get current live activities for all teachers and admins in parallel
+    const allStaffRaw = allStaff;
+    const allStaffIds = allStaffRaw.map(s => s.id);
+    const liveActivities = await this.liveStatusService.getCurrentActivities(
+      schoolId,
+      allStaffIds,
+      'STAFF'
+    );
 
+    // Merge activities into staff records
+    const staffWithActivities = allStaffRaw.map(staff => ({
+      ...staff,
+      currentActivity: liveActivities[staff.id] || null,
+    }));
+
+    // Apply filtering by role and search
+    let filteredStaff = staffWithActivities;
+    
     // Sort by creation date (newest first)
     filteredStaff.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
 
-    // Extract unique roles from all staff (before pagination)
-    const availableRoles = new Set<string>();
-    allAdmins.forEach((admin) => {
-      if (admin.role) {
-        availableRoles.add(admin.role);
-      }
-    });
-    if (filteredTeachers.length > 0) {
-      availableRoles.add('Teacher');
+    if (search) {
+      const searchLower = search.toLowerCase();
+      filteredStaff = filteredStaff.filter(
+        (staff) =>
+          staff.firstName.toLowerCase().includes(searchLower) ||
+          staff.lastName.toLowerCase().includes(searchLower) ||
+          staff.email?.toLowerCase().includes(searchLower) ||
+          (staff.subject?.toLowerCase().includes(searchLower) ?? false) ||
+          (staff.role?.toLowerCase().includes(searchLower) ?? false)
+      );
     }
 
-    // Apply pagination (result set is bounded by STAFF_FETCH_CAP per type)
+    if (roleFilter && roleFilter !== 'All') {
+      filteredStaff = filteredStaff.filter((staff) => staff.role === roleFilter);
+    }
+
+    // Extract unique roles from all staff (before pagination)
+    const availableRolesSet = new Set<string>();
+    allAdmins.forEach((admin) => {
+      if (admin.role) availableRolesSet.add(admin.role);
+    });
+    if (filteredTeachers.length > 0) {
+      availableRolesSet.add('Teacher');
+    }
+
+    // Apply pagination
     const totalCount = filteredStaff.length;
     const totalPages = Math.ceil(totalCount / limit);
     const paginatedStaff = filteredStaff.slice(skip, skip + limit);
@@ -841,7 +861,7 @@ export class SchoolAdminSchoolsService {
     return {
       items: paginatedStaff,
       meta,
-      availableRoles: Array.from(availableRoles).sort(),
+      availableRoles: ['All', ...Array.from(availableRolesSet).sort()],
     };
   }
 

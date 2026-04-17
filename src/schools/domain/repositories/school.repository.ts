@@ -12,19 +12,6 @@ export class SchoolRepository {
     });
   }
 
-  async findBySubdomain(subdomain: string): Promise<School | null> {
-    return this.prisma.school.findUnique({
-      where: { subdomain },
-    });
-  }
-
-  async findByIdOrSubdomain(identifier: string): Promise<School | null> {
-    return this.prisma.school.findFirst({
-      where: {
-        OR: [{ id: identifier }, { subdomain: identifier }],
-      },
-    });
-  }
 
   async findAll(): Promise<School[]> {
     return this.prisma.school.findMany({

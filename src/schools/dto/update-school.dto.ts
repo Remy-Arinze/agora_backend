@@ -7,11 +7,6 @@ export class UpdateSchoolDto {
   @IsString()
   name?: string;
 
-  @ApiPropertyOptional({ description: 'School subdomain (unique identifier)' })
-  @IsOptional()
-  @IsString()
-  subdomain?: string;
-
   @ApiPropertyOptional({ description: 'School domain' })
   @IsOptional()
   @IsString()

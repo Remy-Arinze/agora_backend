@@ -9,6 +9,7 @@ import { DatabaseModule } from '../database/database.module';
 import { SchoolsModule } from '../schools/schools.module';
 import { AuthModule } from '../auth/auth.module';
 import { OnboardingModule } from '../onboarding/onboarding.module';
+import { LiveStatusModule } from '../live-status/live-status.module';
 import { TimetableModule } from '../timetable/timetable.module';
 import { GradesModule } from '../grades/grades.module';
 import { EventsModule } from '../events/events.module';
@@ -21,7 +22,8 @@ import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
     forwardRef(() => SchoolsModule),
     forwardRef(() => AuthModule),
     forwardRef(() => OnboardingModule),
-    forwardRef(() => TimetableModule),
+    TimetableModule,
+    LiveStatusModule,
     forwardRef(() => GradesModule),
     forwardRef(() => EventsModule),
     CloudinaryModule,

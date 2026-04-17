@@ -35,7 +35,7 @@ export class ClassResourceService {
     dto?: CreateClassResourceDto
   ): Promise<ClassResourceDto> {
     // Validate school exists
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -123,7 +123,7 @@ export class ClassResourceService {
    */
   async getClassResources(schoolId: string, classId: string): Promise<ClassResourceDto[]> {
     // Validate school exists
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -196,7 +196,7 @@ export class ClassResourceService {
     resourceId: string
   ): Promise<ClassResourceDto> {
     // Validate school exists
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -240,7 +240,7 @@ export class ClassResourceService {
    */
   async deleteResource(schoolId: string, classId: string, resourceId: string): Promise<void> {
     // Validate school exists
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }

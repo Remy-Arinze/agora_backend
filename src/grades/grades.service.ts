@@ -9,13 +9,15 @@ import { SchoolRepository } from '../schools/domain/repositories/school.reposito
 import { StaffRepository } from '../schools/domain/repositories/staff.repository';
 import { UserWithContext } from '../auth/types/user-with-context.type';
 import { CreateGradeDto, UpdateGradeDto } from './dto/grade.dto';
+import { KnowledgeIndexingService } from '../ai/knowledge-indexing.service';
 
 @Injectable()
 export class GradesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly schoolRepository: SchoolRepository,
-    private readonly staffRepository: StaffRepository
+    private readonly staffRepository: StaffRepository,
+    private readonly indexingService: KnowledgeIndexingService
   ) {}
 
   /**
@@ -28,7 +30,7 @@ export class GradesService {
     }
 
     // Validate school exists
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new NotFoundException('School not found');
     }
@@ -260,6 +262,11 @@ export class GradesService {
       },
     });
 
+    // Automated Indexing: Keep the AI knowledge base updated with the latest performance
+    this.indexingService.indexStudent(grade.enrollment.studentId).catch(err => 
+      console.error(`[AI Indexing] Failed to update student ${grade.enrollment.studentId}:`, err)
+    );
+
     return {
       id: grade.id,
       enrollmentId: grade.enrollmentId,
@@ -302,7 +309,7 @@ export class GradesService {
     }
 
     // Validate school exists
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new NotFoundException('School not found');
     }
@@ -403,6 +410,11 @@ export class GradesService {
       },
     });
 
+    // Automated Indexing: Sync the updated performance to the knowledge base
+    this.indexingService.indexStudent(updatedGrade.enrollment.studentId).catch(err => 
+      console.error(`[AI Indexing] Failed to update student ${updatedGrade.enrollment.studentId}:`, err)
+    );
+
     return {
       id: updatedGrade.id,
       enrollmentId: updatedGrade.enrollmentId,
@@ -440,7 +452,7 @@ export class GradesService {
     }
 
     // Validate school exists
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new NotFoundException('School not found');
     }
@@ -482,6 +494,11 @@ export class GradesService {
     await this.prisma.grade.delete({
       where: { id: gradeId },
     });
+
+    // Automated Indexing: Refresh student data after grade removal
+    this.indexingService.indexStudent(grade.enrollment.studentId).catch(err => 
+      console.error(`[AI Indexing] Failed to update student ${grade.enrollment.studentId}:`, err)
+    );
   }
 
   /**
@@ -497,7 +514,7 @@ export class GradesService {
     user?: UserWithContext
   ): Promise<any[]> {
     // Validate school exists
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new NotFoundException('School not found');
     }
@@ -687,7 +704,7 @@ export class GradesService {
     user?: UserWithContext
   ): Promise<any[]> {
     // Validate school exists
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new NotFoundException('School not found');
     }
@@ -856,7 +873,7 @@ export class GradesService {
     }
 
     // Validate school exists
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new NotFoundException('School not found');
     }
@@ -1158,5 +1175,189 @@ export class GradesService {
       },
       teacher: grade.teacher,
     }));
+  }
+
+  /**
+   * Get grades for a class grouped by students
+   * Returns student-centric data with aggregated metrics
+   */
+  async getClassGradesGroupedByStudents(
+    schoolId: string,
+    classId: string,
+    subject?: string,
+    termId?: string,
+    gradeType?: string,
+    user?: UserWithContext
+  ): Promise<any[]> {
+    // Validate school exists
+    const school = await this.schoolRepository.findById(schoolId);
+    if (!school) {
+      throw new NotFoundException('School not found');
+    }
+
+    // Check if classId is a ClassArm (for PRIMARY/SECONDARY schools)
+    const classArm = await this.prisma.classArm.findUnique({
+      where: { id: classId },
+      include: { classLevel: true },
+    });
+
+    let classData: any = null;
+    let isClassArm = false;
+
+    if (classArm && classArm.classLevel.schoolId === school.id) {
+      // It's a ClassArm
+      isClassArm = true;
+      classData = {
+        id: classArm.id,
+        name: `${classArm.classLevel.name} ${classArm.name}`,
+        classLevel: classArm.classLevel.name,
+        academicYear: classArm.academicYear,
+        type: classArm.classLevel.type,
+      };
+    } else {
+      // It's a Class - validate it exists (for TERTIARY/backward compatibility)
+      classData = await this.prisma.class.findFirst({
+        where: {
+          id: classId,
+          schoolId: school.id,
+        },
+      });
+
+      if (!classData) {
+        throw new NotFoundException('Class or ClassArm not found');
+      }
+    }
+
+    // Get enrollments for this class/ClassArm
+    const enrollmentWhere: any = {
+      schoolId: school.id,
+      isActive: true,
+      academicYear: classData.academicYear,
+    };
+
+    if (isClassArm) {
+      enrollmentWhere.classArmId = classId;
+    } else {
+      enrollmentWhere.OR = [
+        { classId: classId },
+        {
+          AND: [{ classLevel: classData.classLevel }, { classId: null }],
+        },
+      ];
+    }
+
+    const enrollments = await this.prisma.enrollment.findMany({
+      where: enrollmentWhere,
+      include: {
+        student: true,
+      },
+    });
+
+    // Get all grades for this class
+    const enrollmentIds = enrollments.map((e) => e.id);
+
+    // Build where clause for grades
+    const where: any = {
+      enrollmentId: { in: enrollmentIds },
+    };
+
+    // Apply filters
+    if (subject) {
+      where.subject = subject;
+    }
+    if (termId) {
+      where.termId = termId;
+    }
+    if (gradeType) {
+      where.gradeType = gradeType;
+    }
+
+    // If teacher context provided, filter by teacher's subjects
+    if (user?.currentProfileId) {
+      const teacherIdString = user.currentProfileId;
+      const teacher = await this.staffRepository.findTeacherByTeacherId(teacherIdString);
+
+      if (teacher) {
+        where.teacherId = teacher.id;
+      }
+    }
+
+    // Get all grades for the class
+    const grades = await this.prisma.grade.findMany({
+      where,
+      include: {
+        enrollment: {
+          include: {
+            student: true,
+          },
+        },
+        teacher: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            subject: true,
+          },
+        },
+      },
+      orderBy: [{ assessmentDate: 'desc' }, { createdAt: 'desc' }],
+    });
+
+    // Group grades by student
+    const studentGradesMap = new Map();
+
+    enrollments.forEach((enrollment) => {
+      const studentId = enrollment.student.id;
+      const studentGrades = grades.filter((grade) => grade.enrollmentId === enrollment.id);
+
+      // Calculate aggregated metrics
+      const totalScore = studentGrades.reduce((sum, grade) => sum + grade.score.toNumber(), 0);
+      const totalMaxScore = studentGrades.reduce((sum, grade) => sum + grade.maxScore.toNumber(), 0);
+      const averagePercentage = totalMaxScore > 0 ? (totalScore / totalMaxScore) * 100 : 0;
+      const gradedCount = studentGrades.filter((grade) => grade.isPublished).length;
+      const totalCount = studentGrades.length;
+
+      // Determine performance relative to class average
+      let performanceStatus = 'average';
+      if (averagePercentage >= 80) {
+        performanceStatus = 'above';
+      } else if (averagePercentage < 60) {
+        performanceStatus = 'below';
+      }
+
+      studentGradesMap.set(studentId, {
+        student: {
+          id: enrollment.student.id,
+          firstName: enrollment.student.firstName,
+          lastName: enrollment.student.lastName,
+          uid: enrollment.student.uid,
+          publicId: enrollment.student.publicId,
+        },
+        averagePercentage: Math.round(averagePercentage * 10) / 10,
+        gradedCount,
+        totalCount,
+        performanceStatus,
+        grades: studentGrades.map((grade) => ({
+          id: grade.id,
+          assessmentName: grade.assessmentName,
+          assessmentDate: grade.assessmentDate,
+          gradeType: grade.gradeType,
+          sequence: grade.sequence,
+          score: grade.score.toNumber(),
+          maxScore: grade.maxScore.toNumber(),
+          percentage: grade.maxScore.toNumber() > 0 ? 
+            Math.round((grade.score.toNumber() / grade.maxScore.toNumber()) * 100 * 10) / 10 : 0,
+          isPublished: grade.isPublished,
+          gradedAt: grade.updatedAt,
+        })),
+      });
+    });
+
+    // Convert to array and sort by student name
+    return Array.from(studentGradesMap.values()).sort((a, b) => 
+      `${a.student.firstName} ${a.student.lastName}`.localeCompare(
+        `${b.student.firstName} ${b.student.lastName}`
+      )
+    );
   }
 }

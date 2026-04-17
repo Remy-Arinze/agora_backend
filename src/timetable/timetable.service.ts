@@ -33,7 +33,7 @@ export class TimetableService {
    * Create a timetable period with conflict detection
    */
   async createPeriod(schoolId: string, dto: CreateTimetablePeriodDto): Promise<TimetablePeriodDto> {
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -130,7 +130,7 @@ export class TimetableService {
     schoolId: string,
     dto: CreateMasterScheduleDto
   ): Promise<{ created: number; skipped: number }> {
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -219,7 +219,7 @@ export class TimetableService {
     classArmId: string,
     termId: string
   ): Promise<TimetablePeriodDto[]> {
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -262,7 +262,7 @@ export class TimetableService {
     teacherId: string,
     termId: string
   ): Promise<TimetablePeriodDto[]> {
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -347,7 +347,7 @@ export class TimetableService {
     classId: string,
     termId: string
   ): Promise<TimetablePeriodDto[]> {
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -400,7 +400,7 @@ export class TimetableService {
     studentId: string,
     termId: string
   ): Promise<TimetablePeriodDto[]> {
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -582,7 +582,7 @@ export class TimetableService {
     schoolType?: 'PRIMARY' | 'SECONDARY' | 'TERTIARY',
     termId?: string
   ): Promise<Record<string, TimetablePeriodDto[]>> {
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -662,7 +662,7 @@ export class TimetableService {
     periodId: string,
     dto: Partial<CreateTimetablePeriodDto>
   ): Promise<TimetablePeriodDto> {
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -763,7 +763,7 @@ export class TimetableService {
    * Delete a timetable period
    */
   async deletePeriod(schoolId: string, periodId: string): Promise<void> {
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -792,7 +792,7 @@ export class TimetableService {
    * Delete all timetable periods for a class and term (delete entire timetable)
    */
   async deleteTimetableForClass(schoolId: string, classId: string, termId: string): Promise<void> {
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -984,6 +984,10 @@ export class TimetableService {
   /**
    * Map Prisma period to DTO
    */
+  /**
+   * Get current activities for multiple entities (staff or students)
+   */
+
   private mapToPeriodDto(period: any): TimetablePeriodDto {
     const dto: TimetablePeriodDto = {
       id: period.id,

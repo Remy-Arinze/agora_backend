@@ -1,4 +1,5 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { CurrentActivityDto } from '../../common/dto/current-activity.dto';
 
 export class StaffListItemDto {
   @ApiProperty({ description: 'Staff ID' })
@@ -52,6 +53,9 @@ export class StaffListItemDto {
     required: false,
   })
   assignedClass?: { id: string; name: string } | null;
+
+  @ApiPropertyOptional({ description: 'Current live activity from timetable', type: CurrentActivityDto, nullable: true })
+  currentActivity?: CurrentActivityDto | null;
 
   @ApiProperty({ description: 'Created date' })
   createdAt: Date;

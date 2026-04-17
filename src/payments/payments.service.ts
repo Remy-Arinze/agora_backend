@@ -2,6 +2,7 @@ import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../database/prisma.service';
 import { SubscriptionTier } from '../subscriptions/dto/subscription.dto';
+import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import * as crypto from 'crypto';
 
 export interface InitializePaymentOptions {
@@ -58,14 +59,15 @@ export class PaymentsService {
   // Pricing configuration (in Naira) - 3 tiers: FREE, PRO, PRO_PLUS
   private readonly pricing: Record<SubscriptionTier, { monthly: number; yearly: number }> = {
     [SubscriptionTier.FREE]: { monthly: 0, yearly: 0 },
-    [SubscriptionTier.PRO]: { monthly: 15000, yearly: 150000 },
-    [SubscriptionTier.PRO_PLUS]: { monthly: 45000, yearly: 450000 },
+    [SubscriptionTier.PRO]: { monthly: 20000, yearly: 200000 },
+    [SubscriptionTier.PRO_PLUS]: { monthly: 50000, yearly: 500000 },
     [SubscriptionTier.CUSTOM]: { monthly: 0, yearly: 0 },
   };
 
   constructor(
     private readonly configService: ConfigService,
-    private readonly prisma: PrismaService
+    private readonly prisma: PrismaService,
+    private readonly subscriptionsService: SubscriptionsService
   ) {
     this.secretKey = this.configService.get<string>('PAYSTACK_SECRET_KEY') || null;
 
@@ -293,8 +295,15 @@ export class PaymentsService {
         lastCreditReset: new Date(),
       },
     });
+    
+    // Crucial: Sync tool access based on the new tier!
+    await this.subscriptionsService.syncToolAccessForTier(
+      payment.subscription.schoolId,
+      payment.subscriptionId,
+      metadata.tier
+    );
 
-    this.logger.log(`Subscription upgraded: ${payment.subscription.schoolId} -> ${metadata.tier}`);
+    this.logger.log(`Subscription upgraded and tool access synced: ${payment.subscription.schoolId} -> ${metadata.tier}`);
   }
 
   /**

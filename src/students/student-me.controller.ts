@@ -278,6 +278,17 @@ export class StudentMeController {
     return ResponseDto.ok(data, 'Personal resources retrieved successfully');
   }
 
+  @Get('me/dashboard/stats')
+  @ApiOperation({ summary: 'Get dashboard stats (Pulse and Distribution) for current student' })
+  @ApiResponse({
+    status: 200,
+    description: 'Dashboard stats retrieved successfully',
+  })
+  async getMyDashboardStats(@CurrentUser() user: UserWithContext): Promise<ResponseDto<any>> {
+    const data = await this.studentsService.getMyDashboardStats(user);
+    return ResponseDto.ok(data, 'Dashboard stats retrieved successfully');
+  }
+
   @Post('me/personal-resources/upload')
   @UseInterceptors(FileInterceptor('file'))
   @ApiOperation({ summary: 'Upload a personal resource' })

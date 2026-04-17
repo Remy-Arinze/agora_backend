@@ -1,6 +1,7 @@
 import { Module, NestModule, MiddlewareConsumer, RequestMethod } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { ThrottlerModule, ThrottlerStorage } from '@nestjs/throttler';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { Reflector } from '@nestjs/core';
@@ -34,20 +35,44 @@ import { AssessmentsModule } from './assessments/assessments.module';
 import { AttendanceModule } from './attendance/attendance.module';
 import { APP_FILTER } from '@nestjs/core';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
+import { AgoraCurriculumModule } from './agora-curriculum/agora-curriculum.module';
+import { BullBoardModule } from '@bull-board/nestjs';
+import { ExpressAdapter } from '@bull-board/express';
 
 @Module({
   imports: [
+    BullBoardModule.forRoot({
+      route: '/admin/queues',
+      adapter: ExpressAdapter,
+    }),
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: ['.env.local', '.env'],
     }),
     ScheduleModule.forRoot(),
-    // Global rate limiting: 300 requests per minute by default
-    // Auth endpoints have stricter limits via @Throttle decorators
+    EventEmitterModule.forRoot(),
+    // ---------------------------------------------------------
+    // TIERED RATE LIMITING CONFIGURATION
+    // ---------------------------------------------------------
+    // standard (300 req/min): Default for common UI fetches.
+    // heavy-ai (10 req/min): For Lois, BullMQ jobs, and PDF parsing.
+    // database-intensive (30 req/min): For reports, aggregations, and global search.
+    // ---------------------------------------------------------
     ThrottlerModule.forRoot([
       {
+        name: 'standard',
         ttl: 60000,
         limit: 300,
+      },
+      {
+        name: 'heavy-ai',
+        ttl: 60000,
+        limit: 10,
+      },
+      {
+        name: 'database-intensive',
+        ttl: 60000,
+        limit: 30,
       },
     ]),
     DatabaseModule,
@@ -73,6 +98,7 @@ import { HttpExceptionFilter } from './common/filters/http-exception.filter';
     ErrorsModule,
     AssessmentsModule,
     AttendanceModule,
+    AgoraCurriculumModule,
   ],
   controllers: [AppController],
   providers: [
@@ -105,6 +131,10 @@ export class AppModule implements NestModule {
         { path: '/public/(.*)', method: RequestMethod.ALL },
         { path: '/auth', method: RequestMethod.ALL },
         { path: '/auth/(.*)', method: RequestMethod.ALL },
+        { path: '/teachers/me', method: RequestMethod.ALL },
+        { path: '/teachers/me/(.*)', method: RequestMethod.ALL },
+        { path: '/students/me', method: RequestMethod.ALL },
+        { path: '/students/me/(.*)', method: RequestMethod.ALL },
         { path: '/swagger', method: RequestMethod.ALL },
         { path: '/swagger/(.*)', method: RequestMethod.ALL },
         { path: '/swagger-json', method: RequestMethod.ALL },

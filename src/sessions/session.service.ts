@@ -42,7 +42,7 @@ export class SessionService {
     schoolId: string,
     dto: InitializeSessionDto
   ): Promise<AcademicSessionDto> {
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -126,7 +126,7 @@ export class SessionService {
    * Create a term for an academic session
    */
   async createTerm(schoolId: string, sessionId: string, dto: CreateTermDto): Promise<TermDto> {
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -188,7 +188,7 @@ export class SessionService {
    * Get active session and term for a school (optionally filtered by school type)
    */
   async getActiveSession(schoolId: string, schoolType?: string): Promise<ActiveSessionDto> {
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -235,7 +235,7 @@ export class SessionService {
     term: TermDto;
     migratedCount: number;
   }> {
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -551,7 +551,7 @@ export class SessionService {
     schoolId: string,
     dto: MigrateStudentsDto
   ): Promise<{ migratedCount: number }> {
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -1070,7 +1070,7 @@ export class SessionService {
    * End the current active term (optionally filtered by school type)
    */
   async endTerm(schoolId: string, schoolType?: string): Promise<{ term: TermDto }> {
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -1112,7 +1112,7 @@ export class SessionService {
     schoolId: string,
     schoolType?: string
   ): Promise<{ session: AcademicSessionDto }> {
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -1170,7 +1170,7 @@ export class SessionService {
     termId: string,
     schoolType?: string
   ): Promise<{ term: TermDto }> {
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -1244,7 +1244,7 @@ export class SessionService {
    * Get all sessions for a school (optionally filtered by school type)
    */
   async getSessions(schoolId: string, schoolType?: string): Promise<AcademicSessionDto[]> {
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
@@ -1389,7 +1389,7 @@ export class SessionService {
     termId: string,
     dto: UpdateTermDatesDto,
   ): Promise<TermDto> {
-    const school = await this.schoolRepository.findByIdOrSubdomain(schoolId);
+    const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
     }
