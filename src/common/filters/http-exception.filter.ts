@@ -54,7 +54,38 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
         // Handle validation errors
         if (Array.isArray(responseObj.message)) {
-          message = responseObj.message.join(', ');
+          // Clean messages by removing property prefixes (e.g., "owner.phone: message" -> "message")
+          // and ensuring distinct messages are processed
+          const cleanedMessages = responseObj.message.map((msg: string) => {
+            if (typeof msg !== 'string') return msg;
+            
+            // If the message contains a colon (NestJS default: "property: error"), take the part after it
+            if (msg.includes(': ')) {
+              return msg.split(': ')[1];
+            }
+            
+            // If it starts with a property name and a dot (Nested: "owner.firstName must be..."), 
+            // try to strip the dot prefix if the resulting string matches our known formats
+            const dotIndex = msg.indexOf('.');
+            if (dotIndex > 0 && dotIndex < msg.indexOf(' ')) {
+              return msg.substring(dotIndex + 1);
+            }
+            
+            return msg;
+          });
+
+          // Filter unique messages and capitalize them
+          const uniqueMessages = [...new Set(cleanedMessages)].map(m => {
+            const str = String(m);
+            return str.charAt(0).toUpperCase() + str.slice(1);
+          });
+
+          message = uniqueMessages.join('. ') + (uniqueMessages.length > 0 ? '.' : '');
+          
+          // Fallback if formatting results in empty string
+          if (!message || message === '.') {
+             message = 'Validation failed. Please check your input.';
+          }
         }
 
         // Include error details if available
@@ -106,7 +137,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
     response.status(status).json({
       success: false,
       message,
-      error: details || (status >= 500 ? 'Internal Server Error' : 'Bad Request'),
+      error: details || (status >= 500 ? 'Internal Error' : 'Validation Error'),
       statusCode: status,
       timestamp: new Date().toISOString(),
       path: request.url,

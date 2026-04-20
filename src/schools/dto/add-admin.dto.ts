@@ -56,7 +56,7 @@ export class AddAdminDto {
   @ApiProperty({ description: 'Admin phone number' })
   @IsString({ message: 'Phone number must be a string' })
   @IsNotEmpty({ message: 'Phone number is required' })
-  @MinLength(10, { message: 'Phone number must be at least 10 characters' })
+  @MinLength(7, { message: 'Phone number must be at least 7 characters' })
   @MaxLength(20, { message: 'Phone number cannot exceed 20 characters' })
   @Transform(({ value }) => sanitizePhone(value) ?? '')
   phone: string;
