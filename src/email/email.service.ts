@@ -82,7 +82,7 @@ export class EmailService {
    * Returns the shared email header HTML with Agora logo and optional title.
    * Logo and title are on one line; logo sized to match header text (~24px).
    */
-  private getEmailHeaderHtml(title: string = 'Agora school space'): string {
+  private getEmailHeaderHtml(title: string = 'Agora Open Schools'): string {
     const logoUrl = EmailService.AGORA_LOGO_URL;
     return `<div style="background-color: #f9fafb; padding: 16px 20px; text-align: center; border-radius: 8px 8px 0 0; border-bottom: 2px solid #e5e7eb;">
 <table cellpadding="0" cellspacing="0" border="0" style="margin: 0 auto;">
@@ -195,8 +195,8 @@ export class EmailService {
       replyTo: this.getReplyTo(),
       to: email,
       subject: isPasswordReset
-        ? 'Reset Your Password - Agora school space'
-        : 'Set Your Password - Agora school space',
+        ? 'Reset Your Password - Agora Open Schools'
+        : 'Set Your Password - Agora Open Schools',
       headers: this.getEmailHeaders(),
       html: `
         <!DOCTYPE html>
@@ -213,12 +213,12 @@ export class EmailService {
           ? `
             <h2 style="color: #1f2937; margin-top: 0;">Password Reset Request</h2>
             <p>Hello ${name},</p>
-            <p>We received a request to reset your password for your <strong>${role}</strong> account on the Agora school space.</p>
+            <p>We received a request to reset your password for your <strong>${role}</strong> account on the Agora Open Schools.</p>
             <p>If you didn't make this request, you can safely ignore this email. Your password will remain unchanged.</p>
             `
           : `
             <h2 style="color: #1f2937; margin-top: 0;">Welcome, ${name}!</h2>
-            <p>Your account has been created${schoolName ? ` at <strong>${schoolName}</strong>` : ''} on the Agora school space as a <strong>${role}</strong>.</p>
+            <p>Your account has been created${schoolName ? ` at <strong>${schoolName}</strong>` : ''} on the Agora Open Schools as a <strong>${role}</strong>.</p>
             <p>To get started, please set your password using the link below.</p>
             `
         }
@@ -249,7 +249,7 @@ export class EmailService {
         }
             <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
             <p style="color: #9ca3af; font-size: 12px; text-align: center; margin: 0;">
-              © ${new Date().getFullYear()} Agora school space. All rights reserved.
+              © ${new Date().getFullYear()} Agora Open Schools. All rights reserved.
             </p>
           </div>
         </body>
@@ -302,7 +302,7 @@ export class EmailService {
       from: this.getFormattedFrom(),
       replyTo: this.getReplyTo(),
       to: email,
-      subject: 'Password Successfully Changed - Agora school space',
+      subject: 'Password Successfully Changed - Agora Open Schools',
       headers: this.getEmailHeaders(),
       html: `
         <!DOCTYPE html>
@@ -336,7 +336,7 @@ export class EmailService {
             </p>
             <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
             <p style="color: #9ca3af; font-size: 12px; text-align: center; margin: 0;">
-              © ${new Date().getFullYear()} Agora school space. All rights reserved.
+              © ${new Date().getFullYear()} Agora Open Schools. All rights reserved.
             </p>
           </div>
         </body>
@@ -393,7 +393,7 @@ export class EmailService {
       from: this.getFormattedFrom(),
       replyTo: this.getReplyTo(),
       to: email,
-      subject: `Role Change Notification - ${newRole} - Agora school space`,
+      subject: `Role Change Notification - ${newRole} - Agora Open Schools`,
       headers: this.getEmailHeaders(),
       html: `
         <!DOCTYPE html>
@@ -431,7 +431,7 @@ export class EmailService {
             </p>
             <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
             <p style="color: #9ca3af; font-size: 12px; text-align: center; margin: 0;">
-              © ${new Date().getFullYear()} Agora school space. All rights reserved.
+              © ${new Date().getFullYear()} Agora Open Schools. All rights reserved.
             </p>
           </div>
         </body>
@@ -528,7 +528,7 @@ export class EmailService {
             </p>
             <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
             <p style="color: #9ca3af; font-size: 12px; text-align: center; margin: 0;">
-              © ${new Date().getFullYear()} Agora school space. All rights reserved.
+              © ${new Date().getFullYear()} Agora Open Schools. All rights reserved.
             </p>
           </div>
         </body>
@@ -609,7 +609,7 @@ export class EmailService {
             </p>
             <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
             <p style="color: #9ca3af; font-size: 12px; text-align: center; margin: 0;">
-              © ${new Date().getFullYear()} Agora school space. All rights reserved.
+              © ${new Date().getFullYear()} Agora Open Schools. All rights reserved.
             </p>
           </div>
         </body>
@@ -703,7 +703,7 @@ export class EmailService {
             </p>
             <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
             <p style="color: #9ca3af; font-size: 12px; text-align: center; margin: 0;">
-              © ${new Date().getFullYear()} Agora school space. All rights reserved.
+              © ${new Date().getFullYear()} Agora Open Schools. All rights reserved.
             </p>
           </div>
         </body>
@@ -789,7 +789,7 @@ export class EmailService {
             </p>
             <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
             <p style="color: #9ca3af; font-size: 12px; text-align: center; margin: 0;">
-              © ${new Date().getFullYear()} Agora school space. All rights reserved.
+              © ${new Date().getFullYear()} Agora Open Schools. All rights reserved.
             </p>
           </div>
         </body>
@@ -893,7 +893,7 @@ export class EmailService {
             </p>
             <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
             <p style="color: #9ca3af; font-size: 12px; text-align: center; margin: 0;">
-              © ${new Date().getFullYear()} Agora school space. All rights reserved.
+              © ${new Date().getFullYear()} Agora Open Schools. All rights reserved.
             </p>
           </div>
         </body>
@@ -936,7 +936,7 @@ export class EmailService {
 
     return {
       'Message-ID': messageId,
-      'X-Mailer': 'Agora school space',
+      'X-Mailer': 'Agora Open Schools',
       'List-Unsubscribe': `<mailto:${replyToEmail}?subject=unsubscribe>`,
       'Precedence': 'bulk',
       'X-Auto-Response-Suppress': 'All', // Prevents auto-replies
@@ -952,7 +952,7 @@ export class EmailService {
       this.configService.get<string>('SMTP_FROM') ||
       this.configService.get<string>('MAIL_USER') ||
       this.configService.get<string>('SMTP_USER');
-    const fromName = this.configService.get<string>('MAIL_FROM_NAME') || 'Agora school space';
+    const fromName = this.configService.get<string>('MAIL_FROM_NAME') || 'Agora Open Schools';
     return `"${fromName}" <${fromEmail}>`;
   }
 
@@ -1044,7 +1044,7 @@ export class EmailService {
             </p>
             <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
             <p style="color: #9ca3af; font-size: 12px; text-align: center; margin: 0;">
-              © ${new Date().getFullYear()} Agora school space. All rights reserved.
+              © ${new Date().getFullYear()} Agora Open Schools. All rights reserved.
             </p>
           </div>
         </body>
@@ -1126,7 +1126,7 @@ export class EmailService {
             </p>
             <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
             <p style="color: #9ca3af; font-size: 12px; text-align: center; margin: 0;">
-              © ${new Date().getFullYear()} Agora school space. All rights reserved.
+              © ${new Date().getFullYear()} Agora Open Schools. All rights reserved.
             </p>
           </div>
         </body>
@@ -1209,7 +1209,7 @@ export class EmailService {
             </p>
             <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
             <p style="color: #9ca3af; font-size: 12px; text-align: center; margin: 0;">
-              © ${new Date().getFullYear()} Agora school space. All rights reserved.
+              © ${new Date().getFullYear()} Agora Open Schools. All rights reserved.
             </p>
           </div>
         </body>
@@ -1388,7 +1388,7 @@ export class EmailService {
             
             <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
             <p style="color: #9ca3af; font-size: 12px; text-align: center; margin: 0;">
-              © ${new Date().getFullYear()} Agora school space. All rights reserved.
+              © ${new Date().getFullYear()} Agora Open Schools. All rights reserved.
             </p>
           </div>
         </body>
@@ -1430,7 +1430,7 @@ export class EmailService {
     }
 
     // Get display name and reply-to from environment
-    const fromName = this.configService.get<string>('MAIL_FROM_NAME') || 'Agora school space';
+    const fromName = this.configService.get<string>('MAIL_FROM_NAME') || 'Agora Open Schools';
     const replyTo = this.configService.get<string>('MAIL_REPLY_TO') || fromEmail;
 
     // Generate unique Message-ID
@@ -1447,7 +1447,7 @@ This code will expire in 10 minutes. Do not share this code with anyone.
 
 If you didn't request this code, please ignore this email or contact support immediately.
 
-© ${new Date().getFullYear()} Agora school space. All rights reserved.`;
+© ${new Date().getFullYear()} Agora Open Schools. All rights reserved.`;
 
     const mailOptions = {
       from: this.getFormattedFrom(),
@@ -1491,7 +1491,7 @@ If you didn't request this code, please ignore this email or contact support imm
             
             <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
             <p style="color: #9ca3af; font-size: 12px; text-align: center; margin: 0;">
-              © ${new Date().getFullYear()} Agora school space. All rights reserved.
+              © ${new Date().getFullYear()} Agora Open Schools. All rights reserved.
             </p>
           </div>
         </body>
@@ -1551,7 +1551,7 @@ If you didn't request this code, please ignore this email or contact support imm
             <p style="margin: 0; color: #92400e; font-size: 14px;">If you didn't request this change, please secure your account and contact support.</p>
           </div>
           <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
-          <p style="color: #9ca3af; font-size: 12px; text-align: center;">© ${new Date().getFullYear()} Agora school space.</p>
+          <p style="color: #9ca3af; font-size: 12px; text-align: center;">© ${new Date().getFullYear()} Agora Open Schools.</p>
         </div>
       </body>
       </html>
@@ -1561,7 +1561,7 @@ If you didn't request this code, please ignore this email or contact support imm
       from: this.getFormattedFrom(),
       replyTo: this.getReplyTo(),
       to: email,
-      subject: 'Verify Password Change - Agora school space',
+      subject: 'Verify Password Change - Agora Open Schools',
       headers: { ...this.getEmailHeaders(), 'X-Priority': '1' },
       html,
     });
@@ -1605,7 +1605,7 @@ If you didn't request this code, please ignore this email or contact support imm
           <p style="color: #6b7280; font-size: 14px;">This code expires in 10 minutes. Do not share it with anyone.</p>
           <p style="color: #6b7280; font-size: 14px;">If you didn't request a password reset, you can safely ignore this email.</p>
           <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
-          <p style="color: #9ca3af; font-size: 12px; text-align: center;">© ${new Date().getFullYear()} Agora school space.</p>
+          <p style="color: #9ca3af; font-size: 12px; text-align: center;">© ${new Date().getFullYear()} Agora Open Schools.</p>
         </div>
       </body>
       </html>
@@ -1615,7 +1615,7 @@ If you didn't request this code, please ignore this email or contact support imm
       from: this.getFormattedFrom(),
       replyTo: this.getReplyTo(),
       to: email,
-      subject: 'Reset Your Password - Agora school space',
+      subject: 'Reset Your Password - Agora Open Schools',
       headers: { ...this.getEmailHeaders(), 'X-Priority': '1' },
       html,
     });
@@ -1662,7 +1662,7 @@ If you didn't request this code, please ignore this email or contact support imm
             If you have any questions in the meantime, feel free to reply to this email.
           </p>
           <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
-          <p style="color: #9ca3af; font-size: 12px; text-align: center;">© ${new Date().getFullYear()} Agora school space.</p>
+          <p style="color: #9ca3af; font-size: 12px; text-align: center;">© ${new Date().getFullYear()} Agora Open Schools.</p>
         </div>
       </body>
       </html>
@@ -1731,7 +1731,7 @@ If you didn't request this code, please ignore this email or contact support imm
             <a href="${reviewUrl}" style="background-color: #10b981; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: bold;">Review Application</a>
           </div>
           <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
-          <p style="color: #9ca3af; font-size: 12px; text-align: center;">© ${new Date().getFullYear()} Agora school space.</p>
+          <p style="color: #9ca3af; font-size: 12px; text-align: center;">© ${new Date().getFullYear()} Agora Open Schools.</p>
         </div>
       </body>
       </html>
@@ -1789,7 +1789,7 @@ If you didn't request this code, please ignore this email or contact support imm
             Thank you again for your time and interest in Agora.
           </p>
           <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
-          <p style="color: #9ca3af; font-size: 12px; text-align: center;">© ${new Date().getFullYear()} Agora school space.</p>
+          <p style="color: #9ca3af; font-size: 12px; text-align: center;">© ${new Date().getFullYear()} Agora Open Schools.</p>
         </div>
       </body>
       </html>

@@ -1,37 +1,66 @@
-# Agora Backend (standalone)
+# Agora Backend
 
-Single-package NestJS API with Prisma. Flat structure: `src/` (NestJS), `prisma/` (schema, migrations, seed).
+Multi-tenant school management platform built with NestJS + Prisma + PostgreSQL.
 
-## Setup
+> **API Description (from Swagger):** `Multi-Tenant Digital Education Identity Platform — Chain-of-Trust Registry`
 
-1. Copy `.env.example` to `.env` in this directory. Fill in values (DB_URL, JWT_SECRET, etc.).
-2. `npm install --legacy-peer-deps`
-3. `npm run db:generate`
-4. `npm run db:migrate`
-5. `npm run dev`
+## Quick Start
 
-## Scripts
+```bash
+cp .env.example .env        # Fill in all required variables (see below)
+npm install --legacy-peer-deps
+npm run db:generate         # Generate Prisma client
+npm run db:migrate          # Run database migrations
+npm run db:seed             # Seed permissions table (required first run)
+npm run dev                 # Start dev server on :4000
+```
 
-- `npm run dev` – start API in dev mode
-- `npm run build` – Prisma generate + Nest build
-- `npm run start:prod` – run production build
-- `npm run db:generate` – Prisma generate
-- `npm run db:migrate` – Prisma migrate dev
-- `npm run db:studio` – Prisma Studio
-- `npm run db:seed` – seed database
+## Running Scripts
+
+| Script | Purpose |
+|--------|---------|
+| `npm run dev` | Starts the API in watch mode |
+| `npm run build` | Prisma generate + NestJS compile |
+| `npm run start:prod` | Runs compiled production build |
+| `npm run db:generate` | Regenerates Prisma client from schema |
+| `npm run db:migrate` | Runs pending database migrations |
+| `npm run db:studio` | Opens Prisma Studio GUI |
+| `npm run db:seed` | Seeds the `Permission` table with all resource/type combinations |
 
 ## Docker
 
-- **Build and run the API only** (expects `DB_URL` to point to an existing Postgres):
-  ```bash
-  docker build -t agora-backend .
-  docker run -p 4000:4000 --env-file .env agora-backend
-  ```
-  The container runs `prisma migrate deploy` on startup when `DB_URL` is set, then starts the API.
+**API only** (requires external Postgres):
+```bash
+docker build -t agora-backend .
+docker run -p 4000:4000 --env-file .env agora-backend
+```
+The container runs `prisma migrate deploy` on startup automatically.
 
-- **Run API + Postgres with Docker Compose:**
-  ```bash
-  cp .env.example .env   # optional: set JWT_SECRET, FRONTEND_URL, etc.
-  docker compose up -d
-  ```
-  API is at `http://localhost:4000`. Postgres uses user/pass/db `agora`/`agora`/`agora` (set in `docker-compose.yml`). To use Redis for BullMQ, uncomment the `redis` service and set `REDIS_HOST=redis` in `.env`.
+**API + Postgres** (for local dev):
+```bash
+docker compose up -d
+# API: http://localhost:4000   Postgres: agora/agora/agora
+```
+
+To enable Redis for BullMQ, uncomment the `redis` service in `docker-compose.yml` and set `REDIS_HOST=redis` in `.env`.
+
+## Swagger / API Docs
+
+Available in **development only** at:
+- UI: `http://localhost:4000/api`
+- JSON spec: `http://localhost:4000/swagger-json`
+
+Swagger is **disabled in production** for security.
+
+## BullMQ Dashboard
+
+Available in development at `http://localhost:4000/admin/queues`.  
+Shows live state of all background job queues (curriculum parsing, scheme generation).
+
+## Environment Variables Reference
+
+See [`docs/env-reference.md`](docs/env-reference.md) for a full description of every required and optional variable.
+
+## Architecture
+
+See [`docs/architecture.md`](docs/architecture.md) for the full system architecture, module breakdown, data model, AI pipeline, permission system, and deployment topology.
