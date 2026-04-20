@@ -25,7 +25,7 @@ export class SchoolDataAccessGuard implements CanActivate {
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
     const user: UserWithContext = request.user;
-    const requestedSchoolId = request.params.schoolId || request.body.schoolId;
+    const requestedSchoolId = request.params?.schoolId || request.body?.schoolId;
 
     // ✅ Super admin can access any school - no school context needed
     // Super admin JWT will NOT have schoolId (they log in with email)
