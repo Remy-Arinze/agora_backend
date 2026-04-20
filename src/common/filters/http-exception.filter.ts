@@ -12,7 +12,6 @@ import { ModuleRef } from '@nestjs/core';
 import { ErrorsService, CreateErrorDto } from '../../operations/errors/errors.service';
 import { ErrorSeverity } from '@prisma/client';
 import * as Sentry from '@sentry/nestjs';
-import { Scope } from '@sentry/nestjs';
 
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
@@ -58,19 +57,19 @@ export class HttpExceptionFilter implements ExceptionFilter {
           // and ensuring distinct messages are processed
           const cleanedMessages = responseObj.message.map((msg: string) => {
             if (typeof msg !== 'string') return msg;
-            
+
             // If the message contains a colon (NestJS default: "property: error"), take the part after it
             if (msg.includes(': ')) {
               return msg.split(': ')[1];
             }
-            
+
             // If it starts with a property name and a dot (Nested: "owner.firstName must be..."), 
             // try to strip the dot prefix if the resulting string matches our known formats
             const dotIndex = msg.indexOf('.');
             if (dotIndex > 0 && dotIndex < msg.indexOf(' ')) {
               return msg.substring(dotIndex + 1);
             }
-            
+
             return msg;
           });
 
@@ -81,10 +80,10 @@ export class HttpExceptionFilter implements ExceptionFilter {
           });
 
           message = uniqueMessages.join('. ') + (uniqueMessages.length > 0 ? '.' : '');
-          
+
           // Fallback if formatting results in empty string
           if (!message || message === '.') {
-             message = 'Validation failed. Please check your input.';
+            message = 'Validation failed. Please check your input.';
           }
         }
 
@@ -163,7 +162,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
       // Extract schoolId from request
       let schoolId: string | undefined;
       const user = (request as any).user;
-      
+
       if (user?.currentSchoolId) {
         schoolId = user.currentSchoolId;
       } else if ((request as any).tenantId) {
@@ -184,7 +183,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
       // --- Sentry Integration ---
       // Capture the error in Sentry with full context
-      Sentry.withScope((scope) => {
+      Sentry.withScope((scope: Sentry.Scope) => {
         // Tag with school and user IDs for easier filtering
         if (schoolId) scope.setTag('schoolId', schoolId);
         if (userId) {
