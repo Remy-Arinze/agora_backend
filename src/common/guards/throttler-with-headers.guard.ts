@@ -1,6 +1,6 @@
 import { Injectable, ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { ThrottlerGuard, ThrottlerModuleOptions, ThrottlerStorage } from '@nestjs/throttler';
+import { ThrottlerGuard, ThrottlerModuleOptions, ThrottlerStorage, ThrottlerRequest, ThrottlerLimitDetail } from '@nestjs/throttler';
 import { Request, Response } from 'express';
 
 /**
@@ -39,14 +39,10 @@ export class ThrottlerWithHeadersGuard extends ThrottlerGuard {
   /**
    * Whitelist SUPER_ADMIN from all rate limits
    */
-  async handleRequest(
-    context: ExecutionContext,
-    limit: number,
-    ttl: number,
-    throttler: any,
-    //@ts-ignore
-    ...args: any[]
+  protected async handleRequest(
+    requestProps: ThrottlerRequest
   ): Promise<boolean> {
+    const { context } = requestProps;
     const request = context.switchToHttp().getRequest<Request>();
     const user = (request as any).user;
 
@@ -54,8 +50,7 @@ export class ThrottlerWithHeadersGuard extends ThrottlerGuard {
       return true;
     }
 
-    //@ts-ignore
-    return super.handleRequest(context, limit, ttl, throttler, ...args);
+    return super.handleRequest(requestProps);
   }
 
   /**
@@ -100,14 +95,7 @@ export class ThrottlerWithHeadersGuard extends ThrottlerGuard {
    */
   protected async throwThrottlingException(
     context: ExecutionContext,
-    throttlerLimitDetail: {
-      limit: number;
-      ttl: number;
-      timeToExpire: number;
-      key: string;
-      tracker: string;
-      totalHits: number;
-    },
+    throttlerLimitDetail: ThrottlerLimitDetail,
   ): Promise<void> {
     const response = context.switchToHttp().getResponse<Response>();
     
@@ -130,11 +118,7 @@ export class ThrottlerWithHeadersGuard extends ThrottlerGuard {
    */
   private addThrottleHeaders(
     response: Response,
-    limitDetail: {
-      limit: number;
-      ttl: number;
-      timeToExpire: number;
-    },
+    limitDetail: ThrottlerLimitDetail,
   ): void {
     const resetTime = Math.ceil(Date.now() / 1000) + Math.ceil(limitDetail.timeToExpire / 1000);
     const retryAfter = Math.ceil(limitDetail.timeToExpire / 1000);

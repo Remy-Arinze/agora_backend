@@ -27,7 +27,7 @@ import { CloudinaryModule } from '../storage/cloudinary/cloudinary.module';
         return {
           secret,
           signOptions: {
-            expiresIn: configService.get<string>('JWT_EXPIRES_IN') || '1d',
+            expiresIn: (configService.get<string>('JWT_EXPIRES_IN') || '1d') as any,
           },
         };
       },

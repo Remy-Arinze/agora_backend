@@ -63,17 +63,17 @@ import { HttpMetricsInterceptor } from './common/metrics/http-metrics.intercepto
     ThrottlerModule.forRoot([
       {
         name: 'standard',
-        ttl: 60000,
+        ttl: 60,
         limit: 300,
       },
       {
         name: 'heavy-ai',
-        ttl: 60000,
+        ttl: 60,
         limit: 100,
       },
       {
         name: 'database-intensive',
-        ttl: 60000,
+        ttl: 60,
         limit: 100,
       },
     ]),
