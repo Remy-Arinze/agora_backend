@@ -18,10 +18,10 @@ export class SetupSchemeOfWorkDto {
   @IsNotEmpty()
   subjectId: string;
 
-  @ApiProperty({ description: 'Term ID', example: 't_012' })
+  @ApiPropertyOptional({ description: 'Term ID (Optional: If omitted, generates Scheme of Work for the entire session)', example: 't_012' })
   @IsString()
-  @IsNotEmpty()
-  termId: string;
+  @IsOptional()
+  termId?: string;
 
   @ApiProperty({ enum: SchemeGenerationMode })
   @IsEnum(SchemeGenerationMode)

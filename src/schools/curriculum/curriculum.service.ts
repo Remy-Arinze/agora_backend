@@ -1404,13 +1404,101 @@ export class CurriculumService {
   }
 
   /**
-   * Set up a new Scheme of Work for a subject
+   * Set up a multi-term (Yearly) Scheme of Work when termId is not provided
    */
+  async setupYearlySchemeOfWork(schoolId: string, dto: SetupSchemeOfWorkDto, user: UserWithContext) {
+    const { classLevelId, classId, subjectId, mode } = dto;
+
+    // Get all terms for the current session
+    const session = await (this.prisma as any).session.findFirst({
+      where: { schoolId, isCurrent: true },
+      include: { terms: { orderBy: { number: 'asc' } } }
+    });
+
+    if (!session || !session.terms || session.terms.length === 0) {
+      throw new BadRequestException('No active session or terms found to generate a yearly scheme.');
+    }
+
+    if (mode === SchemeGenerationMode.AGORA_ONLY) {
+      throw new BadRequestException('Agora templates must be set up per-term directly.');
+    }
+
+    const creditsNeeded = this.TOTAL_COST * session.terms.length;
+    const summary = await this.subscriptionsService.getSubscriptionSummary(schoolId);
+    if (summary.aiCreditsRemaining < creditsNeeded && summary.tier !== 'CUSTOM') {
+      throw new BadRequestException(`Insufficient AI credits. Required: ${creditsNeeded}, Available: ${summary.aiCreditsRemaining}`);
+    }
+
+    const docIds = dto.schoolCurriculumDocIds || (dto.schoolCurriculumDocId ? [dto.schoolCurriculumDocId] : []);
+    if (docIds.length === 0) {
+      throw new BadRequestException('Please provide at least one source document ID.');
+    }
+
+    return await this.prisma.$transaction(async (tx) => {
+      const creditResult = await this.subscriptionsService.useAiCredits(
+        schoolId,
+        creditsNeeded,
+        user.id,
+        `GENERATE_YEARLY_SCHEME: ${subjectId}`
+      );
+
+      if (!creditResult.success) {
+        throw new BadRequestException(creditResult.message || 'Failed to deduct AI credits.');
+      }
+
+      const schemes = [];
+      const batchGroupId = 'batch_' + Array.from({ length: 8 }, () => Math.random().toString(36)[2]).join('');
+
+      for (const term of session.terms) {
+        // Check for existing
+        const existing = await (tx as any).schemeOfWork.findFirst({
+          where: { schoolId, subjectId, termId: term.id, classLevelId }
+        });
+
+        if (existing) {
+          if (dto.forceOverwrite) {
+            await (tx as any).schemeOfWork.delete({ where: { id: existing.id } });
+          } else {
+            throw new ConflictException(`A Scheme of Work exists for Term ${term.number}. Pass forceOverwrite to replace.`);
+          }
+        }
+
+        const scheme = await (tx as any).schemeOfWork.create({
+          data: {
+            schoolId,
+            subjectId,
+            termId: term.id,
+            classLevelId,
+            classId: classId || null,
+            generationMode: mode,
+            schoolCurriculumId: docIds[0], // primary tracking ID
+            status: 'QUEUED',
+            parentSchemeId: batchGroupId // internal tag to link them
+          }
+        });
+        schemes.push(scheme.id);
+      }
+
+      // Enqueue a dedicated yearly generation job
+      await this.curriculumQueue.add('generate-yearly-scheme', {
+        schemeIds: schemes,
+        schoolCurriculumDocIds: docIds,
+        schoolId,
+        userId: user.id
+      });
+
+      return { message: 'Yearly scheme generation queued successfully', schemes };
+    });
+  }
+
   async setupSchemeOfWork(
     schoolId: string,
     dto: SetupSchemeOfWorkDto,
     user: UserWithContext
   ) {
+    if (!dto.termId) {
+      return this.setupYearlySchemeOfWork(schoolId, dto, user);
+    }
     const { classLevelId, classId, subjectId, termId, mode } = dto;
 
     // Check for existing scheme

@@ -2324,6 +2324,168 @@ ${overview.progressionNotes || ''}
   }
 
   /**
+   * Process multiple terms of a custom scheme simultaneously using a single AI prompt.
+   * Maps the generated 3-term JSON output onto the queued SchemeOfWork records.
+   */
+  async generateYearlySchemeOfWork(schemeIds: string[], docIds: string[]): Promise<void> {
+    const startTime = Date.now();
+    try {
+      this.ensureConfigured();
+
+      // Update statuses
+      await (this.prisma as any).schemeOfWork.updateMany({
+        where: { id: { in: schemeIds } },
+        data: { status: 'GENERATING' },
+      });
+
+      const schemes = await Promise.all(
+        schemeIds.map((id) =>
+          (this.prisma as any).schemeOfWork.findUnique({
+            where: { id },
+            include: { classLevel: true, term: true, schoolCurriculum: true }
+          })
+        )
+      );
+
+      if (schemes.length === 0 || !schemes[0]) return;
+
+      const subject = await this.prisma.subject.findUnique({
+        where: { id: schemes[0].subjectId },
+      });
+
+      const subjectName = subject?.name || 'Unknown Subject';
+      const gradeName = schemes[0].classLevel?.name || 'Unknown Grade';
+
+      // Gather source guidance
+      const guidanceDocs = await (this.prisma as any).schoolCurriculumDoc.findMany({
+        where: { id: { in: docIds } }
+      });
+      
+      const customSchoolGuidance = guidanceDocs.map((doc: any) => doc.parsedData || `[Simulated content for ${doc.fileName}]`).join('\n\n');
+
+      const termNumbers = schemes.map(s => s.term.number);
+      const targetWeeksPerTerm = 13;
+
+      const modelInput = {
+        generationMode: 'SCHOOL_ONLY',
+        customSchoolGuidance,
+        termsExpected: termNumbers,
+        weeksPerTerm: targetWeeksPerTerm,
+        subject: subjectName,
+        gradeLevel: gradeName,
+      };
+
+      const response = await this.openai!.chat.completions.create({
+        model: this.model,
+        messages: [
+          {
+            role: 'system',
+            content: `You are an expert master teacher. Map the given curriculum topics across a full academic year for ${subjectName} (${gradeName}). You must split the progression across terms ${termNumbers.join(', ')}. Each term must have up to ${targetWeeksPerTerm} weeks. Group related topics logically for good progression. Output a JSON object with a "terms" array.`,
+          },
+          { role: 'user', content: JSON.stringify(modelInput) },
+        ],
+        response_format: {
+          type: 'json_schema',
+          json_schema: {
+            name: 'yearly_scheme_of_work_generation',
+            strict: true,
+            schema: {
+              type: 'object',
+              properties: {
+                terms: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      termNumber: { type: 'number' },
+                      weeks: {
+                        type: 'array',
+                        items: {
+                          type: 'object',
+                          properties: {
+                            weekNumber: { type: 'number' },
+                            topic: { type: 'string' },
+                            subTopics: { type: 'array', items: { type: 'string' } },
+                            learningOutcomes: { type: 'array', items: { type: 'string' } },
+                            studentFriendlyOutcomes: { type: 'array', items: { type: 'string' } },
+                            suggestedActivities: { type: 'array', items: { type: 'string' } },
+                            resources: { type: 'array', items: { type: 'string' } },
+                            assessmentType: { type: 'string' }
+                          },
+                          required: ['weekNumber', 'topic', 'subTopics', 'learningOutcomes', 'studentFriendlyOutcomes', 'suggestedActivities', 'resources', 'assessmentType'],
+                          additionalProperties: false
+                        }
+                      }
+                    },
+                    required: ['termNumber', 'weeks'],
+                    additionalProperties: false
+                  }
+                }
+              },
+              required: ['terms'],
+              additionalProperties: false
+            }
+          }
+        },
+      });
+
+      const resultText = response.choices[0]?.message?.content || '{}';
+      const result = JSON.parse(resultText) as any;
+
+      if (result.terms && Array.isArray(result.terms)) {
+        await this.prisma.$transaction(async (tx) => {
+          for (const termBlock of result.terms) {
+            // Find which scheme this term matches
+            const matchingScheme = schemes.find(s => s.term.number === termBlock.termNumber);
+            if (!matchingScheme || !termBlock.weeks) continue;
+
+            await Promise.all(
+              termBlock.weeks.map((w: any) =>
+                (tx as any).schemeOfWorkWeek.create({
+                  data: {
+                    schemeOfWorkId: matchingScheme.id,
+                    weekNumber: w.weekNumber,
+                    topic: w.topic,
+                    subTopics: w.subTopics || [],
+                    learningOutcomes: w.learningOutcomes || [],
+                    studentFriendlyOutcomes: w.studentFriendlyOutcomes || [],
+                    suggestedActivities: w.suggestedActivities || [],
+                    resources: w.resources || [],
+                    assessmentType: w.assessmentType,
+                  },
+                })
+              )
+            );
+
+            await (tx as any).schemeOfWork.update({
+              where: { id: matchingScheme.id },
+              data: {
+                status: 'DRAFT',
+                generatedAt: new Date(),
+              },
+            });
+          }
+        });
+      }
+
+      const durationSec = (Date.now() - startTime) / 1000;
+      this.metricsService.curriculumGenerationsTotal.inc({ mode: 'YEARLY', status: 'success' });
+      this.metricsService.curriculumGenerationDurationSeconds.observe({ mode: 'YEARLY' }, durationSec);
+      this.logger.log(`Generated YEARLY Scheme of Work for schemes: [${schemeIds.join(', ')}].`);
+
+    } catch (error) {
+      this.metricsService.curriculumGenerationsTotal.inc({ mode: 'YEARLY', status: 'failed' });
+      this.logger.error(`Failed to generate YEARLY Scheme of Work:`, error);
+      
+      await (this.prisma as any).schemeOfWork.updateMany({
+        where: { id: { in: schemeIds } },
+        data: { status: 'FAILED' },
+      });
+      throw error;
+    }
+  }
+
+  /**
    * Intelligently scan and parse a school's uploaded curriculum document.
    * If Lois detects multiple grades, it splits the findings into separate SchoolCurriculumDoc records.
    */
