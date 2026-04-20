@@ -230,7 +230,11 @@ export class AuthService {
    * Login - validates credentials and sends OTP
    * This method ALWAYS requires OTP verification - no exceptions
    */
-  async login(loginDto: LoginDto): Promise<LoginResponseDto> {
+  async login(
+    loginDto: LoginDto,
+    ipAddress?: string,
+    userAgent?: string
+  ): Promise<LoginResponseDto> {
     this.logger.log(`[AUTH] Login attempt for: ${loginDto.emailOrPublicId}`);
     this.metricsService.authLoginAttemptsTotal.inc({ status: 'attempt' });
 
@@ -239,7 +243,7 @@ export class AuthService {
 
       // Validate credentials
       const { user } = await this.validateCredentials(emailOrPublicId, password);
-      this.logger.log(`[AUTH] Credentials validated for user: ${user.id}, role: ${user.role}`);
+      this.logger.log(`[AUTH] Credentials validated for user: ${user.id}, role: ${user.role}. IP: ${ipAddress}, UA: ${userAgent}`);
 
       // Ensure user has an email (required for OTP)
       if (!user.email) {
@@ -255,6 +259,8 @@ export class AuthService {
         const sessionId = await this.otpService.createLoginSession(
           user.id,
           user.email,
+          ipAddress,
+          userAgent,
         );
 
         this.logger.log(`[AUTH] OTP session created successfully. SessionId: ${sessionId.substring(0, 8)}...`);
@@ -1333,5 +1339,29 @@ export class AuthService {
     }
 
     return false;
+  }
+
+  /**
+   * Get login sessions for a user (history)
+   */
+  async getLoginSessions(userId: string) {
+    return this.prisma.loginSession.findMany({
+      where: {
+        userId,
+        usedAt: { not: null },
+      },
+      include: {
+        user: {
+          select: {
+            firstName: true,
+            lastName: true,
+          }
+        }
+      },
+      orderBy: {
+        usedAt: 'desc',
+      },
+      take: 50, // Increased limit to allow for better grouping
+    });
   }
 }

@@ -1,5 +1,6 @@
 import {
   Controller,
+  Get,
   Post,
   Body,
   HttpCode,
@@ -93,12 +94,15 @@ export class AuthController {
   @ApiResponse({ status: 401, description: 'Invalid credentials' })
   @ApiResponse({ status: 429, description: 'Too many login attempts. Please try again later.' })
   async login(
+    @Req() req: Request,
     @Body() loginDto: LoginDto,
   ): Promise<ResponseDto<LoginResponseDto>> {
     this.logger.log(`[LOGIN] Received login request for: ${loginDto.emailOrPublicId}`);
     
     try {
-      const data = await this.authService.login(loginDto);
+      const ip = req.ip || req.headers['x-forwarded-for'] as string || 'unknown';
+      const userAgent = req.headers['user-agent'] || 'unknown';
+      const data = await this.authService.login(loginDto, ip, userAgent);
       
       // Verify that we're returning the correct response structure
       if (!data.requiresOtp || !data.sessionId) {
@@ -354,6 +358,19 @@ export class AuthController {
     // Clear the refresh token cookie
     this.clearRefreshTokenCookie(res);
     return ResponseDto.ok(undefined, 'Logged out successfully');
+  }
+
+  @Get('login-sessions')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get current user login history' })
+  @ApiResponse({ status: 200, description: 'Login history retrieved successfully' })
+  async getLoginSessions(@Req() req: Request): Promise<ResponseDto<any>> {
+    const userId = (req.user as any)?.sub || (req.user as any)?.id;
+    if (!userId) throw new UnauthorizedException('User not authenticated');
+    const data = await this.authService.getLoginSessions(userId);
+    return ResponseDto.ok(data, 'Login history retrieved successfully');
   }
 
   @Post('profile/upload-image')

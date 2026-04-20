@@ -940,6 +940,8 @@ model LoginSession {
   sessionId String    @unique
   otpCode   String
   email     String
+  ipAddress String?
+  userAgent String?
   expiresAt DateTime
   usedAt    DateTime?
   attempts  Int       @default(0)
