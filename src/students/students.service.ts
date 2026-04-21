@@ -17,6 +17,9 @@ import { EventService } from '../events/event.service';
 import { CloudinaryService } from '../storage/cloudinary/cloudinary.service';
 import { safeResolvePath } from '../common/utils/path-traversal';
 
+import { ReassignStudentDto } from './dto/reassign-student.dto';
+import { isPrincipalRole } from '../schools/dto/permission.dto';
+
 @Injectable()
 export class StudentsService {
   private readonly logger = new Logger(StudentsService.name);
@@ -2665,4 +2668,129 @@ export class StudentsService {
       recentGradesCount,
     };
   }
+
+  /**
+   * Reassign a student to a different class/arm
+   * Handles same-level moves freely for authorized admins
+   * Restricts cross-level moves (higher/lower) to Principal roles only
+   */
+  async reassignStudent(
+    schoolId: string,
+    studentId: string,
+    dto: ReassignStudentDto,
+    adminRole: string
+  ): Promise<any> {
+    // 1. Find student and their current active enrollment
+    const enrollment = await this.prisma.enrollment.findFirst({
+      where: {
+        studentId,
+        schoolId,
+        isActive: true,
+      },
+      include: {
+        student: true,
+      },
+    });
+
+    if (!enrollment) {
+      throw new NotFoundException('We could not find an active enrollment record for this student in your school.');
+    }
+
+    // 2. Validate move sensitivity (Level Change)
+    const isLevelChange = enrollment.classLevel !== dto.targetClassLevel;
+    const isPrincipal = isPrincipalRole(adminRole);
+
+    if (isLevelChange && !isPrincipal) {
+      throw new ForbiddenException(
+        'Moving a student to a different grade level (e.g., JSS 1 to JSS 2) requires Principal or Head Teacher approval.'
+      );
+    }
+
+    // 3. Validate target Class/Arm
+    let targetClassId = dto.targetClassId || null;
+    let targetClassArmId = dto.targetClassArmId || null;
+
+    if (dto.targetClassArmId) {
+      const classArm = await this.prisma.classArm.findUnique({
+        where: { id: dto.targetClassArmId },
+        include: { classLevel: true },
+      });
+
+      if (!classArm || classArm.classLevel.schoolId !== schoolId) {
+        throw new BadRequestException('The selected class could not be found in your school records.');
+      }
+
+      // Validate level match if moving to specific arm
+      if (classArm.classLevel.name !== dto.targetClassLevel) {
+        throw new BadRequestException(`The selected class group (${classArm.name}) does not belong to the ${dto.targetClassLevel} level.`);
+      }
+
+      // Check capacity
+      if (classArm.capacity !== null) {
+        const currentCount = await this.prisma.enrollment.count({
+          where: {
+            classArmId: classArm.id,
+            isActive: true,
+            academicYear: dto.academicYear,
+          },
+        });
+
+        if (currentCount >= classArm.capacity) {
+          throw new BadRequestException(
+            `The class "${classArm.name}" is already at its maximum capacity of ${classArm.capacity} students.`
+          );
+        }
+      }
+      
+      targetClassArmId = classArm.id;
+    } else if (dto.targetClassLevel) {
+      // Find matching class if no arm provided (fallback/tertiary)
+      const matchingClass = await this.prisma.class.findFirst({
+        where: {
+          schoolId,
+          academicYear: dto.academicYear,
+          OR: [{ name: dto.targetClassLevel }, { classLevel: dto.targetClassLevel }],
+          isActive: true,
+        },
+      });
+      if (matchingClass) targetClassId = matchingClass.id;
+    }
+
+    // 4. Perform reassignment in transaction
+    return await this.prisma.$transaction(async (tx) => {
+      // Deactivate old enrollment
+      await tx.enrollment.update({
+        where: { id: enrollment.id },
+        data: { isActive: false },
+      });
+
+      // Create new enrollment
+      const newEnrollment = await tx.enrollment.create({
+        data: {
+          studentId: enrollment.studentId,
+          schoolId,
+          classLevel: dto.targetClassLevel,
+          academicYear: dto.academicYear,
+          classId: targetClassId,
+          classArmId: targetClassArmId,
+          termId: enrollment.termId, // Keep original term or find active
+          isActive: true,
+        },
+      });
+
+      // Log the activity (could add to an activity log table if exists)
+      this.logger.log(
+        `Student ${enrollment.student.firstName} ${enrollment.student.lastName} (${studentId}) ` +
+        `reassigned from ${enrollment.classLevel} to ${dto.targetClassLevel} by ${adminRole}`
+      );
+
+      return {
+        message: 'Student reassigned successfully',
+        studentId,
+        newEnrollmentId: newEnrollment.id,
+        isLevelChange,
+      };
+    });
+  }
 }
+

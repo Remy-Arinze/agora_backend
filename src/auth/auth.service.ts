@@ -397,6 +397,7 @@ export class AuthService {
         currentSchoolId,
         currentPublicId,
         currentProfileId,
+        adminRole
       );
 
       return {
@@ -559,7 +560,8 @@ export class AuthService {
     role: string,
     schoolId?: string | null,
     publicId?: string | null,
-    profileId?: string | null
+    profileId?: string | null,
+    contextRole?: string | null
   ) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -575,6 +577,7 @@ export class AuthService {
       ...(schoolId && { schoolId }),
       ...(publicId && { publicId }),
       ...(profileId && { profileId }),
+      ...(contextRole && { contextRole }),
       ...(pwdChangedAt !== undefined && { pwdChangedAt }),
     };
 
@@ -624,6 +627,7 @@ export class AuthService {
         ...(payload.schoolId && { schoolId: payload.schoolId }),
         ...(payload.publicId && { publicId: payload.publicId }),
         ...(payload.profileId && { profileId: payload.profileId }),
+        ...(payload.contextRole && { contextRole: payload.contextRole }),
         ...(pwdChangedAt !== undefined && { pwdChangedAt }),
       };
 
