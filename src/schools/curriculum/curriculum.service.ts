@@ -1567,7 +1567,7 @@ export class CurriculumService {
             termId,
             generationMode: mode,
             agoraCurriculumId: agoraCurriculum.id,
-            status: SchemeOfWorkStatus.DRAFT,
+            status: SchemeOfWorkStatus.PUBLISHED,
           },
         });
 
