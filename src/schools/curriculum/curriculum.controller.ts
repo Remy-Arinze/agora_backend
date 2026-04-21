@@ -170,6 +170,36 @@ export class CurriculumController {
     return ResponseDto.ok(data, 'Schemes summary retrieved successfully');
   }
 
+  @Get('schemes/:schemeId')
+  @RequirePermission(PermissionResource.CURRICULUM, PermissionType.READ)
+  @ApiOperation({ summary: 'Get Scheme of Work by ID' })
+  @ApiParam({ name: 'schoolId', description: 'School ID' })
+  @ApiParam({ name: 'schemeId', description: 'Scheme ID' })
+  @ApiResponse({ status: 200, description: 'Scheme retrieved successfully' })
+  async getSchemeOfWorkById(
+    @Param('schoolId') schoolId: string,
+    @Param('schemeId') schemeId: string,
+    @CurrentUser() user: UserWithContext
+  ): Promise<ResponseDto<any>> {
+    const data = await this.curriculumService.getSchemeOfWorkById(schoolId, schemeId, user);
+    return ResponseDto.ok(data, 'Scheme retrieved successfully');
+  }
+
+  @Delete('schemes/:schemeId')
+  @RequirePermission(PermissionResource.CURRICULUM, PermissionType.ADMIN)
+  @ApiOperation({ summary: 'Delete a Scheme of Work' })
+  @ApiParam({ name: 'schoolId', description: 'School ID' })
+  @ApiParam({ name: 'schemeId', description: 'Scheme ID' })
+  @ApiResponse({ status: 200, description: 'Scheme deleted successfully' })
+  async deleteSchemeOfWork(
+    @Param('schoolId') schoolId: string,
+    @Param('schemeId') schemeId: string,
+    @CurrentUser() user: UserWithContext
+  ): Promise<ResponseDto<void>> {
+    await this.curriculumService.deleteSchemeOfWork(schoolId, schemeId, user);
+    return ResponseDto.ok(undefined, 'Scheme deleted successfully');
+  }
+
   // ============================================
   // Curriculum CRUD
   // ============================================

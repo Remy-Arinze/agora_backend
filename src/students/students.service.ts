@@ -16,6 +16,7 @@ import { GradesService } from '../grades/grades.service';
 import { EventService } from '../events/event.service';
 import { CloudinaryService } from '../storage/cloudinary/cloudinary.service';
 import { safeResolvePath } from '../common/utils/path-traversal';
+import { NotificationService } from '../notification/notification.service';
 
 import { ReassignStudentDto } from './dto/reassign-student.dto';
 import { isPrincipalRole } from '../schools/dto/permission.dto';
@@ -30,7 +31,8 @@ export class StudentsService {
     private readonly liveStatusService: LiveStatusService,
     private readonly gradesService: GradesService,
     private readonly eventService: EventService,
-    private readonly cloudinaryService: CloudinaryService
+    private readonly cloudinaryService: CloudinaryService,
+    private readonly notificationService: NotificationService
   ) { }
 
   async findAll(
@@ -2678,7 +2680,8 @@ export class StudentsService {
     schoolId: string,
     studentId: string,
     dto: ReassignStudentDto,
-    adminRole: string
+    adminRole: string,
+    adminName: string
   ): Promise<any> {
     // 1. Find student and their current active enrollment
     const enrollment = await this.prisma.enrollment.findFirst({
@@ -2778,11 +2781,72 @@ export class StudentsService {
         },
       });
 
-      // Log the activity (could add to an activity log table if exists)
-      this.logger.log(
-        `Student ${enrollment.student.firstName} ${enrollment.student.lastName} (${studentId}) ` +
-        `reassigned from ${enrollment.classLevel} to ${dto.targetClassLevel} by ${adminRole}`
-      );
+      // 5. Notify Form Teachers (Outside transaction but using result data)
+      try {
+        const student = enrollment.student;
+        const studentName = `${student.firstName} ${student.lastName}`;
+
+        // Find form teachers for both classes to notify them
+        const notifiedTeachers = await this.prisma.classTeacher.findMany({
+          where: {
+            AND: [
+              {
+                OR: [
+                  { classArmId: enrollment.classArmId }, // Moved from
+                  { classArmId: targetClassArmId },      // Moved to
+                ],
+              },
+              {
+                OR: [
+                  { isPrimary: true },
+                  { isFormTeacher: true },
+                ],
+              }
+            ]
+          },
+          select: {
+            teacherId: true,
+            classArm: {
+              select: {
+                name: true,
+                classLevel: { select: { name: true } },
+              }
+            }
+          }
+        });
+
+        const teacherIds = [...new Set(notifiedTeachers.map(t => t.teacherId))];
+
+        if (teacherIds.length > 0) {
+          // Get class names for better notification content
+          const oldClassName = enrollment.classArmId ? 
+            await this.prisma.classArm.findUnique({ 
+              where: { id: enrollment.classArmId }, 
+              include: { classLevel: true } 
+            }).then(c => c ? `${c.classLevel.name} ${c.name}` : enrollment.classLevel) : 
+            enrollment.classLevel;
+
+          const newClassName = targetClassArmId ? 
+            await this.prisma.classArm.findUnique({ 
+              where: { id: targetClassArmId }, 
+              include: { classLevel: true } 
+            }).then(c => c ? `${c.classLevel.name} ${c.name}` : dto.targetClassLevel) : 
+            dto.targetClassLevel;
+
+          this.notificationService.emitStudentReassigned({
+            schoolId,
+            studentId,
+            studentName,
+            oldClassName,
+            newClassName,
+            adminName,
+            teacherIds,
+            timestamp: new Date().toISOString(),
+          });
+        }
+      } catch (err) {
+        this.logger.error(`Failed to send reassignment notifications: ${err.message}`);
+      }
 
       return {
         message: 'Student reassigned successfully',

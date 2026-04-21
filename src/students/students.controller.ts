@@ -342,7 +342,8 @@ export class SchoolStudentAdmissionController {
       schoolId,
       studentId,
       reassignDto,
-      user.currentRole || 'Administrator'
+      user.currentRole || 'Administrator',
+      `${user.firstName || 'Staff'} ${user.lastName || ''}`.trim()
     );
     return ResponseDto.ok(data, data.message);
   }

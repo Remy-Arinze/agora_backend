@@ -1679,6 +1679,97 @@ export class CurriculumService {
   }
 
   /**
+   * Get Scheme of Work by ID with weeks
+   */
+  async getSchemeOfWorkById(schoolId: string, schemeId: string, user: UserWithContext): Promise<CurriculumDto> {
+    const scheme = await (this.prisma as any).schemeOfWork.findFirst({
+      where: { id: schemeId, schoolId },
+      include: {
+        weeks: { orderBy: { order: 'asc' } },
+        classLevel: true,
+        school: true,
+      }
+    });
+
+    if (!scheme) throw new NotFoundException('Scheme not found');
+
+    // Get subject details
+    const subject = await (this.prisma as any).subject.findUnique({
+      where: { id: scheme.subjectId }
+    });
+
+    return this.mapSchemeToCurriculumDto(scheme, subject);
+  }
+
+  /**
+   * Delete a Scheme of Work
+   */
+  async deleteSchemeOfWork(schoolId: string, schemeId: string, user: UserWithContext): Promise<void> {
+    const scheme = await (this.prisma as any).schemeOfWork.findFirst({
+      where: { id: schemeId, schoolId }
+    });
+
+    if (!scheme) throw new NotFoundException('Scheme not found');
+
+    // Only Admin can delete
+    const isAdmin = user.role === 'SCHOOL_ADMIN' || user.role === 'SUPER_ADMIN';
+    if (!isAdmin) {
+      throw new ForbiddenException('Only administrators can delete schemes');
+    }
+
+    await (this.prisma as any).schemeOfWork.delete({
+      where: { id: schemeId }
+    });
+  }
+
+  private mapSchemeToCurriculumDto(scheme: any, subject: any): CurriculumDto {
+    const weeks = scheme.weeks || [];
+    const totalWeeks = weeks.length;
+    const completedWeeks = weeks.filter((w: any) => w.isDelivered).length;
+
+    return {
+      id: scheme.id,
+      schoolId: scheme.schoolId,
+      classId: scheme.classId,
+      classLevelId: scheme.classLevelId,
+      subjectId: scheme.subjectId,
+      subject: subject?.name || 'Unknown Subject',
+      teacherId: '', // Scheme level doesn't always have a teacher yet
+      teacherName: undefined,
+      academicYear: '', // Pull from term if needed
+      termId: scheme.termId,
+      termName: undefined,
+      agoraCurriculumTemplateId: scheme.agoraCurriculumId,
+      isAgoraBased: !!scheme.agoraCurriculumId,
+      customizations: 0,
+      status: scheme.status, // Should map DRAFT, etc.
+      submittedAt: null,
+      approvedBy: scheme.approvedBy,
+      approvedAt: scheme.approvedAt,
+      rejectionReason: scheme.rejectionReason || null,
+      isActive: scheme.status === 'PUBLISHED',
+      createdAt: scheme.createdAt,
+      updatedAt: scheme.updatedAt,
+      items: weeks.map((w: any) => ({
+        id: w.id,
+        curriculumId: scheme.id,
+        weekNumber: w.weekNumber,
+        topic: w.topic,
+        subTopics: w.subTopics || [],
+        objectives: w.learningOutcomes || [], // Map outcomes to objectives
+        activities: w.suggestedActivities || [],
+        resources: w.resources || [],
+        assessment: w.assessmentType || null,
+        status: w.isDelivered ? 'COMPLETED' : 'PENDING',
+        order: w.order,
+      })),
+      totalWeeks,
+      completedWeeks,
+      progressPercentage: totalWeeks > 0 ? Math.round((completedWeeks / totalWeeks) * 100) : 0,
+    };
+  }
+
+  /**
    * Get Agora Master curricula for the library
    * Prioritizes matching via agoraSubjectId if available
    */

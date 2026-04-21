@@ -8,7 +8,8 @@ import {
     SubmissionNotificationPayload, 
     AssessmentPublishedPayload, 
     GradePublishedPayload,
-    AgoraSubjectAddedPayload
+    AgoraSubjectAddedPayload,
+    StudentReassignedPayload
 } from './notification.service';
 import { PrismaService } from '../database/prisma.service';
 
@@ -246,6 +247,29 @@ export class NotificationController {
                 try { res.write(`event: notification\ndata: ${eventData}\n\n`); }
                 catch (err) { }
             });
+        });
+    }
+
+    @OnEvent('student.reassigned')
+    handleStudentReassigned(payload: StudentReassignedPayload) {
+        const eventData = JSON.stringify({
+            type: 'STUDENT_REASSIGNED',
+            studentId: payload.studentId,
+            studentName: payload.studentName,
+            oldClassName: payload.oldClassName,
+            newClassName: payload.newClassName,
+            adminName: payload.adminName,
+            timestamp: payload.timestamp,
+        });
+
+        payload.teacherIds.forEach(profileId => {
+            const connections = this.teacherConnections.get(profileId);
+            if (connections) {
+                connections.forEach(res => {
+                    try { res.write(`event: notification\ndata: ${eventData}\n\n`); }
+                    catch (err) { }
+                });
+            }
         });
     }
 }
