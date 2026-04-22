@@ -838,6 +838,7 @@ export class ClassService {
           classData.classLevel,
           assignmentData.subject || null,
           assignmentData.isPrimary || false,
+          classData.type,
           school.name,
           classData.academicYear
         );

@@ -643,6 +643,7 @@ export class EmailService {
     classLevel: string | null,
     subject: string | null,
     isPrimary: boolean,
+    schoolType: string,
     schoolName: string,
     academicYear: string
   ): Promise<void> {
@@ -662,11 +663,21 @@ export class EmailService {
     const frontendUrl = this.getFrontendUrl();
     const loginUrl = `${frontendUrl}/auth/login`;
 
+    const roleTitle = isPrimary 
+      ? (schoolType === 'SECONDARY' ? 'Form Teacher' : 'Primary Class Teacher')
+      : (subject ? 'Subject Teacher' : 'Class Instructor');
+
+    const assignmentDescription = schoolType === 'SECONDARY' && isPrimary
+      ? 'As a <strong>Form Teacher</strong>, you are responsible for managing student welfare, attendance, and the overall administrative context of your class.'
+      : schoolType === 'SECONDARY' && !isPrimary
+      ? `You have been assigned to teach <strong>${subject}</strong>. You can now manage the curriculum, grades, and resources for this subject.`
+      : 'You can now access your class dashboard to manage students, grades, curriculum, and all class activities.';
+
     const mailOptions = {
       from: this.getFormattedFrom(),
       replyTo: this.getReplyTo(),
       to: email,
-      subject: `Class Assignment - ${schoolName}`,
+      subject: `${roleTitle} Assignment - ${schoolName}`,
       headers: this.getEmailHeaders(),
       html: `
         <!DOCTYPE html>
@@ -689,11 +700,11 @@ export class EmailService {
                 ${classLevel ? `<strong>Class Level:</strong> ${classLevel}<br>` : ''}
                 ${subject ? `<strong>Subject:</strong> ${subject}<br>` : ''}
                 <strong>Academic Year:</strong> ${academicYear}<br>
-                ${isPrimary ? '<strong>Role:</strong> Primary Class Teacher' : ''}
+                <strong>Role:</strong> ${roleTitle}
               </p>
             </div>
             <p style="color: #6b7280; font-size: 14px; margin-top: 30px;">
-              You can now access your class dashboard to manage students, grades, and class activities.
+              ${assignmentDescription}
             </p>
             <div style="text-align: center; margin: 30px 0;">
               <a href="${loginUrl}" style="background-color: #3b82f6; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: bold;">Access Dashboard</a>
