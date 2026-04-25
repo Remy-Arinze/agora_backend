@@ -35,6 +35,14 @@ This document outlines the proposed enhancements to the curriculum discovery and
 - **Solution:** Allow schools to "Publicize" their custom curricula (with admin approval) to a community-shared library.
 - **Benefit:** A school with a unique "Agro-Business" program can help other schools get started by sharing their parsed and validated content.
 
+### 6. Version Synchronisation & Notifications
+- **Problem:** When Super Admins update national standards (e.g., publishing V2 of a "Mathematics" curriculum), schools using V1 are unaware and their content becomes stale.
+- **Solution:** Track the `agoraCurriculumId` and `version` used in every generated `SchemeOfWork`.
+- **Implementation:**
+    - **Update Engine**: A background job monitors for new `PUBLISHED` versions of master curricula.
+    - **Admin Dashboard Notification**: School Admins see a "Standard Update Available" alert on subjects where their current scheme is based on an older master version.
+    - **Migration Tool**: Provide a "Review & Migrate" UI that highlights the differences between the old and new standards, allowing the admin to update their scheme without losing local customizations.
+
 ## Technical Considerations
 - **Database Schema:** Minor additions to the `Subject` model and `AgoraCurriculum` model to support `masterSubjectId` and `gradeBands` (array).
 - **AI Task:** Create a background job to generate embeddings for all published curricula.

@@ -41,7 +41,7 @@ export type PrincipalRole = typeof PRINCIPAL_ROLES[number];
 export function isPrincipalRole(role: string | null | undefined): boolean {
   if (!role) return false;
   const normalizedRole = role.toLowerCase().trim();
-  return PRINCIPAL_ROLES.some(principalRole => 
+  return PRINCIPAL_ROLES.some(principalRole =>
     normalizedRole === principalRole.toLowerCase()
   );
 }

@@ -1,5 +1,5 @@
 import { Body, Controller, Post, Get, Delete, UseGuards, Request, Param, BadRequestException, Query, Res, Header } from '@nestjs/common';
-import { SkipThrottle } from '@nestjs/throttler';
+import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -23,6 +23,7 @@ import { Response } from 'express';
 @ApiTags('AI Features')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
+@Throttle({ 'heavy-ai': { limit: 10, ttl: 60000 } })
 @Controller('schools/:schoolId/ai')
 export class AiController {
     constructor(
@@ -256,7 +257,7 @@ export class AiController {
         });
 
         for (const s of students) {
-            await this.indexingService.indexStudent(s.id);
+            await this.indexingService.triggerEntitySync('student', s.id);
         }
 
         return { 

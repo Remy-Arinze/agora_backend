@@ -8,6 +8,7 @@ export interface UserWithContext extends User {
   currentSchoolId?: string | null;
   currentPublicId?: string | null;
   currentProfileId?: string | null;
+  currentRole?: string | null;
 }
 
 /**
@@ -20,5 +21,6 @@ export interface JwtPayload {
   schoolId?: string; // Current school context (for SCHOOL_ADMIN, TEACHER, STUDENT)
   publicId?: string; // Public ID used for login (for SCHOOL_ADMIN, TEACHER)
   profileId?: string; // adminId or teacherId (for SCHOOL_ADMIN, TEACHER)
+  contextRole?: string; // Specific role in school context (e.g. 'Principal')
   pwdChangedAt?: number; // Unix timestamp; if user.passwordChangedAt > this, token is invalid (session invalidation)
 }

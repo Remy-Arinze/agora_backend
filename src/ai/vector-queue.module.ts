@@ -66,6 +66,7 @@ import { VECTOR_QUEUE_NAME } from './vector.processor';
                   : undefined,
                 maxRetriesPerRequest: null,
                 connectTimeout: 15000,
+                enableAutoPipelining: true,
               },
             },
           );
@@ -85,16 +86,25 @@ import { VECTOR_QUEUE_NAME } from './vector.processor';
             host,
             port,
             password,
-            tls: tls ? {} : undefined,
+            tls: tls ? { rejectUnauthorized: false } : undefined,
             maxRetriesPerRequest: null,
             enableReadyCheck: true,
             lazyConnect: true,
+            connectTimeout: 20000,
+            autoResubscribe: true,
+            autoResendUnfulfilledCommands: true,
+            retryStrategy: (times: number) => {
+              const delay = Math.min(times * 1000, 10000);
+              logger.warn(`Redis connection lost. Retrying in ${delay}ms... (attempt ${times})`);
+              return delay;
+            },
           },
         };
       },
       inject: [ConfigService],
     }),
     BullModule.registerQueue({
+
       name: VECTOR_QUEUE_NAME,
       defaultJobOptions: {
         attempts: 5,
@@ -106,8 +116,7 @@ import { VECTOR_QUEUE_NAME } from './vector.processor';
     BullModule.registerQueue({
       name: 'curriculum-processing',
       defaultJobOptions: {
-        attempts: 3,
-        backoff: { type: 'exponential', delay: 5000 },
+        attempts: 1,        // No retries: failed jobs should not re-run and block other jobs in the queue
         removeOnComplete: { count: 100 },
         removeOnFail: { count: 200 },
       },
@@ -138,4 +147,4 @@ import { VECTOR_QUEUE_NAME } from './vector.processor';
   ],
   exports: [BullModule],
 })
-export class VectorQueueModule {}
+export class VectorQueueModule { }

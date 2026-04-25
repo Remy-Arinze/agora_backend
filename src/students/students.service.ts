@@ -16,6 +16,10 @@ import { GradesService } from '../grades/grades.service';
 import { EventService } from '../events/event.service';
 import { CloudinaryService } from '../storage/cloudinary/cloudinary.service';
 import { safeResolvePath } from '../common/utils/path-traversal';
+import { NotificationService } from '../notification/notification.service';
+
+import { ReassignStudentDto } from './dto/reassign-student.dto';
+import { isPrincipalRole } from '../schools/dto/permission.dto';
 
 @Injectable()
 export class StudentsService {
@@ -27,7 +31,8 @@ export class StudentsService {
     private readonly liveStatusService: LiveStatusService,
     private readonly gradesService: GradesService,
     private readonly eventService: EventService,
-    private readonly cloudinaryService: CloudinaryService
+    private readonly cloudinaryService: CloudinaryService,
+    private readonly notificationService: NotificationService
   ) { }
 
   async findAll(
@@ -2665,4 +2670,191 @@ export class StudentsService {
       recentGradesCount,
     };
   }
+
+  /**
+   * Reassign a student to a different class/arm
+   * Handles same-level moves freely for authorized admins
+   * Restricts cross-level moves (higher/lower) to Principal roles only
+   */
+  async reassignStudent(
+    schoolId: string,
+    studentId: string,
+    dto: ReassignStudentDto,
+    adminRole: string,
+    adminName: string
+  ): Promise<any> {
+    // 1. Find student and their current active enrollment
+    const enrollment = await this.prisma.enrollment.findFirst({
+      where: {
+        studentId,
+        schoolId,
+        isActive: true,
+      },
+      include: {
+        student: true,
+      },
+    });
+
+    if (!enrollment) {
+      throw new NotFoundException('We could not find an active enrollment record for this student in your school.');
+    }
+
+    // 2. Validate move sensitivity (Level Change)
+    const isLevelChange = enrollment.classLevel !== dto.targetClassLevel;
+    const isPrincipal = isPrincipalRole(adminRole);
+
+    if (isLevelChange && !isPrincipal) {
+      throw new ForbiddenException(
+        'Moving a student to a different grade level (e.g., JSS 1 to JSS 2) requires Principal or Head Teacher approval.'
+      );
+    }
+
+    // 3. Validate target Class/Arm
+    let targetClassId = dto.targetClassId || null;
+    let targetClassArmId = dto.targetClassArmId || null;
+
+    if (dto.targetClassArmId) {
+      const classArm = await this.prisma.classArm.findUnique({
+        where: { id: dto.targetClassArmId },
+        include: { classLevel: true },
+      });
+
+      if (!classArm || classArm.classLevel.schoolId !== schoolId) {
+        throw new BadRequestException('The selected class could not be found in your school records.');
+      }
+
+      // Validate level match if moving to specific arm
+      if (classArm.classLevel.name !== dto.targetClassLevel) {
+        throw new BadRequestException(`The selected class group (${classArm.name}) does not belong to the ${dto.targetClassLevel} level.`);
+      }
+
+      // Check capacity
+      if (classArm.capacity !== null) {
+        const currentCount = await this.prisma.enrollment.count({
+          where: {
+            classArmId: classArm.id,
+            isActive: true,
+            academicYear: dto.academicYear,
+          },
+        });
+
+        if (currentCount >= classArm.capacity) {
+          throw new BadRequestException(
+            `The class "${classArm.name}" is already at its maximum capacity of ${classArm.capacity} students.`
+          );
+        }
+      }
+      
+      targetClassArmId = classArm.id;
+    } else if (dto.targetClassLevel) {
+      // Find matching class if no arm provided (fallback/tertiary)
+      const matchingClass = await this.prisma.class.findFirst({
+        where: {
+          schoolId,
+          academicYear: dto.academicYear,
+          OR: [{ name: dto.targetClassLevel }, { classLevel: dto.targetClassLevel }],
+          isActive: true,
+        },
+      });
+      if (matchingClass) targetClassId = matchingClass.id;
+    }
+
+    // 4. Perform reassignment in transaction
+    return await this.prisma.$transaction(async (tx) => {
+      // Deactivate old enrollment
+      await tx.enrollment.update({
+        where: { id: enrollment.id },
+        data: { isActive: false },
+      });
+
+      // Create new enrollment
+      const newEnrollment = await tx.enrollment.create({
+        data: {
+          studentId: enrollment.studentId,
+          schoolId,
+          classLevel: dto.targetClassLevel,
+          academicYear: dto.academicYear,
+          classId: targetClassId,
+          classArmId: targetClassArmId,
+          termId: enrollment.termId, // Keep original term or find active
+          isActive: true,
+        },
+      });
+
+      // 5. Notify Form Teachers (Outside transaction but using result data)
+      try {
+        const student = enrollment.student;
+        const studentName = `${student.firstName} ${student.lastName}`;
+
+        // Find form teachers for both classes to notify them
+        const notifiedTeachers = await this.prisma.classTeacher.findMany({
+          where: {
+            AND: [
+              {
+                OR: [
+                  { classArmId: enrollment.classArmId }, // Moved from
+                  { classArmId: targetClassArmId },      // Moved to
+                ],
+              },
+              {
+                OR: [
+                  { isPrimary: true },
+                  { isFormTeacher: true },
+                ],
+              }
+            ]
+          },
+          select: {
+            teacherId: true,
+            classArm: {
+              select: {
+                name: true,
+                classLevel: { select: { name: true } },
+              }
+            }
+          }
+        });
+
+        const teacherIds = [...new Set(notifiedTeachers.map(t => t.teacherId))];
+
+        if (teacherIds.length > 0) {
+          // Get class names for better notification content
+          const oldClassName = enrollment.classArmId ? 
+            await this.prisma.classArm.findUnique({ 
+              where: { id: enrollment.classArmId }, 
+              include: { classLevel: true } 
+            }).then(c => c ? `${c.classLevel.name} ${c.name}` : enrollment.classLevel) : 
+            enrollment.classLevel;
+
+          const newClassName = targetClassArmId ? 
+            await this.prisma.classArm.findUnique({ 
+              where: { id: targetClassArmId }, 
+              include: { classLevel: true } 
+            }).then(c => c ? `${c.classLevel.name} ${c.name}` : dto.targetClassLevel) : 
+            dto.targetClassLevel;
+
+          this.notificationService.emitStudentReassigned({
+            schoolId,
+            studentId,
+            studentName,
+            oldClassName,
+            newClassName,
+            adminName,
+            teacherIds,
+            timestamp: new Date().toISOString(),
+          });
+        }
+      } catch (err) {
+        this.logger.error(`Failed to send reassignment notifications: ${err.message}`);
+      }
+
+      return {
+        message: 'Student reassigned successfully',
+        studentId,
+        newEnrollmentId: newEnrollment.id,
+        isLevelChange,
+      };
+    });
+  }
 }
+

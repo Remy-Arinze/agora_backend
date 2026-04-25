@@ -1,6 +1,66 @@
-import { IsString, IsNotEmpty, IsOptional, IsEnum } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsEnum, IsArray, IsBoolean } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { AgoraCurriculumSourceStatus, AgoraCurriculumPublishStatus } from '@prisma/client';
+
+export class CreateAgoraSubjectDto {
+  @ApiProperty({ description: 'Name of the subject' })
+  @IsString()
+  @IsNotEmpty()
+  name: string;
+
+  @ApiProperty({ description: 'Code for the subject (unique)' })
+  @IsString()
+  @IsNotEmpty()
+  code: string;
+
+  @ApiPropertyOptional({ description: 'Category e.g., CORE, ELECTIVE' })
+  @IsOptional()
+  @IsString()
+  category?: string;
+
+  @ApiProperty({ description: 'List of school types e.g., ["PRIMARY", "SECONDARY"]' })
+  @IsArray()
+  @IsString({ each: true })
+  schoolTypes: string[];
+
+  @ApiPropertyOptional({ description: 'Brief description' })
+  @IsOptional()
+  @IsString()
+  description?: string;
+}
+
+export class UpdateAgoraSubjectDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  code?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  category?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  schoolTypes?: string[];
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+}
 
 export class CreateAgoraCurriculumSourceDto {
   @ApiProperty({ description: 'ID of the NerdcSubject' })

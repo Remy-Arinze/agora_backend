@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsOptional, IsString } from 'class-validator';
 
 // ============================================
 // Curriculum Item DTO (Enhanced with progress tracking)
@@ -36,10 +37,10 @@ export class CurriculumItemDto {
   order: number;
 
   // Customization tracking
-  @ApiProperty({ description: 'Whether modified from NERDC template' })
+  @ApiProperty({ description: 'Whether modified from Agora template' })
   isCustomized: boolean;
 
-  @ApiPropertyOptional({ description: 'Original NERDC topic (if customized)' })
+  @ApiPropertyOptional({ description: 'Original Agora topic (if customized)' })
   originalTopic: string | null;
 
   // Progress tracking
@@ -103,12 +104,12 @@ export class CurriculumDto {
   @ApiPropertyOptional({ description: 'Term name' })
   termName?: string;
 
-  // NERDC Integration
-  @ApiPropertyOptional({ description: 'NERDC curriculum template ID' })
-  nerdcCurriculumId: string | null;
+  // Agora Template Integration
+  @ApiPropertyOptional({ description: 'Agora curriculum template ID' })
+  agoraCurriculumTemplateId: string | null;
 
-  @ApiProperty({ description: 'Whether generated from NERDC template' })
-  isNerdcBased: boolean;
+  @ApiProperty({ description: 'Whether generated from Agora template' })
+  isAgoraBased: boolean;
 
   @ApiProperty({ description: 'Number of customizations made' })
   customizations: number;
@@ -172,6 +173,11 @@ export class CurriculumSummaryDto {
   @ApiProperty({ description: 'Whether subject is required in timetable' })
   isRequired: boolean;
 
+  @ApiPropertyOptional({ example: 'clx1234567890', description: 'Agora curriculum template ID to base on' })
+  @IsString()
+  @IsOptional()
+  agoraCurriculumTemplateId?: string;
+
   @ApiPropertyOptional({ description: 'Existing curriculum ID if any' })
   curriculumId: string | null;
 
@@ -193,8 +199,8 @@ export class CurriculumSummaryDto {
   @ApiProperty({ description: 'Weeks marked as completed' })
   weeksCompleted: number;
 
-  @ApiProperty({ description: 'Whether based on NERDC template' })
-  isNerdcBased: boolean;
+  @ApiProperty({ description: 'Whether based on Agora template' })
+  isAgoraBased: boolean;
 
   @ApiProperty({ description: 'Periods per week from timetable' })
   periodsPerWeek: number;

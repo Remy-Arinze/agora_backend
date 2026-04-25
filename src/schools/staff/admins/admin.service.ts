@@ -83,8 +83,8 @@ export class AdminService {
       }
 
       const requestingRole = (requestingAdmin.role || '').toLowerCase().trim();
-      if (requestingRole !== 'school_owner') {
-        throw new ForbiddenException('Only the school owner can add staff with principal-level roles');
+      if (!isPrincipalRole(requestingRole)) {
+        throw new ForbiddenException('Only principal-level administrators can assign principal-level roles');
       }
 
       await this.staffValidator.validatePrincipalRole(school.id, sanitizedRole);
@@ -252,6 +252,16 @@ export class AdminService {
       throw new BadRequestException('Administrator not found in this school');
     }
 
+    // PREVENT UNAUTHORIZED MODIFICATION OF PRINCIPAL ACCOUNTS
+    if (isPrincipalRole(admin.role)) {
+      const requestingAdmin = await this.prisma.schoolAdmin.findFirst({
+        where: { userId: requestingUser.id, schoolId: school.id },
+      });
+      if (!requestingAdmin || !isPrincipalRole(requestingAdmin.role)) {
+        throw new ForbiddenException('Only principal-level administrators can modify principal accounts');
+      }
+    }
+
     // Validate staff data if provided
     if (updateData.firstName || updateData.lastName || updateData.phone || updateData.role) {
       this.staffValidator.validateStaffData({
@@ -278,8 +288,8 @@ export class AdminService {
         }
 
         const requestingRole = (requestingAdmin.role || '').toLowerCase().trim();
-        if (requestingRole !== 'school_owner') {
-          throw new ForbiddenException('Only the school owner can assign principal-level roles');
+        if (!isPrincipalRole(requestingRole)) {
+          throw new ForbiddenException('Only principal-level administrators can assign principal-level roles');
         }
 
         // Check if another principal role exists (excluding current admin)
@@ -571,8 +581,8 @@ export class AdminService {
         where: { userId: requestingUser.id, schoolId: school.id },
       });
 
-      if (!requestingAdmin || (requestingAdmin.role || '').toLowerCase().trim() !== 'school_owner') {
-        throw new ForbiddenException('Only the school owner can assign a principal-level role');
+      if (!requestingAdmin || !isPrincipalRole(requestingAdmin.role)) {
+        throw new ForbiddenException('Only principal-level administrators can assign a principal-level role');
       }
 
       await this.staffValidator.validatePrincipalRole(school.id, role);

@@ -1,5 +1,6 @@
 import {
   Controller,
+  Get,
   Post,
   Body,
   HttpCode,
@@ -82,7 +83,7 @@ export class AuthController {
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  @Throttle({ standard: { ttl: 60000, limit: 5 } }) // 5 login attempts per minute
+  @Throttle({ standard: { ttl: 60000, limit: 30 } }) // 30 login attempts per minute - more generous for dev/testing
   @ApiOperation({ summary: 'Login with email/publicId and password - requires OTP verification' })
   @ApiBody({ type: LoginDto })
   @ApiResponse({
@@ -93,12 +94,15 @@ export class AuthController {
   @ApiResponse({ status: 401, description: 'Invalid credentials' })
   @ApiResponse({ status: 429, description: 'Too many login attempts. Please try again later.' })
   async login(
+    @Req() req: Request,
     @Body() loginDto: LoginDto,
   ): Promise<ResponseDto<LoginResponseDto>> {
     this.logger.log(`[LOGIN] Received login request for: ${loginDto.emailOrPublicId}`);
     
     try {
-      const data = await this.authService.login(loginDto);
+      const ip = req.ip || req.headers['x-forwarded-for'] as string || 'unknown';
+      const userAgent = req.headers['user-agent'] || 'unknown';
+      const data = await this.authService.login(loginDto, ip, userAgent);
       
       // Verify that we're returning the correct response structure
       if (!data.requiresOtp || !data.sessionId) {
@@ -121,7 +125,7 @@ export class AuthController {
 
   @Post('verify-login-otp')
   @HttpCode(HttpStatus.OK)
-  @Throttle({ standard: { ttl: 60000, limit: 5 } }) // 5 OTP attempts per minute
+  @Throttle({ standard: { ttl: 60000, limit: 30 } }) // 30 OTP attempts per minute
   @ApiOperation({ summary: 'Verify login OTP and complete authentication' })
   @ApiBody({ type: VerifyLoginOtpDto })
   @ApiResponse({
@@ -160,7 +164,7 @@ export class AuthController {
 
   @Post('verify-otp')
   @HttpCode(HttpStatus.OK)
-  @Throttle({ standard: { ttl: 60000, limit: 5 } }) // 5 OTP attempts per minute
+  @Throttle({ standard: { ttl: 60000, limit: 30 } }) // 30 OTP attempts per minute
   @ApiOperation({ summary: 'Verify OTP and activate shadow parent account' })
   @ApiBody({ type: VerifyOtpDto })
   @ApiResponse({
@@ -194,7 +198,7 @@ export class AuthController {
 
   @Post('request-password-reset')
   @HttpCode(HttpStatus.OK)
-  @Throttle({ standard: { ttl: 60000, limit: 3 } })
+  @Throttle({ standard: { ttl: 60000, limit: 10 } })
   @ApiOperation({ summary: 'Request password reset – sends OTP to email' })
   @ApiBody({ type: RequestPasswordResetDto })
   @ApiResponse({ status: 200, description: 'If an account exists, a verification code has been sent' })
@@ -211,7 +215,7 @@ export class AuthController {
 
   @Post('verify-reset-password')
   @HttpCode(HttpStatus.OK)
-  @Throttle({ standard: { ttl: 60000, limit: 5 } })
+  @Throttle({ standard: { ttl: 60000, limit: 10 } })
   @ApiOperation({ summary: 'Verify reset OTP and set new password (forgot-password flow)' })
   @ApiBody({ type: VerifyResetPasswordDto })
   @ApiResponse({ status: 200, description: 'Password reset successfully. All other sessions invalidated.' })
@@ -224,7 +228,7 @@ export class AuthController {
 
   @Post('reset-password')
   @HttpCode(HttpStatus.OK)
-  @Throttle({ standard: { ttl: 60000, limit: 5 } })
+  @Throttle({ standard: { ttl: 60000, limit: 10 } })
   @ApiOperation({ summary: 'Reset password using link token (e.g. admin-sent link)' })
   @ApiBody({ type: ResetPasswordDto })
   @ApiResponse({ status: 200, description: 'Password reset successfully' })
@@ -238,7 +242,7 @@ export class AuthController {
   @Post('request-change-password')
   @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
-  @Throttle({ standard: { ttl: 60000, limit: 5 } })
+  @Throttle({ standard: { ttl: 60000, limit: 10 } })
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Request password change – sends OTP to email (step 1)' })
   @ApiBody({ type: RequestChangePasswordDto })
@@ -258,7 +262,7 @@ export class AuthController {
   @Post('confirm-change-password')
   @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
-  @Throttle({ standard: { ttl: 60000, limit: 5 } })
+  @Throttle({ standard: { ttl: 60000, limit: 10 } })
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Confirm password change with OTP (step 2)' })
   @ApiBody({ type: ConfirmChangePasswordDto })
@@ -275,7 +279,7 @@ export class AuthController {
   @Post('change-password')
   @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
-  @Throttle({ standard: { ttl: 60000, limit: 5 } })
+  @Throttle({ standard: { ttl: 60000, limit: 10 } })
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Change password (legacy single-step; prefer request-change-password + confirm-change-password with OTP)' })
   @ApiBody({ type: ChangePasswordDto })
@@ -295,7 +299,7 @@ export class AuthController {
 
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
-  @Throttle({ standard: { ttl: 60000, limit: 30 } }) // 30 refresh requests per minute (more generous for legitimate use)
+  @Throttle({ standard: { ttl: 60000, limit: 60 } }) // 60 refresh requests per minute (more generous for legitimate use)
   @ApiOperation({
     summary: 'Refresh access token using refresh token from httpOnly cookie or body',
   })
@@ -354,6 +358,19 @@ export class AuthController {
     // Clear the refresh token cookie
     this.clearRefreshTokenCookie(res);
     return ResponseDto.ok(undefined, 'Logged out successfully');
+  }
+
+  @Get('login-sessions')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get current user login history' })
+  @ApiResponse({ status: 200, description: 'Login history retrieved successfully' })
+  async getLoginSessions(@Req() req: Request): Promise<ResponseDto<any>> {
+    const userId = (req.user as any)?.sub || (req.user as any)?.id;
+    if (!userId) throw new UnauthorizedException('User not authenticated');
+    const data = await this.authService.getLoginSessions(userId);
+    return ResponseDto.ok(data, 'Login history retrieved successfully');
   }
 
   @Post('profile/upload-image')
@@ -434,6 +451,8 @@ export class AuthController {
           `[PROFILE_IMAGE_UPLOAD] ${error.constructor.name}: ${error.message}`
         );
         throw error;
+      } else if (error.message.includes('ThrottlerException')) {
+        throw new BadRequestException('Too many requests. For security reasons, please wait a few seconds before trying again.');
       }
 
       // Log unexpected errors for debugging

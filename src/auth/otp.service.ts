@@ -58,7 +58,12 @@ export class OtpService {
   /**
    * Create a login session and send OTP to user's email
    */
-  async createLoginSession(userId: string, email: string): Promise<string> {
+  async createLoginSession(
+    userId: string, 
+    email: string,
+    ipAddress?: string,
+    userAgent?: string
+  ): Promise<string> {
     this.logger.log(`Creating login session for userId: ${userId}, email: ${email}`);
     
     try {
@@ -111,6 +116,8 @@ export class OtpService {
           sessionId,
           otpCode,
           email,
+          ipAddress,
+          userAgent,
           expiresAt,
           attempts: 0,
         },

@@ -1,7 +1,8 @@
 import { Injectable, BadRequestException, forwardRef, Inject } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { BulkImportRowDto, ImportSummaryDto } from './dto/bulk-import.dto';
-import * as XLSX from 'xlsx';
+import { Workbook } from 'exceljs';
+import { Readable } from 'stream';
 import { StudentAdmissionService } from '../students/student-admission.service';
 
 @Injectable()
@@ -64,14 +65,44 @@ export class OnboardingService {
     }
 
     // Parse Excel/CSV file
-    const workbook = XLSX.read(file.buffer, { type: 'buffer' });
-    const sheetName = workbook.SheetNames[0];
-    const worksheet = workbook.Sheets[sheetName];
-    // Parse with header row - XLSX preserves header case from CSV
-    const rows: any[] = XLSX.utils.sheet_to_json(worksheet, {
-      defval: '', // Use empty string for empty cells
-      raw: false, // Convert all values to strings for consistent handling
-    });
+    let rows: any[] = [];
+    try {
+      const workbook = new Workbook();
+      const fileExtension = file.originalname.split('.').pop()?.toLowerCase();
+      
+      if (fileExtension === 'csv') {
+        const stream = Readable.from(file.buffer);
+        await workbook.csv.read(stream);
+      } else {
+        await workbook.xlsx.load(file.buffer as any);
+      }
+      
+      const worksheet = workbook.getWorksheet(1);
+      if (worksheet) {
+        const headerRow = worksheet.getRow(1);
+        const headers: string[] = [];
+        headerRow.eachCell((cell, colNumber) => {
+          headers[colNumber] = cell.text.trim();
+        });
+
+        worksheet.eachRow((row, rowNumber) => {
+          if (rowNumber === 1) return; // Skip header
+          const rowData: any = {};
+          row.eachCell((cell, colNumber) => {
+            const header = headers[colNumber];
+            if (header) {
+              rowData[header] = cell.text.trim();
+            }
+          });
+          rows.push(rowData);
+        });
+      }
+    } catch (error) {
+      console.error('File parsing error:', error);
+      throw new BadRequestException(
+        'Failed to parse file. Please ensure it is a valid CSV or Excel file.'
+      );
+    }
 
     const summary: ImportSummaryDto = {
       totalRows: rows.length,

@@ -331,24 +331,49 @@ export class TeacherSubjectsService {
 
   /**
    * Validate if a teacher can be assigned to teach a specific subject
+   * Updated to handle both agora subjects (ID-based) and custom subjects (school-type based)
    */
   async validateTeacherCanTeachSubject(
     teacherId: string,
-    subjectName: string,
+    subjectId: string,
     schoolId: string
   ): Promise<{ valid: boolean; message?: string }> {
+    // Get the subject to determine if it's an agora subject or custom subject
+    const subject = await this.staffRepository.findSubjectById(subjectId, schoolId);
+    if (!subject) {
+      return { valid: false, message: 'Subject not found' };
+    }
+
     // Get teacher's subject competencies
     const teacherSubjects = await this.staffRepository.getTeacherSubjects(teacherId);
-    const teacherSubjectNames = teacherSubjects.map((st: any) => st.subject.name.toLowerCase());
+    
+    // Check if teacher has this exact subject
+    const hasDirectSubject = teacherSubjects.some((st: any) => st.subject.id === subjectId);
+    
+    // LOGIC UPDATE: Handle agora subjects vs custom subjects differently
+    if (subject.agoraSubjectId) {
+      // For AGORA SUBJECTS: Check if teacher has this subject OR any subject with same agora subject
+      const hasRelatedAgoraSubject = teacherSubjects.some((st: any) => st.subject.agoraSubjectId === subject.agoraSubjectId);
 
-    // Check if the subject is in teacher's competencies
-    if (!teacherSubjectNames.includes(subjectName.toLowerCase())) {
-      return {
-        valid: false,
-        message:
-          `Teacher is not qualified to teach ${subjectName}. ` +
-          `Please add this subject to the teacher's competencies first.`,
-      };
+      if (!hasDirectSubject && !hasRelatedAgoraSubject) {
+        return {
+          valid: false,
+          message:
+            `Teacher is not qualified to teach ${subject.name}. ` +
+            `Please add this subject to the teacher's competencies first.`,
+        };
+      }
+    } else {
+      // For CUSTOM SUBJECTS: Only check if teacher has this exact subject
+      // Custom subjects don't have agora mapping, so we can't auto-match related subjects
+      if (!hasDirectSubject) {
+        return {
+          valid: false,
+          message:
+            `Teacher is not qualified to teach ${subject.name}. ` +
+            `This is a custom subject. Please add it to the teacher's competencies first.`,
+        };
+      }
     }
 
     return { valid: true };

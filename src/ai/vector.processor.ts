@@ -3,6 +3,8 @@ import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { PrismaService } from '../database/prisma.service';
 import { AiService } from './ai.service';
+import { KnowledgeEntityType } from './knowledge-events.constants';
+import { MetricsService } from '../common/metrics/metrics.service';
 
 export const VECTOR_QUEUE_NAME = '{vector}';
 export const JOB_GENERATE_EMBEDDING = 'generate-embedding';
@@ -13,7 +15,7 @@ export interface GenerateEmbeddingPayload {
 }
 
 export interface IndexRecordPayload {
-  type: 'grade' | 'attendance' | 'student';
+  type: KnowledgeEntityType;
   id: string;
 }
 
@@ -23,7 +25,7 @@ export interface IndexRecordPayload {
  * Retries with backoff on OpenAI rate limits.
  */
 @Processor(VECTOR_QUEUE_NAME, {
-  concurrency: 2,
+  concurrency: 1,
 })
 export class VectorProcessor extends WorkerHost {
   private readonly logger = new Logger(VectorProcessor.name);
@@ -31,17 +33,29 @@ export class VectorProcessor extends WorkerHost {
   constructor(
     private readonly prisma: PrismaService,
     private readonly aiService: AiService,
+    private readonly metricsService: MetricsService,
   ) {
     super();
   }
 
   async process(job: Job<any, void, string>): Promise<void> {
-    if (job.name === JOB_GENERATE_EMBEDDING) {
-      await this.processGenerateEmbedding(job as Job<GenerateEmbeddingPayload, void, string>);
-    } else if (job.name === JOB_INDEX_RECORD) {
-      await this.processIndexRecord(job as Job<IndexRecordPayload, void, string>);
-    } else {
-      this.logger.warn(`Unknown job name: ${job.name}`);
+    const startTime = Date.now();
+    try {
+      if (job.name === JOB_GENERATE_EMBEDDING) {
+        await this.processGenerateEmbedding(job as Job<GenerateEmbeddingPayload, void, string>);
+      } else if (job.name === JOB_INDEX_RECORD) {
+        await this.processIndexRecord(job as Job<IndexRecordPayload, void, string>);
+      } else {
+        this.logger.warn(`Unknown job name: ${job.name}`);
+      }
+
+      const durationSec = (Date.now() - startTime) / 1000;
+      this.metricsService.bullmqJobsCompletedTotal.inc({ queue: VECTOR_QUEUE_NAME, job_name: job.name });
+      this.metricsService.bullmqJobDurationSeconds.observe({ queue: VECTOR_QUEUE_NAME, job_name: job.name }, durationSec);
+
+    } catch (error) {
+      this.metricsService.bullmqJobsFailedTotal.inc({ queue: VECTOR_QUEUE_NAME, job_name: job.name });
+      throw error;
     }
   }
 
@@ -98,10 +112,21 @@ export class VectorProcessor extends WorkerHost {
         await this.indexAttendance(id);
       } else if (type === 'student') {
         await this.indexStudent(id);
+      } else if (type === 'teacher') {
+        await this.indexTeacher(id);
+      } else if (type === 'class') {
+        await this.indexClass(id);
+      } else if (type === 'assessment') {
+        await this.indexAssessment(id);
+      } else if (type === 'school') {
+        await this.indexSchool(id);
       }
     } catch (error: any) {
       this.logger.error(`Failed to index ${type} ${id}: ${error?.message}`);
       throw error;
+    } finally {
+      // Cooldown to prevent connection saturation
+      await new Promise(resolve => setTimeout(resolve, 1000));
     }
   }
 
@@ -222,6 +247,208 @@ Admitted: ${enr.createdAt.toLocaleDateString()}`.trim();
     }
   }
 
+  private async indexTeacher(teacherId: string) {
+    const teacher = await this.prisma.teacher.findUnique({
+      where: { id: teacherId },
+      include: {
+        school: true,
+        classTeachers: {
+          include: { class: true, classArm: true, subjectRef: true }
+        }
+      }
+    });
+
+    if (!teacher) return;
+
+    const assignments = teacher.classTeachers.map(ct => {
+      const className = ct.class?.name || ct.classArm?.name || 'N/A';
+      return `- ${ct.subject || ct.subjectRef?.name || 'N/A'} for ${className}`;
+    }).join('\n');
+
+    const content = `
+      Teacher: ${teacher.firstName} ${teacher.lastName}
+      Email: ${teacher.email || 'N/A'}
+      Phone: ${teacher.phone || 'N/A'}
+      Staff ID: ${teacher.employeeId || teacher.teacherId}
+      Specialization: ${teacher.subject || 'N/A'}
+      Current Assignments:
+      ${assignments || 'No active class assignments found.'}
+    `.trim();
+
+    await this.upsertChunk(
+      teacher.schoolId,
+      `teacher_profile_${teacher.id}`,
+      content,
+      {
+        type: 'teacher_info',
+        teacherId: teacher.id,
+        timestamp: new Date().toISOString(),
+        permissions: {
+          roles: ['SUPER_ADMIN', 'SCHOOL_ADMIN', 'TEACHER'],
+          isPublic: false,
+          allowedTeacherId: teacher.id
+        }
+      }
+    );
+  }
+
+  private async indexClass(classId: string) {
+    const classData = await this.prisma.class.findUnique({
+      where: { id: classId },
+      include: {
+        curricula: {
+          include: {
+            subjectRef: true,
+            items: { orderBy: { weekNumber: 'asc' } }
+          }
+        },
+        school: true
+      }
+    });
+
+    if (!classData) return;
+
+    for (const curriculum of classData.curricula) {
+      const subjectName = curriculum.subjectRef?.name || curriculum.subject || 'N/A';
+      const chunkedItems = this.chunkArray(curriculum.items, 5);
+      
+      for (const [index, items] of chunkedItems.entries()) {
+        const curriculumText = items
+          .map(i => `Week ${i.weekNumber}: ${i.topic}. Topics: ${i.subTopics.join(', ')}. Objectives: ${i.objectives.join(', ')}`)
+          .join('\n');
+
+        const content = `
+          School: ${classData.school.name}
+          Class: ${classData.name} (${classData.classLevel})
+          Subject: ${subjectName}
+          Curriculum Plan (Part ${index + 1}):
+          ${curriculumText}
+        `.trim();
+
+        await this.upsertChunk(
+          classData.schoolId,
+          `class_curr_${classData.id}_${curriculum.id}_${index}`,
+          content,
+          { 
+            type: 'curriculum', 
+            classId: classData.id, 
+            subject: subjectName,
+            timestamp: new Date().toISOString(),
+            permissions: {
+              roles: ['SUPER_ADMIN', 'SCHOOL_ADMIN', 'TEACHER'],
+              isPublic: false,
+              allowedClassId: classData.id
+            } 
+          }
+        );
+      }
+    }
+  }
+
+  private async indexAssessment(assessmentId: string) {
+    const assessment = await this.prisma.assessment.findUnique({
+      where: { id: assessmentId },
+      include: {
+        teacher: true,
+        class: true,
+        subject: true,
+        questions: true
+      }
+    });
+
+    if (!assessment) return;
+
+    const questionsText = assessment.questions
+      .map((q, i) => `${i + 1}. ${q.text} (${q.type})`)
+      .join('\n');
+
+    const content = `
+      Teacher: ${assessment.teacher.firstName} ${assessment.teacher.lastName}
+      Subject: ${assessment.subject.name}
+      Assessment: ${assessment.title}
+      Type: ${assessment.type}
+      Grade Level: ${assessment.class?.classLevel || 'N/A'}
+      Description: ${assessment.description || 'N/A'}
+      Questions Summary:
+      ${questionsText}
+    `.trim();
+
+    await this.upsertChunk(
+      assessment.schoolId,
+      `assessment_${assessment.id}`,
+      content,
+      {
+        type: 'assessment',
+        teacherId: assessment.teacherId,
+        title: assessment.title,
+        subject: assessment.subject.name,
+        timestamp: assessment.updatedAt.toISOString(),
+        permissions: {
+          roles: ['SUPER_ADMIN', 'SCHOOL_ADMIN', 'TEACHER'],
+          isPublic: false,
+          allowedTeacherId: assessment.teacherId,
+          allowedClassId: assessment.classId
+        }
+      }
+    );
+  }
+
+  private async indexSchool(schoolId: string) {
+    const [school, classCount, teacherCount, studentCount] = await Promise.all([
+      this.prisma.school.findUnique({
+        where: { id: schoolId },
+        include: {
+          academicSessions: {
+            where: { status: 'ACTIVE' },
+            include: { terms: { where: { status: 'ACTIVE' } } }
+          }
+        }
+      }),
+      this.prisma.class.count({ where: { schoolId } }),
+      this.prisma.teacher.count({ where: { schoolId } }),
+      this.prisma.enrollment.count({ where: { schoolId } })
+    ]);
+
+    if (!school) return;
+
+    const session = school.academicSessions[0];
+    const term = session?.terms[0];
+
+    const content = `
+      School Name: ${school.name}
+      Location: ${school.address || 'N/A'}, ${school.city || 'N/A'}, ${school.state || 'N/A'}, ${school.country}
+      Contact: ${school.email || 'N/A'}, ${school.phone || 'N/A'}
+      Current Academic Session: ${session?.name || 'N/A'}
+      Current Term: ${term?.name || 'N/A'}
+      Educational Levels: ${[school.hasPrimary ? 'Primary' : '', school.hasSecondary ? 'Secondary' : '', school.hasTertiary ? 'Tertiary' : ''].filter(Boolean).join(', ')}
+      
+      SCHOOL ANALYTICS:
+      - Total Classes: ${classCount}
+      - Total Teachers: ${teacherCount}
+      - Total Enrolled Students: ${studentCount}
+    `.trim();
+
+    await this.upsertChunk(
+      schoolId,
+      `school_profile_${schoolId}`,
+      content,
+      {
+        type: 'school_info',
+        timestamp: new Date().toISOString(),
+        permissions: {
+          roles: ['SUPER_ADMIN', 'SCHOOL_ADMIN', 'TEACHER', 'STUDENT'],
+          isPublic: true
+        }
+      }
+    );
+  }
+
+  private chunkArray<T>(array: T[], size: number): T[][] {
+    return Array.from({ length: Math.ceil(array.length / size) }, (v, i) =>
+      array.slice(i * size, i * size + size)
+    );
+  }
+
   private async upsertChunk(schoolId: string, externalId: string, content: string, metadata: any) {
     if (!this.aiService.isConfigured()) return;
 
@@ -242,10 +469,6 @@ Admitted: ${enr.createdAt.toLocaleDateString()}`.trim();
         JSON.stringify(metadataWithId),
         existing.id,
       );
-      // Not queuing generate-embedding here inside process to prevent recursive queue flooding from inside the job,
-      // wait, no, actually we DO need to queue generate-embedding because this is an index-record job!
-      // I can't inject vectorQueue here since I am inside VectorProcessor. 
-      // But I can directly call createEmbedding!
       
       try {
         const embedding = await this.aiService.createEmbedding(content);
@@ -282,4 +505,3 @@ Admitted: ${enr.createdAt.toLocaleDateString()}`.trim();
     }
   }
 }
-

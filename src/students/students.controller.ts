@@ -41,6 +41,9 @@ import { ImportSummaryDto } from '../onboarding/dto/bulk-import.dto';
 import { ApiConsumes } from '@nestjs/swagger';
 import { AuthService } from '../auth/auth.service';
 import { PrismaService } from '../database/prisma.service';
+import { ReassignStudentDto } from './dto/reassign-student.dto';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { UserWithContext } from '../auth/types/user-with-context.type';
 import { Throttle } from '@nestjs/throttler';
 
 /**
@@ -319,4 +322,30 @@ export class SchoolStudentAdmissionController {
     const data = await this.studentsService.updateStudent(schoolId, studentId, updateDto);
     return ResponseDto.ok(data, 'Student profile updated successfully');
   }
+
+  @Post(':id/reassign')
+  @RequirePermission(PermissionResource.STUDENTS, PermissionType.WRITE)
+  @ApiOperation({ summary: 'Reassign student to a different class' })
+  @ApiParam({ name: 'schoolId', description: 'School ID' })
+  @ApiParam({ name: 'id', description: 'Student ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Student reassigned successfully',
+  })
+  async reassignStudent(
+    @Param('schoolId') schoolId: string,
+    @Param('id') studentId: string,
+    @Body() reassignDto: ReassignStudentDto,
+    @CurrentUser() user: UserWithContext
+  ): Promise<ResponseDto<any>> {
+    const data = await this.studentsService.reassignStudent(
+      schoolId,
+      studentId,
+      reassignDto,
+      user.currentRole || 'Administrator',
+      `${user.firstName || 'Staff'} ${user.lastName || ''}`.trim()
+    );
+    return ResponseDto.ok(data, data.message);
+  }
 }
+

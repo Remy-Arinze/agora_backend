@@ -110,6 +110,18 @@ export class SubjectDto {
   @ApiProperty({ required: false })
   classLevelName?: string;
 
+  @ApiProperty({ required: false, description: 'Stream classification like JUNIOR, SENIOR' })
+  levelStream?: string;
+
+  @ApiProperty({ required: false })
+  agoraSubjectId?: string;
+
+  @ApiProperty({ required: false })
+  category?: string;
+
+  @ApiProperty()
+  isAgoraStandard: boolean;
+
   @ApiProperty({ required: false })
   description?: string;
 
@@ -171,10 +183,29 @@ export class CreateSubjectDto {
   @IsOptional()
   classLevelId?: string;
 
+  @ApiProperty({ required: false, enum: ['JUNIOR', 'SENIOR', 'ALL'] })
+  @IsOptional()
+  @IsString()
+  levelStream?: string;
+
   @ApiProperty({ required: false })
   @IsString()
   @IsOptional()
   description?: string;
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @IsOptional()
+  agoraSubjectId?: string;
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @IsOptional()
+  category?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  isAgoraStandard?: boolean;
 }
 
 export class UpdateSubjectDto {
@@ -198,14 +229,41 @@ export class UpdateSubjectDto {
   @IsOptional()
   classLevelId?: string;
 
+  @ApiProperty({ required: false, enum: ['JUNIOR', 'SENIOR', 'ALL'] })
+  @IsOptional()
+  @IsString()
+  levelStream?: string;
+
   @ApiProperty({ required: false })
   @IsString()
   @IsOptional()
   description?: string;
 
   @ApiProperty({ required: false })
+  @IsString()
+  @IsOptional()
+  agoraSubjectId?: string;
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @IsOptional()
+  category?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  isAgoraStandard?: boolean;
+
+  @ApiProperty({ required: false })
   @IsOptional()
   isActive?: boolean;
+}
+
+export class BulkDeleteSubjectsDto {
+  @ApiProperty({ type: [String] })
+  @IsArray()
+  @IsString({ each: true })
+  @IsNotEmpty({ each: true })
+  subjectIds: string[];
 }
 
 export class AssignTeacherToSubjectDto {

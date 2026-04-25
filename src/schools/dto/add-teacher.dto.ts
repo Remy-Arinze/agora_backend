@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsEmail, IsOptional, IsBoolean, IsArray, MinLength, MaxLength } from 'class-validator';
+import { IsString, IsEmail, IsOptional, IsBoolean, IsArray, MinLength, MaxLength, IsNotEmpty } from 'class-validator';
 import { Transform } from 'class-transformer';
 import {
   sanitizeString,
@@ -10,27 +10,31 @@ import {
 
 export class AddTeacherDto {
   @ApiProperty({ description: 'Teacher first name' })
-  @IsString()
-  @MaxLength(50)
+  @IsString({ message: 'First name must be a string' })
+  @IsNotEmpty({ message: 'First name is required' })
+  @MaxLength(50, { message: 'First name cannot exceed 50 characters' })
   @Transform(({ value }) => sanitizeString(value, 50))
   firstName: string;
 
   @ApiProperty({ description: 'Teacher last name' })
-  @IsString()
-  @MaxLength(50)
+  @IsString({ message: 'Last name must be a string' })
+  @IsNotEmpty({ message: 'Last name is required' })
+  @MaxLength(50, { message: 'Last name cannot exceed 50 characters' })
   @Transform(({ value }) => sanitizeString(value, 50))
   lastName: string;
 
   @ApiProperty({ description: 'Teacher email' })
-  @IsEmail()
-  @MaxLength(255)
+  @IsEmail({}, { message: 'Please provide a valid email address' })
+  @IsNotEmpty({ message: 'Teacher email is required' })
+  @MaxLength(255, { message: 'Email cannot exceed 255 characters' })
   @Transform(({ value }) => sanitizeEmail(value) ?? value ?? '')
   email: string;
 
   @ApiProperty({ description: 'Teacher phone number' })
-  @IsString()
-  @MinLength(10)
-  @MaxLength(20)
+  @IsString({ message: 'Phone number must be a string' })
+  @IsNotEmpty({ message: 'Teacher phone number is required' })
+  @MinLength(10, { message: 'Phone number must be at least 10 characters' })
+  @MaxLength(20, { message: 'Phone number cannot exceed 20 characters' })
   @Transform(({ value }) => sanitizePhone(value) ?? '')
   phone: string;
 

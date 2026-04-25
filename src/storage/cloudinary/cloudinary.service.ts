@@ -2,6 +2,7 @@ import { Injectable, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { v2 as cloudinary } from 'cloudinary';
 import { Readable } from 'stream';
+// file-type is imported dynamically to support ESM-only package in CJS environment
 
 // Allowed file types for raw uploads (documents, spreadsheets, presentations)
 const ALLOWED_RAW_EXTENSIONS = [
@@ -164,6 +165,16 @@ export class CloudinaryService {
 
     if (!mimeType || !ALLOWED_RAW_MIMETYPES.includes(mimeType)) {
       throw new BadRequestException(`Invalid file MIME type. Please upload a valid document file.`);
+    }
+
+    // [PRODUCTION SECURITY] Validate Magic Numbers (Binary Signature)
+    // This prevents malicious users from renaming .exe files to .pdf
+    const { fileTypeFromBuffer } = await (eval('import("file-type")') as Promise<any>);
+    const typeFromBuffer = await fileTypeFromBuffer(file.buffer);
+    if (!typeFromBuffer || !ALLOWED_RAW_MIMETYPES.includes(typeFromBuffer.mime.toLowerCase())) {
+      throw new BadRequestException(
+        `File signature mismatch. The file content does not match its ${fileExtension?.toUpperCase()} extension. Possible malicious upload.`
+      );
     }
 
     // Validate Cloudinary is configured

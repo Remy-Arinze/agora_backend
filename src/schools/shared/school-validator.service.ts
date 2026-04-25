@@ -19,7 +19,7 @@ export class SchoolValidatorService {
     });
 
     if (!school) {
-      throw new BadRequestException('School not found');
+      throw new BadRequestException('The specified school could not be found.');
     }
   }
 
@@ -50,15 +50,13 @@ export class SchoolValidatorService {
     phone?: string;
   }): void {
     if (data.name && data.name.trim().length < 2) {
-      throw new BadRequestException('School name must be at least 2 characters');
+      throw new BadRequestException('School name must be at least 2 characters.');
     }
-
     if (data.email && !this.isValidEmail(data.email)) {
-      throw new BadRequestException('Invalid email format');
+      throw new BadRequestException('Please provide a valid email address.');
     }
-
     if (data.phone && !this.isValidPhone(data.phone)) {
-      throw new BadRequestException('Invalid phone format');
+      throw new BadRequestException('Please provide a valid phone number.');
     }
   }
 

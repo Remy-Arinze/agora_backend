@@ -263,7 +263,7 @@ export class GradesService {
     });
 
     // Automated Indexing: Keep the AI knowledge base updated with the latest performance
-    this.indexingService.indexStudent(grade.enrollment.studentId).catch(err => 
+    this.indexingService.triggerEntitySync('student', grade.enrollment.studentId).catch((err: Error) => 
       console.error(`[AI Indexing] Failed to update student ${grade.enrollment.studentId}:`, err)
     );
 
@@ -411,7 +411,7 @@ export class GradesService {
     });
 
     // Automated Indexing: Sync the updated performance to the knowledge base
-    this.indexingService.indexStudent(updatedGrade.enrollment.studentId).catch(err => 
+    this.indexingService.triggerEntitySync('student', updatedGrade.enrollment.studentId).catch((err: Error) => 
       console.error(`[AI Indexing] Failed to update student ${updatedGrade.enrollment.studentId}:`, err)
     );
 
@@ -496,7 +496,7 @@ export class GradesService {
     });
 
     // Automated Indexing: Refresh student data after grade removal
-    this.indexingService.indexStudent(grade.enrollment.studentId).catch(err => 
+    this.indexingService.triggerEntitySync('student', grade.enrollment.studentId).catch((err: Error) => 
       console.error(`[AI Indexing] Failed to update student ${grade.enrollment.studentId}:`, err)
     );
   }

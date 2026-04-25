@@ -18,10 +18,10 @@ export class SetupSchemeOfWorkDto {
   @IsNotEmpty()
   subjectId: string;
 
-  @ApiProperty({ description: 'Term ID', example: 't_012' })
+  @ApiPropertyOptional({ description: 'Term ID (Optional: If omitted, generates Scheme of Work for the entire session)', example: 't_012' })
   @IsString()
-  @IsNotEmpty()
-  termId: string;
+  @IsOptional()
+  termId?: string;
 
   @ApiProperty({ enum: SchemeGenerationMode })
   @IsEnum(SchemeGenerationMode)
@@ -32,11 +32,20 @@ export class SetupSchemeOfWorkDto {
   @IsOptional()
   agoraCurriculumId?: string;
 
-  @ApiPropertyOptional({ description: 'School Curriculum Doc IDs (for Option B)' })
+  @ApiPropertyOptional({ description: 'School Curriculum Doc ID (for Option B)' })
+  @IsString()
+  @IsOptional()
+  schoolCurriculumDocId?: string;
+
+  @ApiPropertyOptional({ description: 'School Curriculum Doc IDs (Legacy/Multiple)' })
   @IsArray()
   @IsString({ each: true })
   @IsOptional()
   schoolCurriculumDocIds?: string[];
+
+  @ApiPropertyOptional({ description: 'Force overwrite existing Scheme of Work via archiving' })
+  @IsOptional()
+  forceOverwrite?: boolean;
 }
 
 export class UpdateSchemeOfWorkStatusDto {

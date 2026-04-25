@@ -75,13 +75,21 @@ export class PermissionGuard implements CanActivate {
         return true; // ADMIN permission grants all access
       }
 
-      // Check for specific permission
+      // Determine hierarchical allowed permission types
+      const allowedTypes: PermissionType[] = [PermissionType.ADMIN];
+      if (requiredPermission.type === PermissionType.WRITE) {
+        allowedTypes.push(PermissionType.WRITE);
+      } else if (requiredPermission.type === PermissionType.READ) {
+        allowedTypes.push(PermissionType.WRITE, PermissionType.READ);
+      }
+
+      // Check for hierarchical permissions (e.g. if WRITE is required, user having ADMIN passes; if READ is required, user having WRITE or ADMIN passes)
       const hasPermission = await this.prisma.staffPermission.findFirst({
         where: {
           adminId: admin.id,
           permission: {
             resource: requiredPermission.resource,
-            type: requiredPermission.type,
+            type: { in: allowedTypes },
           },
         },
       });

@@ -47,6 +47,8 @@ export interface PaystackWebhookData {
   };
 }
 
+import { MetricsService } from '../common/metrics/metrics.service';
+
 /**
  * Payments Service - Handles Paystack integration for subscription payments
  */
@@ -67,7 +69,8 @@ export class PaymentsService {
   constructor(
     private readonly configService: ConfigService,
     private readonly prisma: PrismaService,
-    private readonly subscriptionsService: SubscriptionsService
+    private readonly subscriptionsService: SubscriptionsService,
+    private readonly metricsService: MetricsService,
   ) {
     this.secretKey = this.configService.get<string>('PAYSTACK_SECRET_KEY') || null;
 
@@ -261,6 +264,12 @@ export class PaymentsService {
         paidAt: new Date(),
       },
     });
+
+    // Record Metric
+    this.metricsService.businessRevenueTotal.inc(
+      { tier: metadata.tier, plan: metadata.isYearly ? 'yearly' : 'monthly' },
+      Number(payment.amount)
+    );
 
     // Handle upgrade via SubscriptionsService if possible, or directly if needed
     // Calculate end date

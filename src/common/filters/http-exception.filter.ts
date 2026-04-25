@@ -12,7 +12,6 @@ import { ModuleRef } from '@nestjs/core';
 import { ErrorsService, CreateErrorDto } from '../../operations/errors/errors.service';
 import { ErrorSeverity } from '@prisma/client';
 import * as Sentry from '@sentry/nestjs';
-import { Scope } from '@sentry/nestjs';
 
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
@@ -54,7 +53,38 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
         // Handle validation errors
         if (Array.isArray(responseObj.message)) {
-          message = responseObj.message.join(', ');
+          // Clean messages by removing property prefixes (e.g., "owner.phone: message" -> "message")
+          // and ensuring distinct messages are processed
+          const cleanedMessages = responseObj.message.map((msg: string) => {
+            if (typeof msg !== 'string') return msg;
+
+            // If the message contains a colon (NestJS default: "property: error"), take the part after it
+            if (msg.includes(': ')) {
+              return msg.split(': ')[1];
+            }
+
+            // If it starts with a property name and a dot (Nested: "owner.firstName must be..."), 
+            // try to strip the dot prefix if the resulting string matches our known formats
+            const dotIndex = msg.indexOf('.');
+            if (dotIndex > 0 && dotIndex < msg.indexOf(' ')) {
+              return msg.substring(dotIndex + 1);
+            }
+
+            return msg;
+          });
+
+          // Filter unique messages and capitalize them
+          const uniqueMessages = [...new Set(cleanedMessages)].map(m => {
+            const str = String(m);
+            return str.charAt(0).toUpperCase() + str.slice(1);
+          });
+
+          message = uniqueMessages.join('. ') + (uniqueMessages.length > 0 ? '.' : '');
+
+          // Fallback if formatting results in empty string
+          if (!message || message === '.') {
+            message = 'Validation failed. Please check your input.';
+          }
         }
 
         // Include error details if available
@@ -80,6 +110,9 @@ export class HttpExceptionFilter implements ExceptionFilter {
         message =
           'Unable to send email at this time. The email service is temporarily unavailable. Please try again later or contact support if the issue persists.';
         this.logger.error(`Email service error: ${exception.message}`, exception.stack);
+      } else if (exception.message.includes('ThrottlerException')) {
+        status = HttpStatus.TOO_MANY_REQUESTS;
+        message = 'Too many requests. For security reasons, please wait a few seconds before trying again.';
       } else {
         // Log unexpected errors
         this.logger.error(`Unexpected error: ${exception.message}`, exception.stack);
@@ -103,7 +136,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
     response.status(status).json({
       success: false,
       message,
-      error: details || (status >= 500 ? 'Internal Server Error' : 'Bad Request'),
+      error: details || (status >= 500 ? 'Internal Error' : 'Validation Error'),
       statusCode: status,
       timestamp: new Date().toISOString(),
       path: request.url,
@@ -129,7 +162,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
       // Extract schoolId from request
       let schoolId: string | undefined;
       const user = (request as any).user;
-      
+
       if (user?.currentSchoolId) {
         schoolId = user.currentSchoolId;
       } else if ((request as any).tenantId) {
@@ -150,7 +183,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
       // --- Sentry Integration ---
       // Capture the error in Sentry with full context
-      Sentry.withScope((scope) => {
+      Sentry.withScope((scope: Sentry.Scope) => {
         // Tag with school and user IDs for easier filtering
         if (schoolId) scope.setTag('schoolId', schoolId);
         if (userId) {

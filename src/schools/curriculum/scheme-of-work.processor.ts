@@ -13,6 +13,15 @@ export interface GenerateSchemePayload {
   creditsUsed: number;
 }
 
+export interface GenerateYearlySchemePayload {
+  schemeIds: string[];
+  schoolCurriculumDocIds: string[];
+  schoolId: string;
+  userId: string;
+}
+
+import { MetricsService } from '../../common/metrics/metrics.service';
+
 @Processor(CURRICULUM_PROCESSING_QUEUE, {
   concurrency: 1, // AI generation is heavy, keep it serial for now
 })
@@ -23,21 +32,38 @@ export class SchemeOfWorkProcessor extends WorkerHost {
     private readonly aiService: AiService,
     private readonly subscriptionsService: SubscriptionsService,
     private readonly prisma: PrismaService,
+    private readonly metricsService: MetricsService,
   ) {
     super();
   }
 
-  async process(job: Job<GenerateSchemePayload, void, string>): Promise<void> {
-    if (job.name !== 'generate-scheme') return;
-
-    const { schemeId, schoolId, userId, creditsUsed } = job.data;
-    this.logger.log(`Processing scheme generation: ${schemeId} for school ${schoolId}`);
+  async process(job: Job<any, void, string>): Promise<void> {
+    const startTime = Date.now();
 
     try {
-      // Logic is already implemented in AiService
-      await this.aiService.generateSchemeOfWork(schemeId);
+      if (job.name === 'generate-scheme') {
+        const { schemeId, schoolId, userId } = job.data as GenerateSchemePayload;
+        this.logger.log(`Processing scheme generation: ${schemeId} for school ${schoolId}`);
+        await this.aiService.generateSchemeOfWork(schemeId);
+      } else if (job.name === 'generate-yearly-scheme') {
+        const { schemeIds, schoolCurriculumDocIds, schoolId, userId } = job.data as GenerateYearlySchemePayload;
+        this.logger.log(`Processing YEARLY scheme generation for ${schemeIds.length} terms at school ${schoolId}`);
+        await this.aiService.generateYearlySchemeOfWork(schemeIds, schoolCurriculumDocIds);
+      } else {
+        return;
+      }
+      
+      const durationSec = (Date.now() - startTime) / 1000;
+      this.metricsService.bullmqJobsCompletedTotal.inc({ queue: CURRICULUM_PROCESSING_QUEUE, job_name: job.name });
+      this.metricsService.bullmqJobDurationSeconds.observe({ queue: CURRICULUM_PROCESSING_QUEUE, job_name: job.name }, durationSec);
+
     } catch (error) {
-      this.logger.error(`Failed to generate scheme ${schemeId}:`, error);
+      const failedId = job.name === 'generate-yearly-scheme' 
+        ? `YEARLY BATCH (${(job.data as GenerateYearlySchemePayload).schemeIds?.join(',')})`
+        : (job.data as GenerateSchemePayload).schemeId;
+
+      this.metricsService.bullmqJobsFailedTotal.inc({ queue: CURRICULUM_PROCESSING_QUEUE, job_name: job.name });
+      this.logger.error(`Failed to execute ${job.name} for identifier ${failedId}:`, error);
       
       // Check if we should refund (only on final attempt)
       // job.attemptsMade starts at 0. If attempts=3, final job.attemptsMade will be 2.

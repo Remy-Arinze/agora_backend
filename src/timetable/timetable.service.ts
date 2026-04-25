@@ -295,21 +295,33 @@ export class TimetableService {
     // Build conditions for periods where teacher is assigned
     const orConditions: any[] = [
       // Periods where teacherId is explicitly set to this teacher
+      // This covers SECONDARY timetable-based assignments and any direct teacher assignment
       { teacherId: teacher.id },
     ];
 
-    // Add conditions for each class/classArm assignment
+    // Add conditions for each class/classArm assignment based on school type
     for (const ct of teacher.classTeachers) {
-      if (ct.classArmId) {
-        // ClassArm assignment (PRIMARY/SECONDARY)
-        orConditions.push({ classArmId: ct.classArmId });
+      if (ct.classArmId && ct.classArm) {
+        const classType = ct.classArm.classLevel?.type;
+
+        if (classType === 'PRIMARY') {
+          // PRIMARY: The class teacher teaches ALL subjects in this class,
+          // so include every period for the full class timetable
+          orConditions.push({ classArmId: ct.classArmId });
+        }
+        // SECONDARY: Do NOT add classArmId here.
+        // A form teacher does NOT teach every subject in their class.
+        // Their teaching periods are already covered by the teacherId match above,
+        // because the timetable links teachers to periods directly.
       } else if (ct.classId && ct.class) {
-        // Class assignment
         if (ct.class.type === 'TERTIARY') {
+          // TERTIARY: Match by courseId
           orConditions.push({ courseId: ct.classId });
-        } else {
+        } else if (ct.class.type === 'PRIMARY') {
+          // PRIMARY (legacy Class, not ClassArm): Include all periods
           orConditions.push({ classId: ct.classId });
         }
+        // SECONDARY legacy Class — same principle: don't include all periods
       }
     }
 

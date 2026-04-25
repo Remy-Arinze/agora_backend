@@ -4,7 +4,8 @@ import { AdminService } from './admins/admin.service';
 import { TeacherService } from './teachers/teacher.service';
 import { StaffBulkImportRowDto, StaffImportSummaryDto } from '../dto/staff-bulk-import.dto';
 import { UserWithContext } from '../../auth/types/user-with-context.type';
-import * as XLSX from 'xlsx';
+import { Workbook } from 'exceljs';
+import { Readable } from 'stream';
 
 import {
   sanitizeString,
@@ -42,22 +43,38 @@ export class StaffImportService {
     }
 
     // Parse file
-    let rows: StaffBulkImportRowDto[];
+    let rows: StaffBulkImportRowDto[] = [];
     try {
+      const workbook = new Workbook();
       if (fileExtension === 'csv') {
-        // Parse CSV
-        const workbook = XLSX.read(file.buffer, { type: 'buffer' });
-        const sheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[sheetName];
-        rows = XLSX.utils.sheet_to_json(worksheet);
+        const stream = Readable.from(file.buffer);
+        await workbook.csv.read(stream);
       } else {
-        // Parse Excel
-        const workbook = XLSX.read(file.buffer, { type: 'buffer' });
-        const sheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[sheetName];
-        rows = XLSX.utils.sheet_to_json(worksheet);
+        await workbook.xlsx.load(file.buffer as any);
+      }
+      
+      const worksheet = workbook.getWorksheet(1);
+      if (worksheet) {
+        const headerRow = worksheet.getRow(1);
+        const headers: string[] = [];
+        headerRow.eachCell((cell, colNumber) => {
+          headers[colNumber] = cell.text.trim();
+        });
+
+        worksheet.eachRow((row, rowNumber) => {
+          if (rowNumber === 1) return; // Skip header
+          const rowData: any = {};
+          row.eachCell((cell, colNumber) => {
+            const header = headers[colNumber];
+            if (header) {
+              rowData[header] = cell.text.trim();
+            }
+          });
+          rows.push(rowData);
+        });
       }
     } catch (error) {
+      console.error('File parsing error:', error);
       throw new BadRequestException(
         'Failed to parse file. Please ensure it is a valid CSV or Excel file.'
       );

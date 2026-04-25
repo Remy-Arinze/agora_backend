@@ -1,7 +1,19 @@
 import { Injectable, ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { ThrottlerGuard, ThrottlerModuleOptions, ThrottlerStorage } from '@nestjs/throttler';
+import { ThrottlerGuard, ThrottlerModuleOptions, ThrottlerStorage, ThrottlerRequest, ThrottlerLimitDetail } from '@nestjs/throttler';
 import { Request, Response } from 'express';
+
+/**
+ * Enhanced ThrottlerGuard that supports user-based rate limiting
+ * 
+ * Features:
+ * - Uses user ID for authenticated users (more accurate than IP)
+ * - Falls back to IP address for unauthenticated requests
+ * - Handles proxy headers (X-Forwarded-For) correctly
+ * 
+ * Rate limit headers are added by ThrottlerHeadersInterceptor
+ */
+import { MetricsService } from '../metrics/metrics.service';
 
 /**
  * Enhanced ThrottlerGuard that supports user-based rate limiting
@@ -19,8 +31,26 @@ export class ThrottlerWithHeadersGuard extends ThrottlerGuard {
     options: ThrottlerModuleOptions,
     storage: ThrottlerStorage,
     reflector: Reflector,
+    private readonly metricsService: MetricsService,
   ) {
     super(options, storage, reflector);
+  }
+
+  /**
+   * Whitelist SUPER_ADMIN from all rate limits
+   */
+  protected async handleRequest(
+    requestProps: ThrottlerRequest
+  ): Promise<boolean> {
+    const { context } = requestProps;
+    const request = context.switchToHttp().getRequest<Request>();
+    const user = (request as any).user;
+
+    if (user?.role === 'SUPER_ADMIN') {
+      return true;
+    }
+
+    return super.handleRequest(requestProps);
   }
 
   /**
@@ -65,20 +95,20 @@ export class ThrottlerWithHeadersGuard extends ThrottlerGuard {
    */
   protected async throwThrottlingException(
     context: ExecutionContext,
-    throttlerLimitDetail: {
-      limit: number;
-      ttl: number;
-      timeToExpire: number;
-      key: string;
-      tracker: string;
-      totalHits: number;
-    },
+    throttlerLimitDetail: ThrottlerLimitDetail,
   ): Promise<void> {
     const response = context.switchToHttp().getResponse<Response>();
     
     // Add rate limit headers before throwing exception
     this.addThrottleHeaders(response, throttlerLimitDetail);
     
+    // Record metric
+    const request = context.switchToHttp().getRequest<Request>();
+    this.metricsService.throttlerRejectedRequestsTotal.inc({
+      tier: throttlerLimitDetail.key.split(':').pop() || 'unknown',
+      route: request.url,
+    });
+
     // Call parent to throw the exception
     await super.throwThrottlingException(context, throttlerLimitDetail);
   }
@@ -88,11 +118,7 @@ export class ThrottlerWithHeadersGuard extends ThrottlerGuard {
    */
   private addThrottleHeaders(
     response: Response,
-    limitDetail: {
-      limit: number;
-      ttl: number;
-      timeToExpire: number;
-    },
+    limitDetail: ThrottlerLimitDetail,
   ): void {
     const resetTime = Math.ceil(Date.now() / 1000) + Math.ceil(limitDetail.timeToExpire / 1000);
     const retryAfter = Math.ceil(limitDetail.timeToExpire / 1000);

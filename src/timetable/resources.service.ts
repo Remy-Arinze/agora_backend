@@ -534,7 +534,11 @@ export class ResourcesService {
       classLevelId: s.classLevelId,
       classLevelName: s.classLevel?.name,
       description: s.description,
+      agoraSubjectId: s.agoraSubjectId,
+      isAgoraStandard: s.isAgoraStandard,
+      category: s.category,
       isActive: s.isActive,
+      levelStream: s.levelStream,
       teachers:
         s.subjectTeachers?.map((st: any) => {
           const workload = teacherWorkloads.get(st.teacher.id);
@@ -594,6 +598,10 @@ export class ResourcesService {
         schoolType: dto.schoolType,
         classLevelId: dto.classLevelId,
         description: dto.description,
+        agoraSubjectId: dto.agoraSubjectId,
+        isAgoraStandard: dto.isAgoraStandard || false,
+        category: dto.category,
+        levelStream: dto.levelStream,
         isActive: true,
       },
       include: {
@@ -615,7 +623,11 @@ export class ResourcesService {
       classLevelId: subject.classLevelId,
       classLevelName: subject.classLevel?.name,
       description: subject.description,
+      agoraSubjectId: subject.agoraSubjectId,
+      isAgoraStandard: subject.isAgoraStandard || false,
+      category: subject.category,
       isActive: subject.isActive,
+      levelStream: subject.levelStream,
       teachers:
         subject.subjectTeachers?.map((st: any) => ({
           id: st.teacher.id,
@@ -683,7 +695,11 @@ export class ResourcesService {
         schoolType: dto.schoolType,
         classLevelId: dto.classLevelId,
         description: dto.description,
+        agoraSubjectId: dto.agoraSubjectId,
+        isAgoraStandard: dto.isAgoraStandard,
+        category: dto.category,
         isActive: dto.isActive,
+        levelStream: dto.levelStream,
       },
       include: {
         classLevel: true,
@@ -704,7 +720,11 @@ export class ResourcesService {
       classLevelId: updated.classLevelId,
       classLevelName: updated.classLevel?.name,
       description: updated.description,
+      agoraSubjectId: updated.agoraSubjectId,
+      isAgoraStandard: updated.isAgoraStandard || false,
+      category: updated.category,
       isActive: updated.isActive,
+      levelStream: updated.levelStream,
       teachers:
         updated.subjectTeachers?.map((st: any) => ({
           id: st.teacher.id,
@@ -735,13 +755,47 @@ export class ResourcesService {
 
     if (periodsCount > 0) {
       throw new BadRequestException(
-        `Cannot delete subject. It is used in ${periodsCount} timetable period(s). Please remove it from timetables first.`
+        `Cannot delete subject "${subject.name}". It is used in ${periodsCount} timetable period(s). Please remove it from timetables first.`
       );
     }
 
     await this.subjectModel.delete({
       where: { id: subjectId },
     });
+  }
+
+  async bulkDeleteSubjects(
+    schoolId: string,
+    subjectIds: string[]
+  ): Promise<{ deleted: number; message: string }> {
+    const school = await this.schoolRepository.findById(schoolId);
+    if (!school) {
+      throw new BadRequestException('School not found');
+    }
+
+    let deleted = 0;
+    const errors: string[] = [];
+
+    for (const id of subjectIds) {
+      try {
+        await this.deleteSubject(schoolId, id);
+        deleted++;
+      } catch (error: any) {
+        errors.push(error.message);
+      }
+    }
+
+    if (errors.length > 0 && deleted === 0) {
+      throw new BadRequestException(`Failed to delete any subjects: ${errors[0]}`);
+    }
+
+    return {
+      deleted,
+      message:
+        deleted === subjectIds.length
+          ? `Successfully deleted all ${deleted} subjects`
+          : `Deleted ${deleted} subjects. ${errors.length} could not be deleted because they are in use.`,
+    };
   }
 
   async assignTeacherToSubject(
@@ -837,6 +891,9 @@ export class ResourcesService {
       classLevelId: updated!.classLevelId,
       classLevelName: updated!.classLevel?.name,
       description: updated!.description,
+      agoraSubjectId: updated!.agoraSubjectId,
+      isAgoraStandard: updated!.isAgoraStandard || false,
+      category: updated!.category,
       isActive: updated!.isActive,
       teachers:
         updated!.subjectTeachers?.map((st: any) => ({
@@ -894,6 +951,9 @@ export class ResourcesService {
       classLevelId: updated!.classLevelId,
       classLevelName: updated!.classLevel?.name,
       description: updated!.description,
+      agoraSubjectId: updated!.agoraSubjectId,
+      isAgoraStandard: updated!.isAgoraStandard || false,
+      category: updated!.category,
       isActive: updated!.isActive,
       teachers:
         updated!.subjectTeachers?.map((st: any) => ({
@@ -998,8 +1058,13 @@ export class ResourcesService {
       throw new BadRequestException('School not found');
     }
 
-    const predefinedSubjects =
-      dto.schoolType === 'PRIMARY' ? this.primarySubjects : this.secondarySubjects;
+    // Fetch subjects from the global AgoraSubject bank
+    const globalSubjects = await (this.prisma as any).agoraSubject.findMany({
+      where: {
+        isActive: true,
+        schoolTypes: { has: dto.schoolType },
+      },
+    });
 
     // Get existing subjects for this school and schoolType
     const existingSubjects = await this.subjectModel.findMany({
@@ -1011,15 +1076,19 @@ export class ResourcesService {
 
     const existingNames = new Set(existingSubjects.map((s: any) => s.name.toLowerCase()));
     const existingCodes = new Set(existingSubjects.map((s: any) => s.code?.toLowerCase()));
+    const linkedAgoraIds = new Set(
+      existingSubjects.map((s: any) => s.agoraSubjectId).filter(Boolean)
+    );
 
     const createdSubjects: SubjectDto[] = [];
     let skipped = 0;
 
-    for (const subjectData of predefinedSubjects) {
-      // Skip if subject with same name or code already exists
+    for (const globalSub of globalSubjects) {
+      // Skip if subject with same name, code, or already linked ID exists
       if (
-        existingNames.has(subjectData.name.toLowerCase()) ||
-        existingCodes.has(subjectData.code.toLowerCase())
+        existingNames.has(globalSub.name.toLowerCase()) ||
+        existingCodes.has(globalSub.code.toLowerCase()) ||
+        linkedAgoraIds.has(globalSub.id)
       ) {
         skipped++;
         continue;
@@ -1027,10 +1096,13 @@ export class ResourcesService {
 
       const subject = await this.subjectModel.create({
         data: {
-          name: subjectData.name,
-          code: subjectData.code,
+          name: globalSub.name,
+          code: globalSub.code,
           schoolId: school.id,
           schoolType: dto.schoolType,
+          agoraSubjectId: globalSub.id, // Link to global bank
+          isAgoraStandard: true, // Fix: Mark as standard
+          category: globalSub.category, // Copy category
           isActive: true,
         },
       });
@@ -1038,11 +1110,14 @@ export class ResourcesService {
       createdSubjects.push({
         id: subject.id,
         name: subject.name,
-        code: subject.code,
+        code: subject.code || undefined,
         schoolId: subject.schoolId,
-        schoolType: subject.schoolType,
-        classLevelId: subject.classLevelId,
-        description: subject.description,
+        schoolType: subject.schoolType || undefined,
+        classLevelId: subject.classLevelId || undefined,
+        description: subject.description || undefined,
+        agoraSubjectId: subject.agoraSubjectId || undefined,
+        isAgoraStandard: subject.isAgoraStandard,
+        category: subject.category || undefined,
         isActive: subject.isActive,
         teachers: [],
       });

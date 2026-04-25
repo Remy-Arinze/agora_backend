@@ -15,6 +15,7 @@ import { GradesModule } from '../grades/grades.module';
 import { EventsModule } from '../events/events.module';
 import { CloudinaryModule } from '../storage/cloudinary/cloudinary.module';
 import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
+import { NotificationModule } from '../notification/notification.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
     forwardRef(() => EventsModule),
     CloudinaryModule,
     SubscriptionsModule,
+    NotificationModule,
   ],
   controllers: [
     StudentMeController,

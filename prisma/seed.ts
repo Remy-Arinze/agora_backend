@@ -13,29 +13,6 @@ function generateSchoolId(): string {
   return `AG-SCH-${uuid}`;
 }
 
-/**
- * Generate a unique principal ID
- */
-function generatePrincipalId(): string {
-  const uuid = uuidv4().replace(/-/g, '').toUpperCase();
-  return `AG-PR-${uuid}`;
-}
-
-/**
- * Generate a unique admin ID
- */
-function generateAdminId(): string {
-  const uuid = uuidv4().replace(/-/g, '').toUpperCase();
-  return `AG-AD-${uuid}`;
-}
-
-/**
- * Generate a unique teacher ID
- */
-function generateTeacherId(): string {
-  const uuid = uuidv4().replace(/-/g, '').toUpperCase();
-  return `AG-TE-${uuid}`;
-}
 
 /**
  * Generate a short alphanumeric string (6 characters)
@@ -91,13 +68,13 @@ async function main() {
   // ============================================
   // Check if user with email exists
   const existingByEmail = await prisma.user.findUnique({
-    where: { email: 'remyarinze@gmail.com' },
+    where: { email: 'agoraschoolspace@gmail.com' },
   });
 
   // Check if user with phone exists (and it's not the same user)
   const existingByPhone = await prisma.user.findFirst({
     where: {
-      phone: '+2348000000001',
+      phone: '+2347065605763',
       ...(existingByEmail ? { id: { not: existingByEmail.id } } : {}),
     },
   });
@@ -116,7 +93,7 @@ async function main() {
     superAdmin = await prisma.user.update({
       where: { id: existingByEmail.id },
       data: {
-        phone: '+2348000000001',
+        phone: '+2347065605763',
         passwordHash: hashedPassword,
         accountStatus: 'ACTIVE',
         role: 'SUPER_ADMIN',
@@ -134,8 +111,8 @@ async function main() {
     // Now create the super admin
     superAdmin = await prisma.user.create({
       data: {
-        email: 'remyarinze@gmail.com',
-        phone: '+2348000000001',
+        email: 'agoraschoolspace@gmail.com',
+        phone: '+2347065605763',
         passwordHash: hashedPassword,
         accountStatus: 'ACTIVE',
         role: 'SUPER_ADMIN',
@@ -147,8 +124,8 @@ async function main() {
     // No existing user, create new
     superAdmin = await prisma.user.create({
       data: {
-        email: 'remyarinze@gmail.com',
-        phone: '+2348000000001',
+        email: 'agoraschoolspace@gmail.com',
+        phone: '+2347065605763',
         passwordHash: hashedPassword,
         accountStatus: 'ACTIVE',
         role: 'SUPER_ADMIN',
@@ -353,7 +330,7 @@ async function main() {
   console.log('\n🎉 Seeding completed!\n');
   console.log('📋 Test Login Credentials:\n');
   console.log('Super Admin:');
-  console.log('  Email: remyarinze@gmail.com');
+  console.log('  Email: agoraschoolspace@gmail.com');
   console.log('  Name: Jeremy Arinze');
   console.log('  Password: Test1234!\n');
 }

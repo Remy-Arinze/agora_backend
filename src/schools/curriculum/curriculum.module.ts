@@ -3,6 +3,7 @@ import { DatabaseModule } from '../../database/database.module';
 import { SubscriptionsModule } from '../../subscriptions/subscriptions.module';
 import { VectorQueueModule } from '../../ai/vector-queue.module';
 import { AiModule } from '../../ai/ai.module';
+import { CloudinaryModule } from '../../storage/cloudinary/cloudinary.module';
 import { CurriculumService } from './curriculum.service';
 import { CurriculumController } from './curriculum.controller';
 import { NerdcCurriculumService } from './nerdc-curriculum.service';
@@ -16,6 +17,7 @@ import { SchemeOfWorkProcessor } from './scheme-of-work.processor';
     SubscriptionsModule,
     VectorQueueModule,
     AiModule,
+    CloudinaryModule,
   ],
   controllers: [CurriculumController],
   providers: [
@@ -27,4 +29,4 @@ import { SchemeOfWorkProcessor } from './scheme-of-work.processor';
   ],
   exports: [CurriculumService, NerdcCurriculumService],
 })
-export class CurriculumModule {}
+export class CurriculumModule { }

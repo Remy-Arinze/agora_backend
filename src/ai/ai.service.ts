@@ -1,9 +1,11 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
+import { MetricsService } from '../common/metrics/metrics.service';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../database/prisma.service';
 import { PrismaClient, Prisma, AgoraCurriculumSourceStatus, AgoraCurriculumPublishStatus, SchemeOfWorkStatus } from '@prisma/client';
 import OpenAI, { AzureOpenAI } from 'openai';
 import { Response } from 'express';
+import { DocumentExtractor } from '../common/utils/document-extractor';
 
 // ??? Interfaces ???????????????????????????????????????????????????????????????
 
@@ -103,6 +105,18 @@ export interface ParseCurriculumResult {
   }[];
 }
 
+export interface MultiGradeParseResult {
+  results: {
+    gradeLevel: string;
+    topics: {
+      topic: string;
+      subTopics: string[];
+      objectives: string[];
+      resources: string[];
+    }[];
+  }[];
+}
+
 export interface VerificationResult {
   verified: boolean;
   confidence: 'high' | 'medium' | 'low';
@@ -112,16 +126,26 @@ export interface VerificationResult {
 }
 
 export interface ConsolidateCurriculumResult {
-  topics: {
-    title: string;
+  curriculumOverview: {
     description: string;
-    subTopics: string[];
-    learningOutcomes: string[];
-    studentFriendlyOutcomes: string[];
-    suggestedActivities: string[];
-    resources: string[];
-    assessmentType: string;
-    order: number;
+    themes: string[];
+    progressionNotes: string;
+  };
+  terms: {
+    term: number;
+    termTitle: string;
+    termSummary: string;
+    topics: {
+      title: string;
+      description: string;
+      subTopics: string[];
+      learningOutcomes: string[];
+      studentFriendlyOutcomes: string[];
+      suggestedActivities: string[];
+      resources: string[];
+      assessmentType: string;
+      order: number;
+    }[];
   }[];
 }
 
@@ -210,10 +234,10 @@ const AGORA_TOOLS: Array<{ type: 'function'; function: { name: string; descripti
       parameters: {
         type: 'object',
         properties: {
-          topic: { type: 'string', description: 'The lesson topic' }, 
-          subject: { type: 'string', description: 'The academic subject' }, 
+          topic: { type: 'string', description: 'The lesson topic' },
+          subject: { type: 'string', description: 'The academic subject' },
           gradeLevel: { type: 'string', description: 'e.g., JSS 1, SS 3' },
-          objectives: { type: 'array', items: { type: 'string' } }, 
+          objectives: { type: 'array', items: { type: 'string' } },
           duration: { type: 'number', description: 'Duration in minutes' },
         },
       },
@@ -227,12 +251,12 @@ const AGORA_TOOLS: Array<{ type: 'function'; function: { name: string; descripti
       parameters: {
         type: 'object',
         properties: {
-          topic: { type: 'string', description: 'The quiz topic' }, 
-          subject: { type: 'string', description: 'The academic subject' }, 
+          topic: { type: 'string', description: 'The quiz topic' },
+          subject: { type: 'string', description: 'The academic subject' },
           gradeLevel: { type: 'string', description: 'e.g., JSS 1' },
-          questionCount: { type: 'number' }, 
-          questionTypes: { 
-            type: 'array', 
+          questionCount: { type: 'number' },
+          questionTypes: {
+            type: 'array',
             items: { type: 'string', enum: ['multiple_choice', 'true_false', 'short_answer'] },
             description: 'Types of questions to include'
           },
@@ -278,12 +302,12 @@ const AGORA_TOOLS: Array<{ type: 'function'; function: { name: string; descripti
       parameters: {
         type: 'object',
         properties: {
-          topic: { type: 'string', description: 'Assessment topic' }, 
-          subject: { type: 'string', description: 'The academic subject' }, 
+          topic: { type: 'string', description: 'Assessment topic' },
+          subject: { type: 'string', description: 'The academic subject' },
           gradeLevel: { type: 'string', description: 'e.g., SS 2' },
-          questionCount: { type: 'number' }, 
-          questionTypes: { 
-            type: 'array', 
+          questionCount: { type: 'number' },
+          questionTypes: {
+            type: 'array',
             items: { type: 'string', enum: ['multiple_choice', 'short_answer', 'essay'] },
             description: 'Types of questions to include'
           },
@@ -310,7 +334,8 @@ export class AiService {
 
   constructor(
     private readonly configService: ConfigService,
-    private readonly prisma: PrismaService
+    private readonly prisma: PrismaService,
+    private readonly metricsService: MetricsService,
   ) {
     const readOnlyUrl = this.configService.get<string>('READONLY_DATABASE_URL') || this.configService.get<string>('DATABASE_URL') || this.configService.get<string>('DB_URL');
     this.readOnlyPrisma = new PrismaClient({
@@ -396,6 +421,7 @@ export class AiService {
     if (!this.embeddingsClient) {
       throw new BadRequestException('Embeddings client is not configured.');
     }
+    const startTime = Date.now();
     try {
       const modelName = this.configService.get<string>('AZURE_OPENAI_EMBEDDIGN_MODEL_NAME')
         || this.configService.get<string>('AZURE_OPENAI_EMBEDDING_MODEL_NAME')
@@ -405,8 +431,13 @@ export class AiService {
         model: modelName,
         input: text.substring(0, 8192),
       });
+      const durationMs = Date.now() - startTime;
+      this.metricsService.recordLoisDuration(durationMs, { operation: 'create_embedding' });
+      this.metricsService.loisApiCallsTotal.inc({ operation: 'create_embedding', status: 'success' });
       return response.data[0].embedding;
     } catch (error) {
+      this.metricsService.loisApiCallsTotal.inc({ operation: 'create_embedding', status: 'failed' });
+      this.metricsService.loisErrorsTotal.inc({ error_type: 'embedding_failed' });
       this.logger.error(`Embedding failed: ${error}`);
       throw new BadRequestException('Failed to process context for search');
     }
@@ -635,10 +666,10 @@ export class AiService {
     const isNewConversation = messages.filter(m => m.role === 'user').length <= 1;
 
     const systemPrompt = `
-      Your identity: You are Lois, the Agora School Space AI Assistant assigned to ${schoolName || 'the school'}.
+      Your identity: You are Lois, the Agora Open Schools AI Assistant assigned to ${schoolName || 'the school'}.
       Introduction rule: 
       - If it is the start of a conversation, you can mention you are Lois.
-      - If the user asks for your name or who you are: Must say "I am Lois, the AI assistant for ${schoolName || 'this school'} on Agora School Space."
+      - If the user asks for your name or who you are: Must say "I am Lois, the AI assistant for ${schoolName || 'this school'} on Agora Open Schools."
       - Otherwise, do NOT start every message with a formal introduction. Just answer the user's question directly.
       
       IMPORTANT: Use the following details to answer questions about the current user and school.
@@ -713,6 +744,7 @@ export class AiService {
     schoolId?: string,
     remainingTokens: number = Infinity
   ): Promise<any> {
+    const startTime = Date.now();
     this.ensureConfigured();
 
     const { systemPrompt, userRole } = await this.getChatPrompt(messages, userId, schoolId);
@@ -747,11 +779,11 @@ export class AiService {
           }
         });
         finalConversationId = conversation.id;
-        
+
         // Send immediate ID sync to frontend
         this.sendSSE(res, {
-            event: 'conversation_id',
-            data: { conversationId: finalConversationId }
+          event: 'conversation_id',
+          data: { conversationId: finalConversationId }
         });
       } catch (err) {
         this.logger.error(`Failed to pre-create conversation: ${err}`);
@@ -819,7 +851,7 @@ export class AiService {
 
         // TOOL EXECUTION TURN
         currentMessages.push(choice.message);
-        
+
         for (const toolCall of toolCalls) {
           const functionName = toolCall.function.name;
           const functionArgs = JSON.parse(toolCall.function.arguments);
@@ -846,7 +878,7 @@ export class AiService {
             this.logger.error(`Tool execution error: ${tErr}`);
             toolResult = { error: tErr?.message || 'Tool failed' };
           }
-          
+
           const toolResultEvent = {
             toolName: functionName,
             toolDisplayName: this.getToolDisplayName(functionName),
@@ -861,7 +893,7 @@ export class AiService {
             content: JSON.stringify(toolResult),
           });
         }
-        
+
         // Loop back and let AI react to tool results
       }
 
@@ -892,17 +924,17 @@ export class AiService {
         });
       }
 
-      // Send done event
-      this.sendSSE(res, {
-        event: 'done',
-        data: {
-          conversationId: finalConversationId || '',
-          usage: totalUsage,
-        },
-      });
-
+      const durationMs = Date.now() - startTime;
+      this.metricsService.recordLoisDuration(durationMs, { operation: 'chat_stream' });
+      this.metricsService.loisApiCallsTotal.inc({ operation: 'chat_stream', status: 'success' });
+      if (totalUsage) {
+        this.metricsService.loisTokensConsumedTotal.inc({ direction: 'input' }, totalUsage.prompt_tokens);
+        this.metricsService.loisTokensConsumedTotal.inc({ direction: 'output' }, totalUsage.completion_tokens);
+      }
       return { total_tokens: (totalUsage?.total_tokens || 0) + estimatedTokens };
     } catch (error: any) {
+      this.metricsService.loisApiCallsTotal.inc({ operation: 'chat_stream', status: 'failed' });
+      this.metricsService.loisErrorsTotal.inc({ error_type: error?.name || 'unknown' });
       if (error.name !== 'AbortError') {
         this.logger.error(`SSE Chat failed: ${error}`);
         this.sendSSE(res, {
@@ -1732,6 +1764,9 @@ Return as JSON: {"questions": [{"text": "...", "type": "MULTIPLE_CHOICE | SHORT_
       });
 
       const result = JSON.parse(response.choices[0].message.content || '{}');
+      this.metricsService.loisVerificationTotal.inc({
+        result: result.verified ? 'verified' : 'rejected',
+      });
       return {
         verified: result.verified || false,
         confidence: result.confidence || 'low',
@@ -1754,8 +1789,9 @@ Return as JSON: {"questions": [{"text": "...", "type": "MULTIPLE_CHOICE | SHORT_
   /**
    * Parse a raw curriculum document or manual text into structured topics.
    * This handles the extraction of objectives, subtopics, and resources.
+   * Now intelligently supports multiple grade detection from a single document.
    */
-  async parseCurriculumDocument(sourceId: string): Promise<void> {
+  async parseCurriculumDocument(sourceId: string, onProgress?: (step: string) => Promise<void>): Promise<MultiGradeParseResult | null> {
     try {
       this.ensureConfigured();
 
@@ -1765,45 +1801,144 @@ Return as JSON: {"questions": [{"text": "...", "type": "MULTIPLE_CHOICE | SHORT_
 
       if (!source) throw new BadRequestException('Source not found');
 
-      // Simulate parsing of visual/file data if needed, or use manual content
-      let textToParse = 'No content available for AI to parse.';
-      if (source.manualContent) {
-        textToParse = JSON.stringify(source.manualContent);
-      } else if (source.fileUrl) {
-        textToParse = `[Simulated text extraction from file at ${source.fileUrl}]`;
-      }
-
-      const response = await this.openai!.chat.completions.create({
-        model: this.model,
-        messages: [
-          {
-            role: 'system',
-            content: 'You are an expert curriculum parser. Extract the topics, subtopics, learning objectives, and resources from the provided educational document.',
-          },
-          { role: 'user', content: `Extract the curriculum data from the following text:\n\n${textToParse}` },
-        ],
-        response_format: { type: 'json_object' as const },
+      // Update status to PARSING
+      await this.prisma.agoraCurriculumSource.update({
+        where: { id: sourceId },
+        data: { status: AgoraCurriculumSourceStatus.PARSING },
       });
 
-      const resultText = response.choices[0]?.message?.content || '{}';
-      const parsedData = JSON.parse(resultText) as ParseCurriculumResult;
+      let rawText = 'No content available for AI to parse.';
 
-      // Update the source with the parsed JSON payload
+      // REAL extraction logic for PDF files
+      if (source.manualContent) {
+        if (onProgress) await onProgress('Preparing manual content...');
+        rawText = JSON.stringify(source.manualContent);
+      } else if (source.fileUrl && source.fileType === 'PDF') {
+        this.logger.log(`Performing real PDF text extraction for source: ${sourceId}`);
+        if (onProgress) await onProgress('AI is extracting text from PDF (this might take a minute)...');
+        rawText = await DocumentExtractor.extractTextFromPdfUrl(source.fileUrl);
+      } else if (source.fileUrl) {
+        // Fallback for non-PDF or other types if we don't have extractors yet
+        rawText = `[Simulated text extraction from ${source.fileType} at ${source.fileUrl}]`;
+      }
+
+      // Clean text without arbitrary truncation limit
+      let cleanedText = rawText.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '').replace(/\s+/g, ' ').trim();
+      
+      // Chunk the text to prevent token limit dropouts (approx 25k tokens per chunk)
+      const MAX_CHUNK_LENGTH = 100000; 
+      const textChunks = [];
+      for (let i = 0; i < cleanedText.length; i += MAX_CHUNK_LENGTH) {
+        textChunks.push(cleanedText.substring(i, i + MAX_CHUNK_LENGTH));
+      }
+
+      this.logger.log(`Invoking AI for curriculum parsing (${textChunks.length} chunks)`);
+      if (onProgress) await onProgress('AI is organizing content into structured topics...');
+
+      const allTopics = [];
+
+      for (let i = 0; i < textChunks.length; i++) {
+        const textChunk = textChunks[i];
+        if (onProgress && textChunks.length > 1) {
+            await onProgress(`AI is parsing chunk ${i + 1} of ${textChunks.length}...`);
+        }
+
+        const response = await this.openai!.chat.completions.create({
+          model: this.model,
+          messages: [
+            {
+              role: 'system',
+              content: `You are an expert academic curriculum parser. 
+              Your goal is to extract structured topics, subtopics, learning objectives, and suggested resources from the text.
+              
+              IMPORTANT RULE:
+              You must ONLY extract the curriculum data for the target grade: ${source.gradeLevel}.
+              If the document contains information for multiple classes or grades, STRICTLY IGNORE everything except ${source.gradeLevel}.
+              Do not extract other grades if the target is ${source.gradeLevel}.
+              `,
+            },
+            { role: 'user', content: `Parse the following curriculum material:\n\n${textChunk}` },
+          ],
+          response_format: {
+            type: 'json_schema',
+            json_schema: {
+              name: 'curriculum_extraction',
+              strict: true,
+              schema: {
+                type: 'object',
+                properties: {
+                  results: {
+                    type: 'array',
+                    items: {
+                      type: 'object',
+                      properties: {
+                        gradeLevel: { type: 'string' },
+                        topics: {
+                          type: 'array',
+                          items: {
+                            type: 'object',
+                            properties: {
+                              title: { type: 'string' },
+                              subTopics: { type: 'array', items: { type: 'string' } },
+                              learningOutcomes: { type: 'array', items: { type: 'string' } },
+                              studentFriendlyOutcomes: { type: 'array', items: { type: 'string' } },
+                              suggestedActivities: { type: 'array', items: { type: 'string' } },
+                              resources: { type: 'array', items: { type: 'string' } },
+                              assessmentType: { type: 'string' }
+                            },
+                            required: ["title", "subTopics", "learningOutcomes", "studentFriendlyOutcomes", "suggestedActivities", "resources", "assessmentType"],
+                            additionalProperties: false
+                          }
+                        }
+                      },
+                      required: ["gradeLevel", "topics"],
+                      additionalProperties: false
+                    }
+                  }
+                },
+                required: ["results"],
+                additionalProperties: false
+              }
+            }
+          },
+          temperature: 0.1, // Low temperature for high precision extraction
+        });
+
+        const resultText = response.choices[0]?.message?.content || '{}';
+        const parsedData = JSON.parse(resultText) as MultiGradeParseResult;
+
+        if (parsedData.results && parsedData.results.length > 0) {
+          const primaryGradeResult = parsedData.results.find(res => res.gradeLevel === source.gradeLevel) || parsedData.results[0];
+          if (primaryGradeResult && primaryGradeResult.topics) {
+            allTopics.push(...primaryGradeResult.topics);
+          }
+        }
+      }
+
+      this.metricsService.curriculumUploadsTotal.inc({
+        file_type: source.manualContent ? 'manual' : (source.fileType || 'file'),
+        status: 'success'
+      });
+
+      if (allTopics.length === 0) {
+        throw new Error('AI returned an empty results array for the curriculum across all chunks.');
+      }
+
+      // 1. Update the ORIGINAL source with the extracted topics
       await this.prisma.agoraCurriculumSource.update({
         where: { id: sourceId },
         data: {
-          parsedData: parsedData as any,
+          parsedData: { topics: allTopics } as any,
           status: AgoraCurriculumSourceStatus.PARSED,
         },
       });
 
-      this.logger.log(`Parsed Curriculum Source [${sourceId}] successfully.`);
+      this.logger.log(`Parsed main Curriculum Source [${sourceId}] successfully using Lois. Target Grade: ${source.gradeLevel}`);
+
+      return { results: [{ gradeLevel: source.gradeLevel, topics: allTopics }] };
     } catch (error) {
-      this.logger.error(`Failed to parse curriculum source ${sourceId}:`, error);
-      await this.prisma.agoraCurriculumSource.update({
-        where: { id: sourceId },
-        data: { status: AgoraCurriculumSourceStatus.FAILED },
-      });
+      this.logger.error(`Error parsing curriculum: ${error}`);
+      throw error;
     }
   }
 
@@ -1816,6 +1951,7 @@ Return as JSON: {"questions": [{"text": "...", "type": "MULTIPLE_CHOICE | SHORT_
 
       const curriculum = await this.prisma.agoraCurriculum.findUnique({
         where: { id: curriculumId },
+        include: { subject: true }
       });
 
       if (!curriculum) return;
@@ -1825,49 +1961,176 @@ Return as JSON: {"questions": [{"text": "...", "type": "MULTIPLE_CHOICE | SHORT_
         where: { id: { in: curriculum.sourceIds } },
       });
 
-      const combinedPayloads = sources.map((s: any) => JSON.stringify(s.parsedData)).join('\n\n');
+      const subjectName = curriculum.subject?.name || 'Unknown Subject';
+      const gradeLevel = curriculum.gradeLevel;
+
+      const combinedPayloads = sources.map((s: any) => {
+        const data = typeof s.parsedData === 'string' ? JSON.parse(s.parsedData) : s.parsedData;
+        return `Source Material (as JSON):\n${JSON.stringify(data, null, 2)}`;
+      }).join('\n\n---\n\n');
 
       const response = await this.openai!.chat.completions.create({
         model: this.model,
         messages: [
           {
             role: 'system',
-            content: `You are an expert educational planner. Consolidate the multiple extracted raw curricula documents into a single, cohesive, logically ordered curriculum. Ensure you generate both formal exact "learningOutcomes" (for teachers) and simplified, empathetic "studentFriendlyOutcomes". Your response MUST match the JSON format containing a "topics" array.`,
+            content: `You are an expert educational planner for ${subjectName} (${gradeLevel}). 
+            Your task is to consolidate multiple raw curriculum source materials into a FULL ACADEMIC SESSION curriculum for the Nigerian school year.
+            
+            The Nigerian school year has 3 terms (1st, 2nd, and 3rd). 
+            Each term has approximately 13 weeks:
+            - Weeks 1-6: Academic topics
+            - Week 7: Mid-term revision/break
+            - Weeks 8-12: Academic topics
+            - Week 13: Examination week
+            
+            Produce TWO layers of output:
+            1. CURRICULUM OVERVIEW: A comprehensive session-wide strategy including:
+                - description: A detailed overview of the curriculum's scope and purpose.
+                - themes: The primary thematic units or focus areas.
+                - progressionNotes: A narrative describing how leaning progresses across Term 1, 2, and 3.
+            2. TERM SCHEMES OF WORK: For each of the 3 terms, produce a detailed week-by-week breakdown.
+
+            CRITICAL RULES:
+            1. SUBJECT INTEGRITY: You MUST ONLY produce content related to ${subjectName}.
+            2. STRUCTURE: Every term must have topics for all 13 weeks.
+            3. OBJECTIVES: Each week MUST have formal "learningOutcomes" and "studentFriendlyOutcomes".
+            4. JSON SCHEMA: Return a JSON object with:
+                - "curriculumOverview": { "description": string, "themes": string[], "progressionNotes": string }
+                - "terms": Array of 3 objects, each with:
+                    - "term": number (1, 2, or 3)
+                    - "termTitle": string
+                    - "termSummary": string
+                    - "topics": Array of 13 objects, each with: "title", "subTopics", "learningOutcomes", "studentFriendlyOutcomes", "suggestedActivities", "resources", "assessmentType".
+            `,
           },
-          { role: 'user', content: `Consolidate these parsed files into a unified structure:\n\n${combinedPayloads}` },
+          { role: 'user', content: `Consolidate these ${subjectName} (${gradeLevel}) sources into a unified full-year curriculum:\n\n${combinedPayloads}` },
         ],
-        response_format: { type: 'json_object' as const },
+        response_format: {
+          type: 'json_schema',
+          json_schema: {
+            name: 'consolidate_curriculum',
+            strict: true,
+            schema: {
+              type: 'object',
+              properties: {
+                curriculumOverview: {
+                  type: 'object',
+                  properties: {
+                    description: { type: 'string' },
+                    themes: { type: 'array', items: { type: 'string' } },
+                    progressionNotes: { type: 'string' }
+                  },
+                  required: ['description', 'themes', 'progressionNotes'],
+                  additionalProperties: false
+                },
+                terms: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      term: { type: 'number' },
+                      termTitle: { type: 'string' },
+                      termSummary: { type: 'string' },
+                      topics: {
+                        type: 'array',
+                        items: {
+                          type: 'object',
+                          properties: {
+                            title: { type: 'string' },
+                            description: { type: 'string' },
+                            subTopics: { type: 'array', items: { type: 'string' } },
+                            learningOutcomes: { type: 'array', items: { type: 'string' } },
+                            studentFriendlyOutcomes: { type: 'array', items: { type: 'string' } },
+                            suggestedActivities: { type: 'array', items: { type: 'string' } },
+                            resources: { type: 'array', items: { type: 'string' } },
+                            assessmentType: { type: 'string' },
+                            order: { type: 'number' }
+                          },
+                          required: ['title', 'description', 'subTopics', 'learningOutcomes', 'studentFriendlyOutcomes', 'suggestedActivities', 'resources', 'assessmentType', 'order'],
+                          additionalProperties: false
+                        }
+                      }
+                    },
+                    required: ['term', 'termTitle', 'termSummary', 'topics'],
+                    additionalProperties: false
+                  }
+                }
+              },
+              required: ['curriculumOverview', 'terms'],
+              additionalProperties: false
+            }
+          }
+        },
+        temperature: 0.3,
       });
 
       const resultText = response.choices[0]?.message?.content || '{}';
       const result = JSON.parse(resultText) as ConsolidateCurriculumResult;
 
-      // Create topic rows
-      if (result.topics && Array.isArray(result.topics)) {
-        await this.prisma.$transaction(
-          result.topics.map((t, index) =>
-            this.prisma.agoraCurriculumTopic.create({
-              data: {
-                curriculumId,
-                title: t.title || 'Untitled Topic',
-                description: t.description,
-                weekNumber: index + 1, // Map to weekly standard for Agora standard
-                topic: t.title, // Sync topic field for legacy
-                subTopics: t.subTopics || [],
-                learningOutcomes: t.learningOutcomes || [],
-                studentFriendlyOutcomes: t.studentFriendlyOutcomes || [],
-                suggestedActivities: t.suggestedActivities || [],
-                resources: t.resources || [],
-                assessmentType: t.assessmentType,
-                order: t.order || index + 1,
-              },
-            })
-          )
-        );
+      // 1. Update the AgoraCurriculum with the overview meta-data
+      const overview = result.curriculumOverview;
+      const formattedOverview = `
+# Description
+${overview.description || ''}
+
+# Themes
+${(overview.themes || []).map((t: string) => `- ${t}`).join('\n')}
+
+# Progression Notes
+${overview.progressionNotes || ''}
+      `.trim();
+
+      await this.prisma.agoraCurriculum.update({
+        where: { id: curriculumId },
+        data: {
+          consolidationNotes: formattedOverview
+        }
+      });
+
+      // 2. Clear existing topics for this version
+      await this.prisma.agoraCurriculumTopic.deleteMany({
+        where: { curriculumId }
+      });
+
+      // 3. Create hierarchical topic rows across all 3 terms
+      if (result.terms && Array.isArray(result.terms)) {
+        const createOps = [];
+        
+        for (const termBlock of result.terms) {
+          if (!termBlock.topics) continue;
+          
+          for (const [index, t] of termBlock.topics.entries()) {
+            createOps.push(
+              this.prisma.agoraCurriculumTopic.create({
+                data: {
+                  curriculumId,
+                  term: termBlock.term || 1,
+                  title: t.title || 'Untitled Topic',
+                  description: t.description,
+                  weekNumber: index + 1,
+                  topic: t.title, // Sync topic field for legacy
+                  subTopics: t.subTopics || [],
+                  learningOutcomes: t.learningOutcomes || [],
+                  studentFriendlyOutcomes: t.studentFriendlyOutcomes || [],
+                  suggestedActivities: t.suggestedActivities || [],
+                  resources: t.resources || [],
+                  assessmentType: t.assessmentType,
+                  order: t.order || index + 1,
+                },
+              })
+            );
+          }
+        }
+        
+        // Execute in chunks/transaction to ensure integrity
+        await this.prisma.$transaction(createOps);
       }
 
-      this.logger.log(`Consolidated Agora Curriculum [${curriculumId}] with ${result.topics?.length} topics.`);
+      this.metricsService.loisCurationTotal.inc({ status: 'success' });
+      this.logger.log(`Lois successfully consolidated Agora Curriculum [${curriculumId}] into 3 terms.`);
     } catch (error) {
+      this.metricsService.loisCurationTotal.inc({ status: 'failed' });
       this.logger.error(`Failed to consolidate curriculum ${curriculumId}:`, error);
     }
   }
@@ -1876,6 +2139,7 @@ Return as JSON: {"questions": [{"text": "...", "type": "MULTIPLE_CHOICE | SHORT_
    * Generate a 12-14 week Scheme of Work using the drafted Agora Curriculum and custom School guidelines.
    */
   async generateSchemeOfWork(schemeId: string): Promise<void> {
+    const startTime = Date.now();
     try {
       this.ensureConfigured();
 
@@ -1914,7 +2178,7 @@ Return as JSON: {"questions": [{"text": "...", "type": "MULTIPLE_CHOICE | SHORT_
         const doc = scheme.schoolCurriculum;
         if (doc) {
           this.logger.log(`Verifying source document for ${schemeId}...`);
-          
+
           let contentToVerify = '';
           if (doc.manualContent) {
             contentToVerify = JSON.stringify(doc.manualContent);
@@ -1938,7 +2202,7 @@ Return as JSON: {"questions": [{"text": "...", "type": "MULTIPLE_CHOICE | SHORT_
             });
             throw new Error(`VERIFICATION_FAILED: ${verification.reason}`);
           }
-      this.logger.log(`Verification passed for scheme ${schemeId} (Confidence: ${verification.confidence})`);
+          this.logger.log(`Verification passed for scheme ${schemeId} (Confidence: ${verification.confidence})`);
         }
       }
 
@@ -1957,7 +2221,7 @@ Return as JSON: {"questions": [{"text": "...", "type": "MULTIPLE_CHOICE | SHORT_
         generationMode: scheme.generationMode,
         agoraTopics: scheme.agoraCurriculum?.topics || [],
         customSchoolGuidance: scheme.schoolCurriculum?.parsedData || null,
-        targetWeeks: 12, 
+        targetWeeks: 12,
         subject: subjectName,
         gradeLevel: gradeName,
       };
@@ -1971,7 +2235,38 @@ Return as JSON: {"questions": [{"text": "...", "type": "MULTIPLE_CHOICE | SHORT_
           },
           { role: 'user', content: JSON.stringify(modelInput) },
         ],
-        response_format: { type: 'json_object' as const },
+        response_format: {
+          type: 'json_schema',
+          json_schema: {
+            name: 'scheme_of_work_generation',
+            strict: true,
+            schema: {
+              type: 'object',
+              properties: {
+                weeks: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      weekNumber: { type: 'number' },
+                      topic: { type: 'string' },
+                      subTopics: { type: 'array', items: { type: 'string' } },
+                      learningOutcomes: { type: 'array', items: { type: 'string' } },
+                      studentFriendlyOutcomes: { type: 'array', items: { type: 'string' } },
+                      suggestedActivities: { type: 'array', items: { type: 'string' } },
+                      resources: { type: 'array', items: { type: 'string' } },
+                      assessmentType: { type: 'string' }
+                    },
+                    required: ['weekNumber', 'topic', 'subTopics', 'learningOutcomes', 'studentFriendlyOutcomes', 'suggestedActivities', 'resources', 'assessmentType'],
+                    additionalProperties: false
+                  }
+                }
+              },
+              required: ['weeks'],
+              additionalProperties: false
+            }
+          }
+        },
       });
 
       const resultText = response.choices[0]?.message?.content || '{}';
@@ -1998,20 +2293,24 @@ Return as JSON: {"questions": [{"text": "...", "type": "MULTIPLE_CHOICE | SHORT_
 
         await (this.prisma as any).schemeOfWork.update({
           where: { id: schemeId },
-          data: { 
+          data: {
             status: SchemeOfWorkStatus.DRAFT,
             generatedAt: new Date()
           },
         });
       }
 
+      const durationSec = (Date.now() - startTime) / 1000;
+      this.metricsService.curriculumGenerationsTotal.inc({ mode: scheme.generationMode, status: 'success' });
+      this.metricsService.curriculumGenerationDurationSeconds.observe({ mode: scheme.generationMode }, durationSec);
       this.logger.log(`Generated automated Scheme of Work [${schemeId}].`);
     } catch (error) {
+      this.metricsService.curriculumGenerationsTotal.inc({ mode: 'unknown', status: 'failed' });
       this.logger.error(`Failed to generate Scheme of Work ${schemeId}:`, error);
-      
+
       // If verification failed, don't retry (BullMQ specific - handled by throwing specific error)
       if (error.message.startsWith('VERIFICATION_FAILED')) {
-        throw error; 
+        throw error;
       }
 
       if (schemeId) {
@@ -2021,6 +2320,313 @@ Return as JSON: {"questions": [{"text": "...", "type": "MULTIPLE_CHOICE | SHORT_
         });
       }
       throw error;
+    }
+  }
+
+  /**
+   * Process multiple terms of a custom scheme simultaneously using a single AI prompt.
+   * Maps the generated 3-term JSON output onto the queued SchemeOfWork records.
+   */
+  async generateYearlySchemeOfWork(schemeIds: string[], docIds: string[]): Promise<void> {
+    const startTime = Date.now();
+    try {
+      this.ensureConfigured();
+
+      // Update statuses
+      await (this.prisma as any).schemeOfWork.updateMany({
+        where: { id: { in: schemeIds } },
+        data: { status: 'GENERATING' },
+      });
+
+      const schemes = await Promise.all(
+        schemeIds.map((id) =>
+          (this.prisma as any).schemeOfWork.findUnique({
+            where: { id },
+            include: { classLevel: true, term: true, schoolCurriculum: true }
+          })
+        )
+      );
+
+      if (schemes.length === 0 || !schemes[0]) return;
+
+      const subject = await this.prisma.subject.findUnique({
+        where: { id: schemes[0].subjectId },
+      });
+
+      const subjectName = subject?.name || 'Unknown Subject';
+      const gradeName = schemes[0].classLevel?.name || 'Unknown Grade';
+
+      // Gather source guidance
+      const guidanceDocs = await (this.prisma as any).schoolCurriculumDoc.findMany({
+        where: { id: { in: docIds } }
+      });
+      
+      const customSchoolGuidance = guidanceDocs.map((doc: any) => doc.parsedData || `[Simulated content for ${doc.fileName}]`).join('\n\n');
+
+      const termNumbers = schemes.map(s => s.term.number);
+      const targetWeeksPerTerm = 13;
+
+      const modelInput = {
+        generationMode: 'SCHOOL_ONLY',
+        customSchoolGuidance,
+        termsExpected: termNumbers,
+        weeksPerTerm: targetWeeksPerTerm,
+        subject: subjectName,
+        gradeLevel: gradeName,
+      };
+
+      const response = await this.openai!.chat.completions.create({
+        model: this.model,
+        messages: [
+          {
+            role: 'system',
+            content: `You are an expert master teacher. Map the given curriculum topics across a full academic year for ${subjectName} (${gradeName}). You must split the progression across terms ${termNumbers.join(', ')}. Each term must have up to ${targetWeeksPerTerm} weeks. Group related topics logically for good progression. Output a JSON object with a "terms" array.`,
+          },
+          { role: 'user', content: JSON.stringify(modelInput) },
+        ],
+        response_format: {
+          type: 'json_schema',
+          json_schema: {
+            name: 'yearly_scheme_of_work_generation',
+            strict: true,
+            schema: {
+              type: 'object',
+              properties: {
+                terms: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      termNumber: { type: 'number' },
+                      weeks: {
+                        type: 'array',
+                        items: {
+                          type: 'object',
+                          properties: {
+                            weekNumber: { type: 'number' },
+                            topic: { type: 'string' },
+                            subTopics: { type: 'array', items: { type: 'string' } },
+                            learningOutcomes: { type: 'array', items: { type: 'string' } },
+                            studentFriendlyOutcomes: { type: 'array', items: { type: 'string' } },
+                            suggestedActivities: { type: 'array', items: { type: 'string' } },
+                            resources: { type: 'array', items: { type: 'string' } },
+                            assessmentType: { type: 'string' }
+                          },
+                          required: ['weekNumber', 'topic', 'subTopics', 'learningOutcomes', 'studentFriendlyOutcomes', 'suggestedActivities', 'resources', 'assessmentType'],
+                          additionalProperties: false
+                        }
+                      }
+                    },
+                    required: ['termNumber', 'weeks'],
+                    additionalProperties: false
+                  }
+                }
+              },
+              required: ['terms'],
+              additionalProperties: false
+            }
+          }
+        },
+      });
+
+      const resultText = response.choices[0]?.message?.content || '{}';
+      const result = JSON.parse(resultText) as any;
+
+      if (result.terms && Array.isArray(result.terms)) {
+        await this.prisma.$transaction(async (tx) => {
+          for (const termBlock of result.terms) {
+            // Find which scheme this term matches
+            const matchingScheme = schemes.find(s => s.term.number === termBlock.termNumber);
+            if (!matchingScheme || !termBlock.weeks) continue;
+
+            await Promise.all(
+              termBlock.weeks.map((w: any) =>
+                (tx as any).schemeOfWorkWeek.create({
+                  data: {
+                    schemeOfWorkId: matchingScheme.id,
+                    weekNumber: w.weekNumber,
+                    topic: w.topic,
+                    subTopics: w.subTopics || [],
+                    learningOutcomes: w.learningOutcomes || [],
+                    studentFriendlyOutcomes: w.studentFriendlyOutcomes || [],
+                    suggestedActivities: w.suggestedActivities || [],
+                    resources: w.resources || [],
+                    assessmentType: w.assessmentType,
+                  },
+                })
+              )
+            );
+
+            await (tx as any).schemeOfWork.update({
+              where: { id: matchingScheme.id },
+              data: {
+                status: 'DRAFT',
+                generatedAt: new Date(),
+              },
+            });
+          }
+        });
+      }
+
+      const durationSec = (Date.now() - startTime) / 1000;
+      this.metricsService.curriculumGenerationsTotal.inc({ mode: 'YEARLY', status: 'success' });
+      this.metricsService.curriculumGenerationDurationSeconds.observe({ mode: 'YEARLY' }, durationSec);
+      this.logger.log(`Generated YEARLY Scheme of Work for schemes: [${schemeIds.join(', ')}].`);
+
+    } catch (error) {
+      this.metricsService.curriculumGenerationsTotal.inc({ mode: 'YEARLY', status: 'failed' });
+      this.logger.error(`Failed to generate YEARLY Scheme of Work:`, error);
+      
+      await (this.prisma as any).schemeOfWork.updateMany({
+        where: { id: { in: schemeIds } },
+        data: { status: 'FAILED' },
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Intelligently scan and parse a school's uploaded curriculum document.
+   * If Lois detects multiple grades, it splits the findings into separate SchoolCurriculumDoc records.
+   */
+  async parseSchoolCurriculumDocument(docId: string): Promise<any | null> {
+    const startTime = Date.now();
+    try {
+      this.ensureConfigured();
+
+      const doc = await (this.prisma as any).schoolCurriculumDoc.findUnique({
+        where: { id: docId },
+        include: { subject: { select: { name: true } } }
+      });
+
+      if (!doc) throw new BadRequestException('School curriculum document not found');
+
+      // Update status to PARSING
+      await (this.prisma as any).schoolCurriculumDoc.update({
+        where: { id: docId },
+        data: { status: 'PARSING' },
+      });
+
+      let textToParse = 'No content available.';
+      if (doc.fileUrl && doc.fileType === 'PDF') {
+        const rawText = await DocumentExtractor.extractTextFromPdfUrl(doc.fileUrl);
+        textToParse = DocumentExtractor.prepareTextForLLM(rawText);
+      } else if (doc.manualContent) {
+        textToParse = JSON.stringify(doc.manualContent);
+      }
+
+      const prompt = `
+        As Lois, the Agora Intelligent Curriculum Architect, analyze this school's private curriculum document for the subject: ${doc.subject?.name || 'Unknown'}.
+        
+        DETECT ALL GRADES:
+        Scan the text for mentions of Nigeria's standard class levels (e.g. JSS 1, SS 1, Primary 3).
+        If the document contains sections for multiple grades, extract them separately.
+        
+        EXTRACT TOPICS:
+        For each grade found, extract the curriculum outline (topics, subtopics, etc).
+        
+        DOCUMENT TEXT:
+        ${textToParse}
+      `;
+
+      const response = await this.openai!.chat.completions.create({
+        model: this.model,
+        messages: [{ role: 'system', content: prompt }],
+        response_format: {
+          type: 'json_schema',
+          json_schema: {
+            name: 'school_curriculum_extraction',
+            strict: true,
+            schema: {
+              type: 'object',
+              properties: {
+                results: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      gradeLevel: { type: 'string' },
+                      topics: {
+                        type: 'array',
+                        items: {
+                          type: 'object',
+                          properties: {
+                            title: { type: 'string' },
+                            subTopics: { type: 'array', items: { type: 'string' } },
+                            learningOutcomes: { type: 'array', items: { type: 'string' } },
+                            studentFriendlyOutcomes: { type: 'array', items: { type: 'string' } },
+                            suggestedActivities: { type: 'array', items: { type: 'string' } },
+                            resources: { type: 'array', items: { type: 'string' } },
+                            assessmentType: { type: 'string' }
+                          },
+                          required: ['title', 'subTopics', 'learningOutcomes', 'studentFriendlyOutcomes', 'suggestedActivities', 'resources', 'assessmentType'],
+                          additionalProperties: false
+                        }
+                      }
+                    },
+                    required: ['gradeLevel', 'topics'],
+                    additionalProperties: false
+                  }
+                }
+              },
+              required: ['results'],
+              additionalProperties: false
+            }
+          }
+        },
+      });
+
+      const result = JSON.parse(response.choices[0]?.message?.content || '{}');
+      const resultsArray = result.results || [];
+      const grades = resultsArray.map((r: any) => r.gradeLevel);
+
+      if (grades.length === 0) {
+        await (this.prisma as any).schoolCurriculumDoc.update({
+          where: { id: docId },
+          data: { status: 'FAILED', parseErrors: 'No grade levels detected in document.' },
+        });
+        return null;
+      }
+
+      // Handle Splitting: If multiple grades found, create extra records
+      for (const gradeResult of resultsArray) {
+        const grade = gradeResult.gradeLevel;
+        const parsedData = { topics: gradeResult.topics || [] };
+
+        if (grade === doc.gradeLevel || resultsArray.length === 1 && doc.gradeLevel) {
+          // Update the original record
+          await (this.prisma as any).schoolCurriculumDoc.update({
+            where: { id: docId },
+            data: { status: 'COMPLETED', parsedData },
+          });
+        } else {
+          // Create a NEW record for the extra grade detected
+          await (this.prisma as any).schoolCurriculumDoc.create({
+            data: {
+              schoolId: doc.schoolId,
+              subjectId: doc.subjectId,
+              gradeLevel: grade,
+              sourceType: 'FILE_UPLOAD',
+              fileName: doc.fileName,
+              fileUrl: doc.fileUrl,
+              fileType: doc.fileType,
+              status: 'COMPLETED',
+              parsedData,
+              uploadedBy: doc.uploadedBy,
+            },
+          });
+        }
+      }
+
+      return result;
+
+    } catch (error) {
+      this.logger.error(`Error parsing school curriculum doc ${docId}:`, error);
+      await (this.prisma as any).schoolCurriculumDoc.update({
+        where: { id: docId },
+        data: { status: 'FAILED', parseErrors: error.message },
+      });
+      return null;
     }
   }
 }

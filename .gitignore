@@ -28,3 +28,7 @@ cgh.js
 
 # Prisma (optional: uncomment if you don't commit migrations)
 # prisma/migrations/
+
+# Documentation
+docs/
+
