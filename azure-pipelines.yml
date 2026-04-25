@@ -35,27 +35,10 @@ stages:
     - script: npx prisma generate --schema=prisma/schema.prisma
       displayName: 'Generate Prisma Client'
 
-    # COMMENTED OUT: Remove this temporarily to see actual TypeScript errors
-    # Uncomment only after fixing build issues if you really need it
-    # - bash: |
-    #     path="tsconfig.json"
-    #     if [ -f "$path" ]; then
-    #         node -e "
-    #             const fs = require('fs');
-    #             const tsconfig = JSON.parse(fs.readFileSync('$path'));
-    #             if (!tsconfig.compilerOptions) tsconfig.compilerOptions = {};
-    #             tsconfig.compilerOptions.strict = false;
-    #             tsconfig.compilerOptions.noImplicitAny = false;
-    #             tsconfig.compilerOptions.skipLibCheck = true;
-    #             fs.writeFileSync('$path', JSON.stringify(tsconfig, null, 2));
-    #         "
-    #         echo "Disabled strict mode in tsconfig.json"
-    #     fi
-    #   displayName: 'Disable Strict TypeScript Checks'
-
     - script: |
         echo "=== Starting NestJS Build ==="
-        npx nest build --verbose
+        echo "Running: npx nest build"
+        npx nest build
         BUILD_EXIT_CODE=$?
         
         echo ""
@@ -179,6 +162,8 @@ stages:
     - script: |
         echo "=== Archive Verification ==="
         ls -lh $(Build.ArtifactStagingDirectory)/api.zip
+        echo ""
+        echo "First 50 files in archive:"
         unzip -l $(Build.ArtifactStagingDirectory)/api.zip | head -50
       displayName: 'Verify Archive Contents'
 
