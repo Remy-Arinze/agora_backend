@@ -7,40 +7,27 @@ trigger:
 pool:
   vmImage: 'ubuntu-latest'
 
-# ────────────────────────────────────────────
-# Conditional variables: Load groups and set targets
-# ──────────────────────────────────────────────
 variables:
-  # Dev environment (dev branch)
-  - ${{ if eq(variables['Build.SourceBranchName'], 'dev') }}:
-    - group: agora-dev-rg
-    - name: azureSubscription
-      value: 'agora-current-sc'
-    - name: apiAppName
-      value: 'agora-api-dev'
-    - name: environmentName
-      value: 'Dev'
-
-  # Staging environment (staging branch)
-  - ${{ if eq(variables['Build.SourceBranchName'], 'staging') }}:
-    - group: agora-stg-rg
-    - name: azureSubscription
-      value: 'agora-current-sc-stg'
-    - name: apiAppName
-      value: 'agora-api-stg'
-    - name: environmentName
-      value: 'Staging'
+  azureSubscription: 'agora-current-sc'
+  apiAppName: 'agora-api-dev'
 
 stages:
 - stage: Backend
-  displayName: 'Deploy Backend to $(environmentName)'
+  displayName: 'Deploy Backend (API)'
   jobs:
   - job: BuildAndDeployAPI
-    displayName: 'Build & Deploy API to $(environmentName)'
     steps:
     - task: NodeTool@0
       inputs:
         versionSpec: '20.x'
+      displayName: 'Install Node.js'
+    
+    - script: |
+        echo "=== Environment Info ==="
+        echo "Node version: $(node --version)"
+        echo "NPM version: $(npm --version)"
+        echo "Working directory: $(pwd)"
+      displayName: 'Show Environment Info'
 
     - script: npm install
       displayName: 'Install Dependencies'
@@ -48,56 +35,57 @@ stages:
     - script: npx prisma generate --schema=prisma/schema.prisma
       displayName: 'Generate Prisma Client'
 
-    # 🚀 Step 1: Fix the Database Schema mismatch (subdomain error)
-    - script: |
-        echo "Applying database migrations to $(environmentName)..."
-        npx prisma migrate deploy --schema=prisma/schema.prisma
-      displayName: 'Migrate Database'
-      env:
-        DB_URL: $(DB_Url)
+    # COMMENTED OUT: Remove this temporarily to see actual TypeScript errors
+    # Uncomment only after fixing build issues if you really need it
+    # - bash: |
+    #     path="tsconfig.json"
+    #     if [ -f "$path" ]; then
+    #         node -e "
+    #             const fs = require('fs');
+    #             const tsconfig = JSON.parse(fs.readFileSync('$path'));
+    #             if (!tsconfig.compilerOptions) tsconfig.compilerOptions = {};
+    #             tsconfig.compilerOptions.strict = false;
+    #             tsconfig.compilerOptions.noImplicitAny = false;
+    #             tsconfig.compilerOptions.skipLibCheck = true;
+    #             fs.writeFileSync('$path', JSON.stringify(tsconfig, null, 2));
+    #         "
+    #         echo "Disabled strict mode in tsconfig.json"
+    #     fi
+    #   displayName: 'Disable Strict TypeScript Checks'
 
-    # 🚀 Step 2: Kill all TypeScript strictness in all config files
-    - bash: |
-        echo "Searching for all tsconfig files to disable strict mode..."
-        for f in tsconfig*.json; do
-          if [ -f "$f" ]; then
-            echo "Relieving strictness in $f"
-            node -e "
-              const fs = require('fs');
-              const path = '$f';
-              let content = fs.readFileSync(path, 'utf8');
-              // Clean comments so JSON.parse doesn't crash
-              content = content.replace(/\/\/.*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
-              const config = JSON.parse(content);
-              
-              if (!config.compilerOptions) config.compilerOptions = {};
-              
-              config.compilerOptions.strict = false;
-              config.compilerOptions.strictNullChecks = false;
-              config.compilerOptions.noImplicitAny = false;
-              config.compilerOptions.skipLibCheck = true;
-              config.compilerOptions.noEmitOnError = false;
-              
-              fs.writeFileSync(path, JSON.stringify(config, null, 2));
-            "
-          fi
-        done
-      displayName: 'Force Disable TS Strictness'
-
-    # 🚀 Step 3: Build even if there are type warnings
     - script: |
-        echo "=== DEPLOYMENT INFO ==="
-        echo "Environment: $(environmentName)"
-        echo "Target App:  $(apiAppName)"
-        echo "========================"
-        npm run build || echo "Build had warnings, checking for dist..."
+        echo "=== Starting NestJS Build ==="
+        npx nest build --verbose
+        BUILD_EXIT_CODE=$?
         
-        if [ -f "dist/main.js" ]; then
-          echo "Success: dist/main.js generated."
-        else
-          echo "##vso[task.logissue type=error]CRITICAL: dist/main.js not found!"
+        echo ""
+        echo "=== Build Exit Code: $BUILD_EXIT_CODE ==="
+        
+        if [ $BUILD_EXIT_CODE -ne 0 ]; then
+          echo "##vso[task.logissue type=error]NestJS build failed with exit code $BUILD_EXIT_CODE"
           exit 1
         fi
+        
+        echo ""
+        echo "=== Verifying Build Output ==="
+        if [ ! -d "dist" ]; then
+          echo "##vso[task.logissue type=error]dist directory was not created"
+          exit 1
+        fi
+        
+        echo "Contents of dist/:"
+        ls -lR dist/
+        
+        if [ ! -f "dist/main.js" ]; then
+          echo "##vso[task.logissue type=error]CRITICAL: dist/main.js not found"
+          echo "Available files in dist/:"
+          find dist -type f
+          exit 1
+        fi
+        
+        echo ""
+        echo "✓ Build completed successfully"
+        echo "✓ dist/main.js exists"
       displayName: 'Build NestJS'
       env:
         NODE_OPTIONS: '--max-old-space-size=4096'
@@ -108,18 +96,75 @@ stages:
     - bash: |
         ROOT=$(Build.SourcesDirectory)
         DEPLOY_DIR=$ROOT/deploy_api
-        echo "Preparing deployment package..."
+        
+        echo "=== Preparing Deployment Package ==="
+        echo "Source directory: $ROOT"
+        echo "Deployment directory: $DEPLOY_DIR"
+        
         rm -rf $DEPLOY_DIR
-        mkdir -p $DEPLOY_DIR/dist
-
-        cp $ROOT/package.json $DEPLOY_DIR/
-
-        if [ -f "$ROOT/dist/main.js" ]; then
-            cp -r $ROOT/dist/* $DEPLOY_DIR/dist/
+        mkdir -p $DEPLOY_DIR
+        
+        echo ""
+        echo "=== Copying Build Artifacts ==="
+        if [ ! -d "$ROOT/dist" ]; then
+          echo "##vso[task.logissue type=error]CRITICAL: dist directory not found in $ROOT"
+          exit 1
         fi
-
-        cp -r -L $ROOT/node_modules $DEPLOY_DIR/
-        echo "Artifact assembly complete."
+        
+        cp -r $ROOT/dist $DEPLOY_DIR/
+        echo "✓ Copied dist/"
+        
+        if [ ! -f "$ROOT/package.json" ]; then
+          echo "##vso[task.logissue type=error]CRITICAL: package.json not found"
+          exit 1
+        fi
+        
+        cp $ROOT/package.json $DEPLOY_DIR/
+        echo "✓ Copied package.json"
+        
+        echo ""
+        echo "=== Copying Production Dependencies ==="
+        if [ ! -d "$ROOT/node_modules" ]; then
+          echo "##vso[task.logissue type=error]node_modules directory not found"
+          exit 1
+        fi
+        
+        cp -r $ROOT/node_modules $DEPLOY_DIR/
+        echo "✓ Copied node_modules/"
+        
+        echo ""
+        echo "=== Copying Prisma Schema ==="
+        if [ -d "$ROOT/prisma" ]; then
+          mkdir -p $DEPLOY_DIR/prisma
+          cp -r $ROOT/prisma/* $DEPLOY_DIR/prisma/
+          echo "✓ Copied prisma/"
+        else
+          echo "⚠ No prisma directory found (may not be needed)"
+        fi
+        
+        echo ""
+        echo "=== Deployment Package Contents ==="
+        echo "Top level:"
+        ls -la $DEPLOY_DIR/
+        
+        echo ""
+        echo "dist/ contents:"
+        ls -la $DEPLOY_DIR/dist/
+        
+        echo ""
+        echo "Verifying critical files..."
+        if [ ! -f "$DEPLOY_DIR/dist/main.js" ]; then
+          echo "##vso[task.logissue type=error]CRITICAL: dist/main.js missing from deployment package"
+          exit 1
+        fi
+        
+        if [ ! -f "$DEPLOY_DIR/package.json" ]; then
+          echo "##vso[task.logissue type=error]CRITICAL: package.json missing from deployment package"
+          exit 1
+        fi
+        
+        echo ""
+        echo "✓ Deployment package assembled successfully"
       displayName: 'Assemble Deployment Package'
 
     - task: ArchiveFiles@2
@@ -129,6 +174,13 @@ stages:
         archiveType: 'zip'
         archiveFile: '$(Build.ArtifactStagingDirectory)/api.zip'
         replaceExistingArchive: true
+      displayName: 'Create Deployment Archive'
+
+    - script: |
+        echo "=== Archive Verification ==="
+        ls -lh $(Build.ArtifactStagingDirectory)/api.zip
+        unzip -l $(Build.ArtifactStagingDirectory)/api.zip | head -50
+      displayName: 'Verify Archive Contents'
 
     - task: AzureWebApp@1
       inputs:
@@ -137,3 +189,4 @@ stages:
         appName: $(apiAppName)
         package: '$(Build.ArtifactStagingDirectory)/api.zip'
         startUpCommand: 'node dist/main'
+      displayName: 'Deploy to Azure Web App'
