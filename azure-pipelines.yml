@@ -3,36 +3,30 @@ trigger:
     include:
       - dev
       - staging
-
 pool:
   vmImage: 'ubuntu-latest'
 
-# ────────────────────────────────────────────
-# Conditional variables: set targets based on branch
-# ──────────────────────────────────────────────
 variables:
-  # Dev environment (master branch)
-  ${{ if eq(variables['Build.SourceBranchName'], 'master') }}:
-    azureSubscription: 'agora-current-sc'
-    apiAppName: 'agora-api-dev'
-    environmentName: 'Dev'
-
-  # Staging environment (staging branch)
-  ${{ if eq(variables['Build.SourceBranchName'], 'staging') }}:
-    azureSubscription: 'agora-current-sc-stg'
-    apiAppName: 'agora-api-stg'
-    environmentName: 'Staging'
+  azureSubscription: 'agora-current-sc'
+  apiAppName: 'agora-api-dev'
 
 stages:
 - stage: Backend
-  displayName: 'Deploy Backend to $(environmentName)'
+  displayName: 'Deploy Backend (API)'
   jobs:
   - job: BuildAndDeployAPI
-    displayName: 'Build & Deploy API to $(environmentName)'
     steps:
     - task: NodeTool@0
       inputs:
         versionSpec: '20.x'
+      displayName: 'Install Node.js'
+    
+    - script: |
+        echo "=== Environment Info ==="
+        echo "Node version: $(node --version)"
+        echo "NPM version: $(npm --version)"
+        echo "Working directory: $(pwd)"
+      displayName: 'Show Environment Info'
 
     - script: npm install
       displayName: 'Install Dependencies'
@@ -53,15 +47,27 @@ stages:
           echo "##vso[task.logissue type=error]NestJS build failed with exit code $BUILD_EXIT_CODE"
           exit 1
         fi
-      displayName: 'Disable Strict TypeScript Checks'
-
-    - script: |
-        echo "=== DEPLOYMENT INFO ==="
-        echo "Environment: $(environmentName)"
-        echo "Target App:  $(apiAppName)"
-        echo "Branch:      $(Build.SourceBranchName)"
-        echo "========================"
-        npm run build
+        
+        echo ""
+        echo "=== Verifying Build Output ==="
+        if [ ! -d "dist" ]; then
+          echo "##vso[task.logissue type=error]dist directory was not created"
+          exit 1
+        fi
+        
+        echo "Contents of dist/:"
+        ls -lR dist/
+        
+        if [ ! -f "dist/main.js" ]; then
+          echo "##vso[task.logissue type=error]CRITICAL: dist/main.js not found"
+          echo "Available files in dist/:"
+          find dist -type f
+          exit 1
+        fi
+        
+        echo ""
+        echo "✓ Build completed successfully"
+        echo "✓ dist/main.js exists"
       displayName: 'Build NestJS'
       env:
         NODE_OPTIONS: '--max-old-space-size=4096'
@@ -72,7 +78,11 @@ stages:
     - bash: |
         ROOT=$(Build.SourcesDirectory)
         DEPLOY_DIR=$ROOT/deploy_api
-        echo "Preparing deployment package at $DEPLOY_DIR..."
+        
+        echo "=== Preparing Deployment Package ==="
+        echo "Source directory: $ROOT"
+        echo "Deployment directory: $DEPLOY_DIR"
+        
         rm -rf $DEPLOY_DIR
         mkdir -p $DEPLOY_DIR
         
@@ -134,11 +144,9 @@ stages:
           echo "##vso[task.logissue type=error]CRITICAL: package.json missing from deployment package"
           exit 1
         fi
-
-        echo "Copying node_modules..."
-        cp -r -L $ROOT/node_modules $DEPLOY_DIR/
-
-        echo "Artifact assembly complete."
+        
+        echo ""
+        echo "✓ Deployment package assembled successfully"
       displayName: 'Assemble Deployment Package'
 
     - task: ArchiveFiles@2
