@@ -1,8 +1,8 @@
 trigger:
   branches:
     include:
-      - main   
-      - staging   
+      - main      # Triggers for dev
+      - staging   # Triggers for staging
 
 pool:
   vmImage: 'ubuntu-latest'
@@ -12,12 +12,12 @@ variables:
   ${{ if eq(variables['Build.SourceBranch'], 'refs/heads/main') }}:
     azureSubscription: 'agora-current-sc'
     apiAppName: 'agora-api-dev'
-    databaseUrlVar: 'DATABASE_URL_DEV'
+    DATABASE_URL: $(DATABASE_URL_DEV)
     environmentName: 'Development'
   ${{ if eq(variables['Build.SourceBranch'], 'refs/heads/staging') }}:
     azureSubscription: 'agora-current-sc-stg'
     apiAppName: 'agora-api-stg'
-    databaseUrlVar: 'DATABASE_URL_STAGING'
+    DATABASE_URL: $(DATABASE_URL_STAGING)
     environmentName: 'Staging'
 
 stages:
@@ -55,4 +55,68 @@ stages:
         npx prisma generate --schema=prisma/schema.prisma
         
         echo "✓ Database migrated and Prisma Client updated"
-      displayName: 'Migrate Database and Update Pris
+      displayName: 'Migrate Database and Update Prisma Client'
+      env:
+        DATABASE_URL: $(DATABASE_URL)
+
+    - script: |
+        echo "=== Building NestJS Application ==="
+        npx nest build
+        
+        if [ ! -f "dist/main.js" ]; then
+          echo "##vso[task.logissue type=error]dist/main.js not found"
+          exit 1
+        fi
+        
+        echo "✓ Build successful"
+        ls -la dist/
+      displayName: 'Build NestJS'
+      env:
+        NODE_OPTIONS: '--max-old-space-size=4096'
+
+    - script: npm prune --production
+      displayName: 'Prune Dev Dependencies'
+
+    - bash: |
+        ROOT=$(Build.SourcesDirectory)
+        DEPLOY_DIR=$ROOT/deploy_api
+        
+        echo "=== Assembling Deployment Package ==="
+        rm -rf $DEPLOY_DIR
+        mkdir -p $DEPLOY_DIR
+        
+        cp -r dist $DEPLOY_DIR/
+        cp package.json $DEPLOY_DIR/
+        cp -r node_modules $DEPLOY_DIR/
+        
+        if [ -d "prisma" ]; then
+          mkdir -p $DEPLOY_DIR/prisma
+          cp -r prisma/* $DEPLOY_DIR/prisma/
+        fi
+        
+        echo "✓ Package assembled"
+        ls -la $DEPLOY_DIR/
+      displayName: 'Assemble Deployment Package'
+
+    - task: ArchiveFiles@2
+      inputs:
+        rootFolderOrFile: '$(Build.SourcesDirectory)/deploy_api'
+        includeRootFolder: false
+        archiveType: 'zip'
+        archiveFile: '$(Build.ArtifactStagingDirectory)/api.zip'
+        replaceExistingArchive: true
+      displayName: 'Create Deployment Archive'
+
+    - script: |
+        echo "=== Archive Verification ==="
+        ls -lh $(Build.ArtifactStagingDirectory)/api.zip
+      displayName: 'Verify Archive'
+
+    - task: AzureWebApp@1
+      inputs:
+        azureSubscription: $(azureSubscription)
+        appType: 'webAppLinux'
+        appName: $(apiAppName)
+        package: '$(Build.ArtifactStagingDirectory)/api.zip'
+        startUpCommand: 'node dist/main'
+      displayName: 'Deploy to $(environmentName) - $(apiAppName)'
