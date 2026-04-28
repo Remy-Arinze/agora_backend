@@ -3,12 +3,13 @@ trigger:
     include:
       - dev
       - staging
+
 pool:
   vmImage: 'ubuntu-latest'
 
 variables:
   azureSubscription: 'agora-current-sc'
-  apiAppName: 'agora-api-dev'
+  apiAppName: 'agora-api-stg'
 
 stages:
 - stage: Backend
@@ -20,54 +21,43 @@ stages:
       inputs:
         versionSpec: '20.x'
       displayName: 'Install Node.js'
-    
-    - script: |
-        echo "=== Environment Info ==="
-        echo "Node version: $(node --version)"
-        echo "NPM version: $(npm --version)"
-        echo "Working directory: $(pwd)"
-      displayName: 'Show Environment Info'
 
     - script: npm install
       displayName: 'Install Dependencies'
 
-    - script: npx prisma generate --schema=prisma/schema.prisma
-      displayName: 'Generate Prisma Client'
+    # ⭐ CRITICAL: Migrate database FIRST, then regenerate Prisma Client
+    - script: |
+        echo "=== Deploying Database Migrations ==="
+        npx prisma migrate deploy --schema=prisma/schema.prisma
+        
+        echo ""
+        echo "=== Regenerating Prisma Client with New Schema ==="
+        npx prisma generate --schema=prisma/schema.prisma
+        
+        echo "✓ Database migrated and Prisma Client updated"
+      displayName: 'Migrate Database and Update Prisma Client'
+      env:
+        DATABASE_URL: $(DATABASE_URL_STAGING)
 
     - script: |
-        echo "=== Starting NestJS Build ==="
-        echo "Running: npx nest build"
+        echo "=== Building NestJS Application ==="
         npx nest build
         BUILD_EXIT_CODE=$?
         
-        echo ""
-        echo "=== Build Exit Code: $BUILD_EXIT_CODE ==="
-        
         if [ $BUILD_EXIT_CODE -ne 0 ]; then
-          echo "##vso[task.logissue type=error]NestJS build failed with exit code $BUILD_EXIT_CODE"
+          echo "##vso[task.logissue type=error]Build failed"
           exit 1
         fi
         
         echo ""
         echo "=== Verifying Build Output ==="
-        if [ ! -d "dist" ]; then
-          echo "##vso[task.logissue type=error]dist directory was not created"
-          exit 1
-        fi
-        
-        echo "Contents of dist/:"
-        ls -lR dist/
-        
         if [ ! -f "dist/main.js" ]; then
-          echo "##vso[task.logissue type=error]CRITICAL: dist/main.js not found"
-          echo "Available files in dist/:"
-          find dist -type f
+          echo "##vso[task.logissue type=error]dist/main.js not found"
           exit 1
         fi
         
-        echo ""
-        echo "✓ Build completed successfully"
-        echo "✓ dist/main.js exists"
+        echo "✓ Build successful"
+        ls -la dist/
       displayName: 'Build NestJS'
       env:
         NODE_OPTIONS: '--max-old-space-size=4096'
@@ -79,74 +69,21 @@ stages:
         ROOT=$(Build.SourcesDirectory)
         DEPLOY_DIR=$ROOT/deploy_api
         
-        echo "=== Preparing Deployment Package ==="
-        echo "Source directory: $ROOT"
-        echo "Deployment directory: $DEPLOY_DIR"
-        
+        echo "=== Assembling Deployment Package ==="
         rm -rf $DEPLOY_DIR
         mkdir -p $DEPLOY_DIR
         
-        echo ""
-        echo "=== Copying Build Artifacts ==="
-        if [ ! -d "$ROOT/dist" ]; then
-          echo "##vso[task.logissue type=error]CRITICAL: dist directory not found in $ROOT"
-          exit 1
-        fi
+        cp -r dist $DEPLOY_DIR/
+        cp package.json $DEPLOY_DIR/
+        cp -r node_modules $DEPLOY_DIR/
         
-        cp -r $ROOT/dist $DEPLOY_DIR/
-        echo "✓ Copied dist/"
-        
-        if [ ! -f "$ROOT/package.json" ]; then
-          echo "##vso[task.logissue type=error]CRITICAL: package.json not found"
-          exit 1
-        fi
-        
-        cp $ROOT/package.json $DEPLOY_DIR/
-        echo "✓ Copied package.json"
-        
-        echo ""
-        echo "=== Copying Production Dependencies ==="
-        if [ ! -d "$ROOT/node_modules" ]; then
-          echo "##vso[task.logissue type=error]node_modules directory not found"
-          exit 1
-        fi
-        
-        cp -r $ROOT/node_modules $DEPLOY_DIR/
-        echo "✓ Copied node_modules/"
-        
-        echo ""
-        echo "=== Copying Prisma Schema ==="
-        if [ -d "$ROOT/prisma" ]; then
+        if [ -d "prisma" ]; then
           mkdir -p $DEPLOY_DIR/prisma
-          cp -r $ROOT/prisma/* $DEPLOY_DIR/prisma/
-          echo "✓ Copied prisma/"
-        else
-          echo "⚠ No prisma directory found (may not be needed)"
+          cp -r prisma/* $DEPLOY_DIR/prisma/
         fi
         
-        echo ""
-        echo "=== Deployment Package Contents ==="
-        echo "Top level:"
+        echo "✓ Package ready"
         ls -la $DEPLOY_DIR/
-        
-        echo ""
-        echo "dist/ contents:"
-        ls -la $DEPLOY_DIR/dist/
-        
-        echo ""
-        echo "Verifying critical files..."
-        if [ ! -f "$DEPLOY_DIR/dist/main.js" ]; then
-          echo "##vso[task.logissue type=error]CRITICAL: dist/main.js missing from deployment package"
-          exit 1
-        fi
-        
-        if [ ! -f "$DEPLOY_DIR/package.json" ]; then
-          echo "##vso[task.logissue type=error]CRITICAL: package.json missing from deployment package"
-          exit 1
-        fi
-        
-        echo ""
-        echo "✓ Deployment package assembled successfully"
       displayName: 'Assemble Deployment Package'
 
     - task: ArchiveFiles@2
@@ -157,14 +94,6 @@ stages:
         archiveFile: '$(Build.ArtifactStagingDirectory)/api.zip'
         replaceExistingArchive: true
       displayName: 'Create Deployment Archive'
-
-    - script: |
-        echo "=== Archive Verification ==="
-        ls -lh $(Build.ArtifactStagingDirectory)/api.zip
-        echo ""
-        echo "First 50 files in archive:"
-        unzip -l $(Build.ArtifactStagingDirectory)/api.zip | head -50
-      displayName: 'Verify Archive Contents'
 
     - task: AzureWebApp@1
       inputs:
