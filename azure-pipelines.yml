@@ -3,62 +3,66 @@ trigger:
     include:
       - dev
       - staging
-#all changes
+
 pool:
   vmImage: 'ubuntu-latest'
 
+# ──────────────────────────────────────────────────────────
+# Branch-Based Variables: This is how we separate Dev and Staging
+# ──────────────────────────────────────────────────────────
 variables:
-  azureSubscription: 'agora-current-sc'
-  apiAppName: 'agora-api-stg'
+  ${{ if eq(variables['Build.SourceBranchName'], 'dev') }}:
+    - group: agora-dev-rg  # Connects to your Dev Variable Group
+    - name: apiAppName
+      value: 'agora-api-dev'
+    - name: azureSubscription
+      value: 'agora-current-sc'
+    - name: environmentName
+      value: 'Dev'
+
+  ${{ if eq(variables['Build.SourceBranchName'], 'staging') }}:
+    - group: agora-stg-rg  # Connects to your Staging Variable Group
+    - name: apiAppName
+      value: 'agora-api-stg'
+    - name: azureSubscription
+      value: 'agora-current-sc-stg'
+    - name: environmentName
+      value: 'Staging'
 
 stages:
 - stage: Backend
-  displayName: 'Deploy Backend to $(environmentName)'
+  displayName: 'Deploy Backend'
   jobs:
   - job: BuildAndDeployAPI
-    displayName: 'Build and Deploy API'
     steps:
     - task: NodeTool@0
       inputs:
         versionSpec: '20.x'
-      displayName: 'Install Node.js'
 
     - script: npm install
       displayName: 'Install Dependencies'
 
-    # ⭐ CRITICAL: Migrate database FIRST, then regenerate Prisma Client
+    # ⭐ CRITICAL: Uses $(DB_Url) from the loaded Variable Group
     - script: |
+        echo "=== Environment: $(environmentName) ==="
         echo "=== Deploying Database Migrations ==="
         npx prisma migrate deploy --schema=prisma/schema.prisma
         
-        echo ""
-        echo "=== Regenerating Prisma Client with New Schema ==="
+        echo "=== Regenerating Prisma Client ==="
         npx prisma generate --schema=prisma/schema.prisma
-        
-        echo "✓ Database migrated and Prisma Client updated"
       displayName: 'Migrate Database and Update Prisma Client'
       env:
-        DATABASE_URL: $(DATABASE_URL_STAGING)
+        # We map the group variable to the name Prisma expects
+        DATABASE_URL: $(DB_Url) 
 
     - script: |
         echo "=== Building NestJS Application ==="
         npx nest build
-        BUILD_EXIT_CODE=$?
         
-        if [ $BUILD_EXIT_CODE -ne 0 ]; then
-          echo "##vso[task.logissue type=error]Build failed"
-          exit 1
-        fi
-        
-        echo ""
-        echo "=== Verifying Build Output ==="
         if [ ! -f "dist/main.js" ]; then
           echo "##vso[task.logissue type=error]dist/main.js not found"
           exit 1
         fi
-        
-        echo "✓ Build successful"
-        ls -la dist/
       displayName: 'Build NestJS'
       env:
         NODE_OPTIONS: '--max-old-space-size=4096'
@@ -67,41 +71,26 @@ stages:
       displayName: 'Prune Dev Dependencies'
 
     - bash: |
-        ROOT=$(Build.SourcesDirectory)
-        DEPLOY_DIR=$ROOT/deploy_api
-        
-        echo "=== Assembling Deployment Package ==="
-        rm -rf $DEPLOY_DIR
+        DEPLOY_DIR=$(Build.SourcesDirectory)/deploy_api
         mkdir -p $DEPLOY_DIR
-        
         cp -r dist $DEPLOY_DIR/
         cp package.json $DEPLOY_DIR/
         cp -r node_modules $DEPLOY_DIR/
-        
-        if [ -d "prisma" ]; then
-          mkdir -p $DEPLOY_DIR/prisma
-          cp -r prisma/* $DEPLOY_DIR/prisma/
-        fi
-        
-        echo "✓ Package ready"
-        ls -la $DEPLOY_DIR/
-      displayName: 'Assemble Deployment Package'
+        if [ -d "prisma" ]; then cp -r prisma $DEPLOY_DIR/; fi
+      displayName: 'Assemble Package'
 
     - task: ArchiveFiles@2
       inputs:
         rootFolderOrFile: '$(Build.SourcesDirectory)/deploy_api'
         includeRootFolder: false
-        archiveType: 'zip'
         archiveFile: '$(Build.ArtifactStagingDirectory)/api.zip'
-        replaceExistingArchive: true
-      displayName: 'Create Deployment Archive'
 
+    # Uses the variables we set at the top based on the branch
     - task: AzureWebApp@1
-      condition: eq(variables.isStaging, true)
+      displayName: 'Deploy to $(environmentName)'
       inputs:
-        azureSubscription: 'agora-current-sc-stg'
+        azureSubscription: $(azureSubscription)
         appType: 'webAppLinux'
-        appName: 'agora-api-stg'
+        appName: $(apiAppName)
         package: '$(Build.ArtifactStagingDirectory)/api.zip'
         startUpCommand: 'node dist/main'
-      displayName: 'Deploy to Staging'
