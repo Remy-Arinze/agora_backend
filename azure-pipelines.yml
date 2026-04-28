@@ -1,26 +1,15 @@
 trigger:
   branches:
     include:
-      - main      # Triggers for dev
-      - staging   # Triggers for staging
-
+      - dev
+      - staging
+#all changes
 pool:
   vmImage: 'ubuntu-latest'
 
 variables:
-  # Set variables based on branch
-  ${{ if eq(variables['Build.SourceBranch'], 'refs/heads/main') }}:
-    apiAppName: 'agora-api-dev'
-    DATABASE_URL: $(DATABASE_URL_DEV)
-    environmentName: 'Development'
-    isDev: true
-    isStaging: false
-  ${{ if eq(variables['Build.SourceBranch'], 'refs/heads/staging') }}:
-    apiAppName: 'agora-api-stg'
-    DATABASE_URL: $(DATABASE_URL_STAGING)
-    environmentName: 'Staging'
-    isDev: false
-    isStaging: true
+  azureSubscription: 'agora-current-sc'
+  apiAppName: 'agora-api-stg'
 
 stages:
 - stage: Backend
@@ -33,37 +22,36 @@ stages:
       inputs:
         versionSpec: '20.x'
       displayName: 'Install Node.js'
-    
-    - script: |
-        echo "=========================================="
-        echo "Deployment Configuration"
-        echo "=========================================="
-        echo "Environment: $(environmentName)"
-        echo "Branch: $(Build.SourceBranch)"
-        echo "App Name: $(apiAppName)"
-        echo "=========================================="
-      displayName: 'Show Deployment Info'
 
     - script: npm install
       displayName: 'Install Dependencies'
 
+    # ⭐ CRITICAL: Migrate database FIRST, then regenerate Prisma Client
     - script: |
         echo "=== Deploying Database Migrations ==="
         npx prisma migrate deploy --schema=prisma/schema.prisma
         
         echo ""
-        echo "=== Regenerating Prisma Client ==="
+        echo "=== Regenerating Prisma Client with New Schema ==="
         npx prisma generate --schema=prisma/schema.prisma
         
         echo "✓ Database migrated and Prisma Client updated"
       displayName: 'Migrate Database and Update Prisma Client'
       env:
-        DATABASE_URL: $(DATABASE_URL)
+        DATABASE_URL: $(DATABASE_URL_STAGING)
 
     - script: |
         echo "=== Building NestJS Application ==="
         npx nest build
+        BUILD_EXIT_CODE=$?
         
+        if [ $BUILD_EXIT_CODE -ne 0 ]; then
+          echo "##vso[task.logissue type=error]Build failed"
+          exit 1
+        fi
+        
+        echo ""
+        echo "=== Verifying Build Output ==="
         if [ ! -f "dist/main.js" ]; then
           echo "##vso[task.logissue type=error]dist/main.js not found"
           exit 1
@@ -95,7 +83,7 @@ stages:
           cp -r prisma/* $DEPLOY_DIR/prisma/
         fi
         
-        echo "✓ Package assembled"
+        echo "✓ Package ready"
         ls -la $DEPLOY_DIR/
       displayName: 'Assemble Deployment Package'
 
@@ -108,23 +96,6 @@ stages:
         replaceExistingArchive: true
       displayName: 'Create Deployment Archive'
 
-    - script: |
-        echo "=== Archive Verification ==="
-        ls -lh $(Build.ArtifactStagingDirectory)/api.zip
-      displayName: 'Verify Archive'
-
-    # Deploy to DEV (when on main branch)
-    - task: AzureWebApp@1
-      condition: eq(variables.isDev, true)
-      inputs:
-        azureSubscription: 'agora-current-sc'
-        appType: 'webAppLinux'
-        appName: 'agora-api-dev'
-        package: '$(Build.ArtifactStagingDirectory)/api.zip'
-        startUpCommand: 'node dist/main'
-      displayName: 'Deploy to Development'
-
-    # Deploy to STAGING (when on staging branch)
     - task: AzureWebApp@1
       condition: eq(variables.isStaging, true)
       inputs:
