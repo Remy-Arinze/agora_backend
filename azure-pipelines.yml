@@ -3,101 +3,62 @@ trigger:
     include:
       - dev
       - staging
-
+#all changes
 pool:
   vmImage: 'ubuntu-latest'
 
-# ────────────────────────────────────────────
-# Conditional variables: Load groups and set targets
-# ──────────────────────────────────────────────
 variables:
-  # Dev environment (dev branch)
-  - ${{ if eq(variables['Build.SourceBranchName'], 'dev') }}:
-    - group: agora-dev-rg
-    - name: azureSubscription
-      value: 'agora-current-sc'
-    - name: apiAppName
-      value: 'agora-api-dev'
-    - name: environmentName
-      value: 'Dev'
-
-  # Staging environment (staging branch)
-  - ${{ if eq(variables['Build.SourceBranchName'], 'staging') }}:
-    - group: agora-stg-rg
-    - name: azureSubscription
-      value: 'agora-current-sc-stg'
-    - name: apiAppName
-      value: 'agora-api-stg'
-    - name: environmentName
-      value: 'Staging'
+  azureSubscription: 'agora-current-sc'
+  apiAppName: 'agora-api-stg'
 
 stages:
 - stage: Backend
   displayName: 'Deploy Backend to $(environmentName)'
   jobs:
   - job: BuildAndDeployAPI
-    displayName: 'Build & Deploy API to $(environmentName)'
+    displayName: 'Build and Deploy API'
     steps:
     - task: NodeTool@0
       inputs:
         versionSpec: '20.x'
+      displayName: 'Install Node.js'
 
     - script: npm install
       displayName: 'Install Dependencies'
 
-    - script: npx prisma generate --schema=prisma/schema.prisma
-      displayName: 'Generate Prisma Client'
-
-    # 🚀 Step 1: Fix the Database Schema mismatch (subdomain error)
+    # ⭐ CRITICAL: Migrate database FIRST, then regenerate Prisma Client
     - script: |
-        echo "Applying database migrations to $(environmentName)..."
+        echo "=== Deploying Database Migrations ==="
         npx prisma migrate deploy --schema=prisma/schema.prisma
-      displayName: 'Migrate Database'
-      env:
-        DB_URL: $(DB_Url)
-
-    # 🚀 Step 2: Kill all TypeScript strictness in all config files
-    - bash: |
-        echo "Searching for all tsconfig files to disable strict mode..."
-        for f in tsconfig*.json; do
-          if [ -f "$f" ]; then
-            echo "Relieving strictness in $f"
-            node -e "
-              const fs = require('fs');
-              const path = '$f';
-              let content = fs.readFileSync(path, 'utf8');
-              // Clean comments so JSON.parse doesn't crash
-              content = content.replace(/\/\/.*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
-              const config = JSON.parse(content);
-              
-              if (!config.compilerOptions) config.compilerOptions = {};
-              
-              config.compilerOptions.strict = false;
-              config.compilerOptions.strictNullChecks = false;
-              config.compilerOptions.noImplicitAny = false;
-              config.compilerOptions.skipLibCheck = true;
-              config.compilerOptions.noEmitOnError = false;
-              
-              fs.writeFileSync(path, JSON.stringify(config, null, 2));
-            "
-          fi
-        done
-      displayName: 'Force Disable TS Strictness'
-
-    # 🚀 Step 3: Build even if there are type warnings
-    - script: |
-        echo "=== DEPLOYMENT INFO ==="
-        echo "Environment: $(environmentName)"
-        echo "Target App:  $(apiAppName)"
-        echo "========================"
-        npm run build || echo "Build had warnings, checking for dist..."
         
-        if [ -f "dist/main.js" ]; then
-          echo "Success: dist/main.js generated."
-        else
-          echo "##vso[task.logissue type=error]CRITICAL: dist/main.js not found!"
+        echo ""
+        echo "=== Regenerating Prisma Client with New Schema ==="
+        npx prisma generate --schema=prisma/schema.prisma
+        
+        echo "✓ Database migrated and Prisma Client updated"
+      displayName: 'Migrate Database and Update Prisma Client'
+      env:
+        DATABASE_URL: $(DATABASE_URL_STAGING)
+
+    - script: |
+        echo "=== Building NestJS Application ==="
+        npx nest build
+        BUILD_EXIT_CODE=$?
+        
+        if [ $BUILD_EXIT_CODE -ne 0 ]; then
+          echo "##vso[task.logissue type=error]Build failed"
           exit 1
         fi
+        
+        echo ""
+        echo "=== Verifying Build Output ==="
+        if [ ! -f "dist/main.js" ]; then
+          echo "##vso[task.logissue type=error]dist/main.js not found"
+          exit 1
+        fi
+        
+        echo "✓ Build successful"
+        ls -la dist/
       displayName: 'Build NestJS'
       env:
         NODE_OPTIONS: '--max-old-space-size=4096'
@@ -108,18 +69,22 @@ stages:
     - bash: |
         ROOT=$(Build.SourcesDirectory)
         DEPLOY_DIR=$ROOT/deploy_api
-        echo "Preparing deployment package..."
+        
+        echo "=== Assembling Deployment Package ==="
         rm -rf $DEPLOY_DIR
-        mkdir -p $DEPLOY_DIR/dist
-
-        cp $ROOT/package.json $DEPLOY_DIR/
-
-        if [ -f "$ROOT/dist/main.js" ]; then
-            cp -r $ROOT/dist/* $DEPLOY_DIR/dist/
+        mkdir -p $DEPLOY_DIR
+        
+        cp -r dist $DEPLOY_DIR/
+        cp package.json $DEPLOY_DIR/
+        cp -r node_modules $DEPLOY_DIR/
+        
+        if [ -d "prisma" ]; then
+          mkdir -p $DEPLOY_DIR/prisma
+          cp -r prisma/* $DEPLOY_DIR/prisma/
         fi
-
-        cp -r -L $ROOT/node_modules $DEPLOY_DIR/
-        echo "Artifact assembly complete."
+        
+        echo "✓ Package ready"
+        ls -la $DEPLOY_DIR/
       displayName: 'Assemble Deployment Package'
 
     - task: ArchiveFiles@2
@@ -129,11 +94,14 @@ stages:
         archiveType: 'zip'
         archiveFile: '$(Build.ArtifactStagingDirectory)/api.zip'
         replaceExistingArchive: true
+      displayName: 'Create Deployment Archive'
 
     - task: AzureWebApp@1
+      condition: eq(variables.isStaging, true)
       inputs:
-        azureSubscription: $(azureSubscription)
+        azureSubscription: 'agora-current-sc-stg'
         appType: 'webAppLinux'
-        appName: $(apiAppName)
+        appName: 'agora-api-stg'
         package: '$(Build.ArtifactStagingDirectory)/api.zip'
         startUpCommand: 'node dist/main'
+      displayName: 'Deploy to Staging'
