@@ -1,0 +1,190 @@
+enum GradeType {
+  CA
+  ASSIGNMENT
+  EXAM
+}
+
+model Grade {
+  id             String    @id @default(cuid())
+  enrollmentId   String
+  teacherId      String
+  termId         String? // Link to Term
+  subjectId      String? // NEW: Proper FK to Subject entity
+  subject        String // Keep for backward compatibility (auto-populated from Subject.name)
+  gradeType      GradeType // CA, ASSIGNMENT, EXAM
+  assessmentName String? // e.g., "CA1", "Assignment 1", "First Term Exam"
+  assessmentDate DateTime? // Date when assessment was conducted
+  sequence       Int? // Order of assessment (1, 2, 3...)
+  score          Decimal
+  maxScore       Decimal   @default(100)
+  term           String // Keep for backward compatibility
+  academicYear   String // Keep for backward compatibility
+  remarks        String?
+  isPublished    Boolean   @default(false) // Whether grade is visible to students/parents
+  signedAt       DateTime  @default(now())
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  enrollment   Enrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  teacher      Teacher    @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  termRelation Term?      @relation("GradeTerm", fields: [termId], references: [id], onDelete: SetNull)
+  subjectRef   Subject?   @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+
+  @@index([enrollmentId])
+  @@index([teacherId])
+  @@index([termId])
+  @@index([subjectId])
+  @@index([academicYear])
+  @@index([gradeType])
+  @@index([assessmentDate])
+}
+
+model AssessmentTemplate {
+  id          String    @id @default(cuid())
+  schoolId    String
+  subjectId   String? // Optional: subject-specific templates (null = all subjects)
+  schoolType  String? // PRIMARY, SECONDARY, TERTIARY (null = all types)
+  name        String // e.g., "First CA", "Mid-Term Test", "Final Exam"
+  gradeType   GradeType // CA, ASSIGNMENT, EXAM
+  maxScore    Decimal   @default(100)
+  weight      Decimal? // Optional: weight for grade calculation (e.g., 0.3 for 30%)
+  sequence    Int? // Order in term (1, 2, 3...)
+  description String? // Description of the assessment
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  school  School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  subject Subject? @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+
+  @@unique([schoolId, name, subjectId, schoolType, gradeType])
+  @@index([schoolId])
+  @@index([subjectId])
+  @@index([schoolType])
+  @@index([gradeType])
+  @@index([isActive])
+}
+
+model Assessment {
+  id                  String    @id @default(cuid())
+  schoolId            String
+  classId             String?
+  classArmId          String?
+  subjectId           String
+  teacherId           String
+  termId              String? // The academic term this assessment belongs to
+  academicYear        String?
+  title               String
+  description         String?
+  type                String // "QUIZ", "EXAM", "ASSIGNMENT"
+  status              String    @default("DRAFT") // "DRAFT", "PUBLISHED", "CLOSED"
+  dueDate             DateTime?
+  maxScore            Decimal   @default(100)
+  isTimed             Boolean   @default(false)
+  duration            Int? // In minutes
+  hasIntegrity        Boolean   @default(false)
+  autoSubmitOnTimeout Boolean   @default(true)
+  violationThreshold  Int       @default(1)
+  pointsPerViolation  Decimal   @default(0)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  school   School    @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  class    Class?    @relation(fields: [classId], references: [id], onDelete: SetNull)
+  classArm ClassArm? @relation(fields: [classArmId], references: [id], onDelete: SetNull)
+  subject  Subject   @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  teacher  Teacher   @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  term     Term?     @relation(fields: [termId], references: [id], onDelete: SetNull)
+
+  questions   AssessmentQuestion[]
+  submissions AssessmentSubmission[]
+
+  @@index([schoolId])
+  @@index([classId])
+  @@index([classArmId])
+  @@index([subjectId])
+  @@index([teacherId])
+  @@index([termId])
+  @@index([status])
+}
+
+model AssessmentQuestion {
+  id            String   @id @default(cuid())
+  assessmentId  String
+  text          String
+  type          String // "MULTIPLE_CHOICE", "SHORT_ANSWER", "ESSAY"
+  options       Json? // Array of strings or objects for multiple choice
+  correctAnswer String? // Expected correct answer
+  points        Decimal  @default(1)
+  order         Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  assessment Assessment         @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  answers    AssessmentAnswer[]
+
+  @@index([assessmentId])
+  @@index([order])
+}
+
+model AssessmentSubmission {
+  id              String    @id @default(cuid())
+  assessmentId    String
+  studentId       String
+  status          String    @default("SUBMITTED") // "SUBMITTED", "GRADED"
+  totalScore      Decimal?
+  teacherFeedback String?
+  aiFeedback      String?
+  submittedAt     DateTime  @default(now())
+  gradedAt        DateTime?
+
+  // Integrity & Timer fields
+  startedAt        DateTime?
+  examSessionToken String?   @unique
+  violationCount   Int       @default(0)
+  isFlagged        Boolean   @default(false)
+  pointDeductions  Decimal?  @default(0)
+  isAutoSubmitted  Boolean   @default(false)
+
+  assessment Assessment            @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  student    Student               @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  answers    AssessmentAnswer[]
+  violations AssessmentViolation[]
+
+  @@unique([assessmentId, studentId])
+  @@index([assessmentId])
+  @@index([studentId])
+  @@index([status])
+  @@index([examSessionToken])
+}
+
+model AssessmentViolation {
+  id           String   @id @default(cuid())
+  submissionId String
+  type         String // "TAB_SWITCH", "FULLSCREEN_EXIT", "DUPLICATE_SESSION"
+  timestamp    DateTime @default(now())
+
+  submission AssessmentSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@index([submissionId])
+}
+
+model AssessmentAnswer {
+  id              String   @id @default(cuid())
+  submissionId    String
+  questionId      String
+  text            String? // The student's answer text, if essay/short answer
+  selectedOption  String? // The option selected, if MCQ
+  score           Decimal? // Score awarded
+  isCorrect       Boolean? // True if MCQ and matches correct answer
+  aiFeedback      String? // Feedback provided by AI
+  teacherFeedback String? // Feedback from teacher
+  gradedBy        String   @default("AUTO") // "AUTO", "AI", "TEACHER"
+
+  submission AssessmentSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  question   AssessmentQuestion   @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([submissionId, questionId])
+  @@index([submissionId])
+  @@index([questionId])
+}

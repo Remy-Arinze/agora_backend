@@ -1,0 +1,354 @@
+model School {
+  id           String   @id @default(cuid())
+  name         String
+  schoolId     String?  @unique // Unique school identifier (nullable for migration)
+  domain       String?
+  logo         String? // Cloudinary URL for school logo
+  address      String?
+  city         String?
+  state        String?
+  country      String   @default("Nigeria")
+  phone        String?
+  email        String?
+  isActive     Boolean  @default(true)
+  hasPrimary   Boolean  @default(false)
+  hasSecondary Boolean  @default(false)
+  hasTertiary  Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Registration & Verification
+  registrationStatus String    @default("VERIFIED") // "UNAPPROVED" | "VERIFIED" | "REJECTED"
+  registrationNote   String? // Optional note from school during signup
+  verifiedAt         DateTime? // When verified by super admin
+  verifiedBy         String? // Super admin user ID who verified
+  rejectionReason    String? // If rejected, why
+
+  admins              SchoolAdmin[]
+  teachers            Teacher[]
+  classes             Class[]
+  enrollments         Enrollment[]
+  fees                Fee[]
+  transfersFrom       Transfer[]               @relation("TransferFrom")
+  transfersTo         Transfer[]               @relation("TransferTo")
+  academicSessions    AcademicSession[]
+  classLevels         ClassLevel[]
+  faculties           Faculty[] // For TERTIARY institutions
+  rooms               Room[]
+  subjects            Subject[]
+  curricula           Curriculum[]
+  events              Event[]
+  googleCalendarSyncs GoogleCalendarSync[]
+  subscription        Subscription?
+  toolAccess          SchoolToolAccess[]
+  profileEditTokens   SchoolProfileEditToken[]
+  assessmentTemplates AssessmentTemplate[] // Assessment templates for this school
+  assessments         Assessment[]
+  errors              ApplicationError[]
+  customPlans         SubscriptionPlan[]       @relation("CustomPlanSchool")
+  aiUsageLogs         AiUsageLog[]
+  knowledgeChunks     KnowledgeChunk[]
+  schoolCurricula     SchoolCurriculumDoc[] // School-uploaded curriculum documents
+  schemesOfWork       SchemeOfWork[] // Generated schemes of work
+
+  @@index([schoolId])
+  @@index([isActive])
+  @@index([isActive, createdAt])
+  @@index([registrationStatus])
+}
+
+model SchoolProfileEditToken {
+  id        String                        @id @default(cuid())
+  token     String                        @unique
+  schoolId  String
+  school    School                        @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  changes   Json // Store the proposed changes as JSON
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime                      @default(now())
+  auditLogs SchoolProfileEditTokenAudit[]
+
+  @@index([schoolId])
+  @@index([token])
+  @@index([expiresAt])
+}
+
+model SchoolProfileEditTokenAudit {
+  id          String                  @id @default(cuid())
+  token       String
+  tokenRecord SchoolProfileEditToken? @relation(fields: [token], references: [token], onDelete: Cascade)
+  schoolId    String
+  userId      String?
+  event       String // 'REQUESTED' | 'VERIFIED' | 'USED' | 'FAILED'
+  ipAddress   String?
+  userAgent   String?
+  details     Json? // Additional context (error messages, etc.)
+  createdAt   DateTime                @default(now())
+
+  @@index([token])
+  @@index([schoolId])
+  @@index([userId])
+  @@index([event])
+  @@index([createdAt])
+  @@index([ipAddress])
+}
+
+model ApplicationError {
+  id          String        @id @default(cuid())
+  errorId     String        @unique // ERR-{timestamp}-{hash}
+  schoolId    String?
+  school      School?       @relation(fields: [schoolId], references: [id], onDelete: SetNull)
+  userId      String?
+  user        User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  errorType   String // Error class/type (e.g., "BadRequestException", "PrismaClientKnownRequestError")
+  message     String
+  stackTrace  String?
+  context     Json? // Request context: method, path, query, body, headers, IP, userAgent
+  severity    ErrorSeverity
+  status      ErrorStatus   @default(UNRESOLVED)
+  resolvedBy  String?
+  resolvedAt  DateTime?
+  occurrences Int           @default(1)
+  firstSeen   DateTime      @default(now())
+  lastSeen    DateTime      @default(now())
+
+  @@index([schoolId])
+  @@index([errorType])
+  @@index([severity])
+  @@index([status])
+  @@index([firstSeen])
+  @@index([lastSeen])
+}
+
+model NotificationLog {
+  id        String    @id @default(cuid())
+  userId    String
+  type      String
+  channel   String
+  recipient String
+  subject   String?
+  body      String
+  status    String    @default("PENDING")
+  priority  String    @default("NORMAL")
+  metadata  Json?
+  sentAt    DateTime?
+  error     String?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+enum EventType {
+  ACADEMIC
+  EVENT
+  EXAM
+  MEETING
+  HOLIDAY
+}
+
+model Event {
+  id            String    @id @default(cuid())
+  title         String
+  description   String?
+  startDate     DateTime
+  endDate       DateTime
+  type          EventType
+  schoolType    String? // "PRIMARY", "SECONDARY", "TERTIARY" - null means applies to all types
+  location      String?
+  roomId        String?
+  schoolId      String
+  createdBy     String? // User ID who created the event
+  isAllDay      Boolean   @default(false)
+  googleEventId String? // Google Calendar event ID (for synced events)
+  syncedAt      DateTime? // When last synced to Google
+  syncStatus    String? // "PENDING" | "SYNCED" | "FAILED"
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  room   Room?  @relation(fields: [roomId], references: [id], onDelete: SetNull)
+
+  @@index([schoolId])
+  @@index([schoolType])
+  @@index([startDate])
+  @@index([type])
+  @@index([isAllDay])
+  @@index([googleEventId])
+  @@index([syncStatus])
+}
+
+model GoogleCalendarSync {
+  id               String    @id @default(cuid())
+  userId           String // User who connected Google Calendar
+  schoolId         String // School context
+  googleCalendarId String    @default("primary") // Google Calendar ID (usually "primary")
+  accessToken      String // Encrypted OAuth access token
+  refreshToken     String // Encrypted OAuth refresh token
+  tokenExpiry      DateTime // When access token expires
+  syncEnabled      Boolean   @default(true)
+  lastSyncAt       DateTime?
+  syncDirection    String    @default("ONE_WAY") // "ONE_WAY" | "TWO_WAY"
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, schoolId])
+  @@index([userId])
+  @@index([schoolId])
+  @@index([syncEnabled])
+}
+
+enum SubscriptionTier {
+  FREE
+  PRO
+  PRO_PLUS
+  CUSTOM
+}
+
+enum ToolStatus {
+  ACTIVE
+  TRIAL
+  EXPIRED
+  DISABLED
+}
+
+model Tool {
+  id           String   @id @default(cuid())
+  slug         String   @unique // "prepmaster", "socrates", "rollcall", "bursary"
+  name         String
+  description  String?
+  icon         String? // Emoji or icon identifier
+  monthlyPrice Decimal  @default(0)
+  yearlyPrice  Decimal  @default(0)
+  isCore       Boolean  @default(false) // Core tools included in all plans
+  isActive     Boolean  @default(true)
+  features     Json? // Feature list for display: [{name, description}]
+  targetRoles  String[] // ["TEACHER", "STUDENT", "SCHOOL_ADMIN"]
+  sortOrder    Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  schoolAccess SchoolToolAccess[]
+
+  @@index([slug])
+  @@index([isActive])
+}
+
+model SubscriptionPlan {
+  id             String           @id @default(cuid())
+  tierCode       SubscriptionTier @default(FREE)
+  name           String
+  description    String?
+  monthlyPrice   Decimal          @default(0)
+  yearlyPrice    Decimal          @default(0)
+  features       Json? // Format: [{ text: string, included: boolean, isGlowing?: boolean }]
+  highlight      Boolean          @default(false)
+  cta            String           @default("Upgrade")
+  accent         String           @default("blue")
+  isPublic       Boolean          @default(true)
+  customSchoolId String?          @unique // Optional: Link to a specific school for private custom plans
+  maxStudents    Int              @default(-1) // -1 for unlimited
+  maxTeachers    Int              @default(-1)
+  maxAdmins      Int              @default(-1)
+  aiCredits      Int              @default(0)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  customSchool  School?        @relation("CustomPlanSchool", fields: [customSchoolId], references: [id], onDelete: Cascade)
+  subscriptions Subscription[]
+
+  @@index([tierCode])
+  @@index([isPublic])
+}
+
+model Subscription {
+  id              String           @id @default(cuid())
+  schoolId        String           @unique
+  tier            SubscriptionTier @default(FREE)
+  planId          String?
+  startDate       DateTime         @default(now())
+  endDate         DateTime?
+  isActive        Boolean          @default(true)
+  maxStudents     Int              @default(-1) // -1 = unlimited (all tiers)
+  maxTeachers     Int              @default(-1) // -1 = unlimited (all tiers)
+  maxAdmins       Int              @default(10) // Limit based on tier (FREE=10, STARTER=25, PRO=50, ENT=unlimited)
+  aiCredits       Int              @default(0) // Monthly AI credits
+  aiCreditsUsed   Int              @default(0) // Credits used this month
+  lastCreditReset DateTime? // When credits were last reset
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  school          School                @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  plan            SubscriptionPlan?     @relation(fields: [planId], references: [id])
+  toolAccess      SchoolToolAccess[]
+  payments        SubscriptionPayment[]
+  creditPurchases AiCreditPurchase[]
+
+  @@index([schoolId])
+  @@index([planId])
+  @@index([tier])
+  @@index([isActive])
+}
+
+model SchoolToolAccess {
+  id             String     @id @default(cuid())
+  schoolId       String
+  toolId         String
+  subscriptionId String?
+  status         ToolStatus @default(TRIAL)
+  trialEndsAt    DateTime?
+  activatedAt    DateTime?
+  expiresAt      DateTime?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  school       School        @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  tool         Tool          @relation(fields: [toolId], references: [id], onDelete: Cascade)
+  subscription Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+
+  @@unique([schoolId, toolId])
+  @@index([schoolId])
+  @@index([toolId])
+  @@index([status])
+}
+
+model SubscriptionPayment {
+  id             String    @id @default(cuid())
+  subscriptionId String
+  amount         Decimal
+  currency       String    @default("NGN")
+  status         String    @default("PENDING") // PENDING, SUCCESS, FAILED
+  reference      String    @unique // Paystack reference
+  provider       String    @default("PAYSTACK")
+  metadata       Json?
+  paidAt         DateTime?
+  createdAt      DateTime  @default(now())
+
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@index([subscriptionId])
+  @@index([reference])
+  @@index([status])
+}
+
+model AiCreditPurchase {
+  id             String   @id @default(cuid())
+  subscriptionId String
+  credits        Int
+  amount         Decimal
+  currency       String   @default("NGN")
+  reference      String   @unique
+  status         String   @default("PENDING") // PENDING, SUCCESS, FAILED
+  createdAt      DateTime @default(now())
+
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@index([subscriptionId])
+  @@index([reference])
+}

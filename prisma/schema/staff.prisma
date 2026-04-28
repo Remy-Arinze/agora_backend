@@ -1,0 +1,172 @@
+model Teacher {
+  id           String   @id @default(cuid())
+  teacherId    String   @unique
+  publicId     String   @unique // Format: AG-{schoolname}-{short alphanumeric}
+  firstName    String
+  lastName     String
+  phone        String
+  email        String?
+  employeeId   String?
+  subject      String?
+  profileImage String? // Cloudinary URL for teacher profile image
+  schoolType   String? // "PRIMARY", "SECONDARY", "TERTIARY" - scopes teacher to a specific school type
+  isTemporary  Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  userId   String
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  schoolId String
+  school   School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  grades             Grade[]
+  classArms          ClassArm[] // ClassArms where this teacher is the primary class teacher
+  attendances        Attendance[]
+  classTeachers      ClassTeacher[]
+  timetablePeriods   TimetablePeriod[]
+  subjectTeachers    SubjectTeacher[]
+  curricula          Curriculum[]
+  curriculumProgress CurriculumItemProgress[]
+  facultiesAsDean    Faculty[]                @relation("FacultyDean") // Faculties where this teacher is dean
+  assessments        Assessment[]
+
+  @@unique([userId, schoolId]) // A user can only be a teacher once per school, but can be teacher in multiple schools
+  @@index([userId])
+  @@index([schoolId])
+  @@index([schoolType])
+  @@index([teacherId])
+  @@index([publicId])
+}
+
+model SchoolAdmin {
+  id           String   @id @default(cuid())
+  adminId      String   @unique
+  publicId     String   @unique // Format: AG-{schoolname}-{short alphanumeric}
+  firstName    String
+  lastName     String
+  phone        String
+  email        String?
+  profileImage String? // Cloudinary URL for admin profile image
+  role         String   @default("Administrator") // Store role as string to support custom roles
+  schoolType   String? // "PRIMARY", "SECONDARY", "TERTIARY" - scopes admin to a specific school type
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  userId   String
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  schoolId String
+  school   School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  permissions StaffPermission[]
+
+  @@unique([userId, schoolId]) // A user can only be an admin once per school, but can be admin in multiple schools
+  @@index([userId])
+  @@index([schoolId])
+  @@index([role])
+  @@index([adminId])
+  @@index([publicId])
+  @@index([schoolType])
+}
+
+model ClassTeacher {
+  id            String   @id @default(cuid())
+  classId       String? // For TERTIARY or schools without ClassArms
+  classArmId    String? // For PRIMARY/SECONDARY schools using ClassArms
+  teacherId     String
+  subjectId     String? // NEW: Proper relation to Subject (for SECONDARY)
+  subject       String? // DEPRECATED: Keep for backward compatibility, use subjectId instead
+  sessionId     String? // NEW: Scope assignment to academic session
+  // For tertiary: course module/topic the teacher handles
+  // For primary: can be "Class Teacher" or null
+  isPrimary     Boolean  @default(false) // For primary: main class teacher, For secondary: form teacher
+  isFormTeacher Boolean  @default(false) // NEW: Explicit form teacher flag for SECONDARY
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  class      Class?           @relation(fields: [classId], references: [id], onDelete: Cascade)
+  classArm   ClassArm?        @relation(fields: [classArmId], references: [id], onDelete: Cascade)
+  teacher    Teacher          @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  subjectRef Subject?         @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  session    AcademicSession? @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([classArmId, subjectId, sessionId]) // One teacher per subject per class per session
+  @@unique([classId, classArmId, teacherId, subject]) // Legacy: Allows same teacher in multiple arms
+  @@index([classId])
+  @@index([classArmId])
+  @@index([teacherId])
+  @@index([subjectId])
+  @@index([sessionId])
+}
+
+model SubjectTeacher {
+  id        String   @id @default(cuid())
+  subjectId String
+  teacherId String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  teacher Teacher @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+
+  @@unique([subjectId, teacherId])
+  @@index([subjectId])
+  @@index([teacherId])
+}
+
+enum PermissionResource {
+  OVERVIEW
+  ANALYTICS
+  SUBSCRIPTIONS
+  STUDENTS
+  STAFF
+  CLASSES
+  SUBJECTS
+  TIMETABLES
+  CALENDAR
+  ADMISSIONS
+  SESSIONS
+  EVENTS
+  // New resources for complete coverage
+  GRADES
+  CURRICULUM
+  SCHEME_OF_WORK
+  RESOURCES
+  TRANSFERS
+  INTEGRATIONS
+}
+
+enum PermissionType {
+  READ
+  WRITE
+  ADMIN
+}
+
+model Permission {
+  id          String             @id @default(cuid())
+  resource    PermissionResource
+  type        PermissionType
+  description String?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  staffPermissions StaffPermission[]
+
+  @@unique([resource, type])
+  @@index([resource])
+  @@index([type])
+}
+
+model StaffPermission {
+  id           String   @id @default(cuid())
+  adminId      String
+  permissionId String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  admin      SchoolAdmin @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  permission Permission  @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([adminId, permissionId])
+  @@index([adminId])
+  @@index([permissionId])
+}

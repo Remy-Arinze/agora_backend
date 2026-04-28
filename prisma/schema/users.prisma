@@ -1,0 +1,128 @@
+enum AccountStatus {
+  SHADOW
+  ACTIVE
+  SUSPENDED
+  ARCHIVED
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  SCHOOL_ADMIN
+  TEACHER
+  STUDENT
+}
+
+model User {
+  id                String        @id @default(cuid())
+  email             String?       @unique
+  phone             String?       @unique
+  passwordHash      String?
+  accountStatus     AccountStatus @default(SHADOW)
+  role              UserRole
+  deviceId          String?
+  firstName         String?
+  lastName          String?
+  profileImage      String? // Cloudinary URL for user profile image (used for SUPER_ADMIN)
+  publicId          String? // Public ID for Cloudinary image
+  lastLoginAt       DateTime?
+  passwordChangedAt DateTime? // When set, any JWT issued before this is invalid (session invalidation)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  studentProfile  Student?
+  parentProfile   Parent?
+  teacherProfiles Teacher[] // Changed to array to support multiple schools
+  schoolAdmins    SchoolAdmin[] // Changed to array to support multiple schools
+
+  notifications       NotificationLog[]
+  passwordResetTokens PasswordResetToken[]
+  passwordOtps        PasswordOtp[]
+  googleCalendarSyncs GoogleCalendarSync[]
+  loginSessions       LoginSession[]
+  errors              ApplicationError[]
+  aiUsageLogs         AiUsageLog[]
+  chatConversations   ChatConversation[]
+
+  @@index([email])
+  @@index([phone])
+  @@index([accountStatus])
+  @@index([lastLoginAt])
+  @@index([createdAt])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  token     String    @unique
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@index([token])
+  @@index([expiresAt])
+}
+
+enum PasswordOtpType {
+  CHANGE_PASSWORD
+  RESET_PASSWORD
+}
+
+model PasswordOtp {
+  id        String          @id @default(cuid())
+  sessionId String          @unique // Client sends this back with OTP to confirm
+  type      PasswordOtpType
+  userId    String?
+  user      User?           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  email     String
+  otpCode   String
+  expiresAt DateTime
+  usedAt    DateTime?
+  attempts  Int             @default(0)
+  createdAt DateTime        @default(now())
+
+  @@index([userId])
+  @@index([email])
+  @@index([sessionId])
+  @@index([type])
+  @@index([expiresAt])
+}
+
+model OtpCode {
+  id        String    @id @default(cuid())
+  parentId  String
+  code      String
+  purpose   String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  parent Parent @relation(fields: [parentId], references: [id], onDelete: Cascade)
+
+  @@index([parentId])
+  @@index([code])
+  @@index([expiresAt])
+}
+
+model LoginSession {
+  id        String    @id @default(cuid())
+  userId    String
+  sessionId String    @unique
+  otpCode   String
+  email     String
+  ipAddress String?
+  userAgent String?
+  expiresAt DateTime
+  usedAt    DateTime?
+  attempts  Int       @default(0)
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([sessionId])
+  @@index([email])
+  @@index([expiresAt])
+  @@index([usedAt])
+}
