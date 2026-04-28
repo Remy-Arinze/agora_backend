@@ -8,26 +8,26 @@ pool:
   vmImage: 'ubuntu-latest'
 
 # ──────────────────────────────────────────────────────────
-# Branch-Based Variables: This is how we separate Dev and Staging
+# Branch-Based Variables (Fixed Syntax)
 # ──────────────────────────────────────────────────────────
 variables:
-  ${{ if eq(variables['Build.SourceBranchName'], 'dev') }}:
-    - group: agora-dev-rg  # Connects to your Dev Variable Group
-    - name: apiAppName
-      value: 'agora-api-dev'
-    - name: azureSubscription
-      value: 'agora-current-sc'
-    - name: environmentName
-      value: 'Dev'
+- ${{ if eq(variables['Build.SourceBranchName'], 'dev') }}:
+  - group: agora-dev-rg
+  - name: apiAppName
+    value: 'agora-api-dev'
+  - name: azureSubscription
+    value: 'agora-current-sc'
+  - name: environmentName
+    value: 'Dev'
 
-  ${{ if eq(variables['Build.SourceBranchName'], 'staging') }}:
-    - group: agora-stg-rg  # Connects to your Staging Variable Group
-    - name: apiAppName
-      value: 'agora-api-stg'
-    - name: azureSubscription
-      value: 'agora-current-sc-stg'
-    - name: environmentName
-      value: 'Staging'
+- ${{ if eq(variables['Build.SourceBranchName'], 'staging') }}:
+  - group: agora-stg-rg
+  - name: apiAppName
+    value: 'agora-api-stg'
+  - name: azureSubscription
+    value: 'agora-current-sc-stg'
+  - name: environmentName
+    value: 'Staging'
 
 stages:
 - stage: Backend
@@ -38,11 +38,11 @@ stages:
     - task: NodeTool@0
       inputs:
         versionSpec: '20.x'
+      displayName: 'Install Node.js'
 
     - script: npm install
       displayName: 'Install Dependencies'
 
-    # ⭐ CRITICAL: Uses $(DB_Url) from the loaded Variable Group
     - script: |
         echo "=== Environment: $(environmentName) ==="
         echo "=== Deploying Database Migrations ==="
@@ -52,8 +52,8 @@ stages:
         npx prisma generate --schema=prisma/schema.prisma
       displayName: 'Migrate Database and Update Prisma Client'
       env:
-        # We map the group variable to the name Prisma expects
-        DATABASE_URL: $(DB_Url) 
+        # Prisma expects DB_URL (all caps)
+        DB_URL: $(DB_Url) 
 
     - script: |
         echo "=== Building NestJS Application ==="
@@ -84,13 +84,14 @@ stages:
         rootFolderOrFile: '$(Build.SourcesDirectory)/deploy_api'
         includeRootFolder: false
         archiveFile: '$(Build.ArtifactStagingDirectory)/api.zip'
+        replaceExistingArchive: true
+      displayName: 'Create Archive'
 
-    # Uses the variables we set at the top based on the branch
     - task: AzureWebApp@1
-      displayName: 'Deploy to $(environmentName)'
       inputs:
         azureSubscription: $(azureSubscription)
         appType: 'webAppLinux'
         appName: $(apiAppName)
         package: '$(Build.ArtifactStagingDirectory)/api.zip'
         startUpCommand: 'node dist/main'
+      displayName: 'Deploy to $(environmentName)'
