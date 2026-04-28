@@ -1,3 +1,4 @@
+import { Injectable } from '@nestjs/common';
 import { School } from '@prisma/client';
 import { SchoolDto } from '../../dto/school.dto';
 
@@ -11,6 +12,7 @@ export interface SchoolListContext {
  * Mapper for converting School entities to DTOs
  * Follows the mapper pattern for separation of concerns
  */
+@Injectable()
 export class SchoolMapper {
   /**
    * Convert School entity to SchoolDto.

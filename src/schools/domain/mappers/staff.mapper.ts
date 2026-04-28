@@ -1,9 +1,11 @@
+import { Injectable } from '@nestjs/common';
 import { SchoolAdmin, Teacher } from '@prisma/client';
 
 /**
  * Mapper for converting Staff entities to DTOs
  * Follows the mapper pattern for separation of concerns
  */
+@Injectable()
 export class StaffMapper {
   /**
    * Convert SchoolAdmin entity to AdminDto
