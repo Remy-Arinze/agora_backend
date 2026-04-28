@@ -13,9 +13,10 @@ variables:
 
 stages:
 - stage: Backend
-  displayName: 'Deploy Backend (API)'
+  displayName: 'Deploy Backend to $(environmentName)'
   jobs:
   - job: BuildAndDeployAPI
+    displayName: 'Build and Deploy API'
     steps:
     - task: NodeTool@0
       inputs:
@@ -96,10 +97,11 @@ stages:
       displayName: 'Create Deployment Archive'
 
     - task: AzureWebApp@1
+      condition: eq(variables.isStaging, true)
       inputs:
-        azureSubscription: $(azureSubscription)
+        azureSubscription: 'agora-current-sc-stg'
         appType: 'webAppLinux'
-        appName: $(apiAppName)
+        appName: 'agora-api-stg'
         package: '$(Build.ArtifactStagingDirectory)/api.zip'
         startUpCommand: 'node dist/main'
-      displayName: 'Deploy to Azure Web App'
+      displayName: 'Deploy to Staging'
