@@ -1,24 +1,26 @@
 trigger:
   branches:
     include:
-      - main      
-      - staging   
+      - main      # Triggers for dev
+      - staging   # Triggers for staging
 
 pool:
   vmImage: 'ubuntu-latest'
 
 variables:
-  # Dynamically set variables based on branch
+  # Set variables based on branch
   ${{ if eq(variables['Build.SourceBranch'], 'refs/heads/main') }}:
-    azureSubscription: 'agora-current-sc'
     apiAppName: 'agora-api-dev'
     DATABASE_URL: $(DATABASE_URL_DEV)
     environmentName: 'Development'
+    isDev: true
+    isStaging: false
   ${{ if eq(variables['Build.SourceBranch'], 'refs/heads/staging') }}:
-    azureSubscription: 'agora-current-sc-stg'
     apiAppName: 'agora-api-stg'
     DATABASE_URL: $(DATABASE_URL_STAGING)
     environmentName: 'Staging'
+    isDev: false
+    isStaging: true
 
 stages:
 - stage: Backend
@@ -39,7 +41,6 @@ stages:
         echo "Environment: $(environmentName)"
         echo "Branch: $(Build.SourceBranch)"
         echo "App Name: $(apiAppName)"
-        echo "Service Connection: $(azureSubscription)"
         echo "=========================================="
       displayName: 'Show Deployment Info'
 
@@ -112,11 +113,24 @@ stages:
         ls -lh $(Build.ArtifactStagingDirectory)/api.zip
       displayName: 'Verify Archive'
 
+    # Deploy to DEV (when on main branch)
     - task: AzureWebApp@1
+      condition: eq(variables.isDev, true)
       inputs:
-        azureSubscription: $(azureSubscription)
+        azureSubscription: 'agora-current-sc'
         appType: 'webAppLinux'
-        appName: $(apiAppName)
+        appName: 'agora-api-dev'
         package: '$(Build.ArtifactStagingDirectory)/api.zip'
         startUpCommand: 'node dist/main'
-      displayName: 'Deploy to $(environmentName) - $(apiAppName)'
+      displayName: 'Deploy to Development'
+
+    # Deploy to STAGING (when on staging branch)
+    - task: AzureWebApp@1
+      condition: eq(variables.isStaging, true)
+      inputs:
+        azureSubscription: 'agora-current-sc-stg'
+        appType: 'webAppLinux'
+        appName: 'agora-api-stg'
+        package: '$(Build.ArtifactStagingDirectory)/api.zip'
+        startUpCommand: 'node dist/main'
+      displayName: 'Deploy to Staging'
