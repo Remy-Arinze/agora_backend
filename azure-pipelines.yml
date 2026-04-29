@@ -46,10 +46,10 @@ stages:
     - script: |
         echo "=== Environment: $(environmentName) ==="
         echo "=== Deploying Database Migrations ==="
-        npx prisma migrate deploy --schema=prisma/schema.prisma
+        npx prisma migrate deploy --schema=prisma/schema
         
         echo "=== Regenerating Prisma Client ==="
-        npx prisma generate --schema=prisma/schema.prisma
+        npx prisma generate --schema=prisma/schema
       displayName: 'Migrate Database and Update Prisma Client'
       env:
         # Prisma expects DB_URL (all caps)
