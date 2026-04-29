@@ -1,0 +1,197 @@
+enum SessionStatus {
+  DRAFT
+  ACTIVE
+  COMPLETED
+  ARCHIVED
+}
+
+enum TermStatus {
+  DRAFT
+  ACTIVE
+  COMPLETED
+  ARCHIVED
+}
+
+model Class {
+  id           String   @id @default(cuid())
+  name         String // e.g., "JSS1", "SS2", "Introduction to Computer Science"
+  code         String? // Course code for tertiary (e.g., "CS101")
+  classLevel   String? // For primary/secondary: "JSS1", "SS2", "Class 1", etc.
+  type         String // "PRIMARY", "SECONDARY", or "TERTIARY"
+  academicYear String
+  creditHours  Int? // For tertiary courses
+  description  String?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  schoolId String
+  school   School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  classTeachers      ClassTeacher[]
+  enrollments        Enrollment[]
+  TimetablePeriod    TimetablePeriod[]        @relation("TimetableCourse")
+  TimetablePeriods   TimetablePeriod[]        @relation("TimetableClass")
+  resources          ClassResource[]
+  curricula          Curriculum[]
+  curriculumProgress CurriculumItemProgress[]
+  assessments        Assessment[]
+
+  @@index([schoolId])
+  @@index([type])
+  @@index([academicYear])
+  @@index([isActive])
+  @@index([schoolId, type, isActive])
+}
+
+model AcademicSession {
+  id         String        @id @default(cuid())
+  name       String // e.g., "2025/2026"
+  startDate  DateTime
+  endDate    DateTime
+  status     SessionStatus @default(DRAFT)
+  schoolId   String
+  schoolType String? // "PRIMARY", "SECONDARY", "TERTIARY" - allows independent sessions per school type
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+
+  school        School         @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  terms         Term[]
+  enrollments   Enrollment[]
+  classTeachers ClassTeacher[] // NEW: Teacher assignments scoped to this session
+
+  // Note: Uniqueness for active sessions is enforced at the application level
+  // This allows reusing session names after a session is COMPLETED (e.g., fixing mistakes)
+  @@index([schoolId])
+  @@index([status])
+  @@index([startDate])
+  @@index([schoolType])
+  @@index([schoolId, name, schoolType]) // For efficient lookups
+  @@index([schoolId, status])
+}
+
+model Term {
+  id                String     @id @default(cuid())
+  name              String // e.g., "1st Term", "2nd Term", "3rd Term"
+  number            Int // 1, 2, or 3
+  startDate         DateTime
+  endDate           DateTime
+  halfTermStart     DateTime? // Optional half-term break start
+  halfTermEnd       DateTime? // Optional half-term break end
+  status            TermStatus @default(DRAFT)
+  academicSessionId String
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+
+  academicSession     AcademicSession      @relation(fields: [academicSessionId], references: [id], onDelete: Cascade)
+  enrollments         Enrollment[]
+  grades              Grade[]              @relation("GradeTerm")
+  timetablePeriods    TimetablePeriod[]
+  curricula           Curriculum[]
+  courseRegistrations CourseRegistration[] // For TERTIARY: Course registrations for this term
+  assessments         Assessment[]
+
+  @@unique([academicSessionId, number])
+  @@index([academicSessionId])
+  @@index([status])
+  @@index([startDate])
+}
+
+model Faculty {
+  id          String   @id @default(cuid())
+  name        String // e.g., "Faculty of Science", "Faculty of Arts"
+  code        String // e.g., "FOS", "FOA"
+  description String?
+  imageUrl    String? // Faculty image/logo
+  schoolId    String
+  deanId      String? // Reference to the dean (teacher)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  school      School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  dean        Teacher?     @relation("FacultyDean", fields: [deanId], references: [id], onDelete: SetNull)
+  departments ClassLevel[] // Departments under this faculty
+
+  @@unique([schoolId, code])
+  @@index([schoolId])
+  @@index([isActive])
+}
+
+model ClassLevel {
+  id          String   @id @default(cuid())
+  name        String // e.g., "JSS 1", "SS 2", "Class 1", or "Computer Science" for TERTIARY
+  code        String? // e.g., "JSS1", "SS2", "CS" for department
+  level       Int // Numeric level for ordering (1, 2, 3, etc.)
+  type        String // "PRIMARY", "SECONDARY", "TERTIARY"
+  schoolId    String
+  facultyId   String? // Only for TERTIARY - links department to faculty
+  description String? // For TERTIARY departments
+  imageUrl    String? // Department/class image (for TERTIARY)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  school         School         @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  faculty        Faculty?       @relation(fields: [facultyId], references: [id], onDelete: SetNull)
+  classArms      ClassArm[] // For PRIMARY/SECONDARY: class arms. For TERTIARY: levels (100L, 200L, etc.)
+  subjects       Subject[]
+  curricula      Curriculum[]
+  nextLevel      ClassLevel?    @relation("ClassLevelProgression", fields: [nextLevelId], references: [id])
+  nextLevelId    String?
+  previousLevels ClassLevel[]   @relation("ClassLevelProgression")
+  schemesOfWork  SchemeOfWork[]
+
+  @@unique([schoolId, code])
+  @@index([schoolId])
+  @@index([facultyId])
+  @@index([type])
+  @@index([isActive])
+}
+
+model ClassArm {
+  id             String   @id @default(cuid())
+  name           String // e.g., "Gold", "Blue", "Red" (arm name within ClassLevel)
+  capacity       Int? // Maximum number of students
+  classLevelId   String
+  academicYear   String   @default("2024/2025") // Track which academic year the arm belongs to
+  classTeacherId String? // Optional primary class teacher for this arm
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  classLevel         ClassLevel               @relation(fields: [classLevelId], references: [id], onDelete: Cascade)
+  classTeacher       Teacher?                 @relation(fields: [classTeacherId], references: [id], onDelete: SetNull)
+  enrollments        Enrollment[]
+  timetablePeriods   TimetablePeriod[]
+  classTeachers      ClassTeacher[]
+  resources          ClassResource[]          @relation("ClassArmResources")
+  curriculumProgress CurriculumItemProgress[]
+  assessments        Assessment[]
+
+  @@unique([classLevelId, name, academicYear])
+  @@index([classLevelId])
+  @@index([academicYear])
+  @@index([isActive])
+  @@index([classTeacherId])
+}
+
+model Room {
+  id        String   @id @default(cuid())
+  name      String // e.g., "Science Lab", "Room 101"
+  code      String? // e.g., "LAB-01", "R101"
+  capacity  Int?
+  roomType  String? // e.g., "Laboratory", "Classroom", "Hall"
+  schoolId  String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  school           School            @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  timetablePeriods TimetablePeriod[]
+  events           Event[]
+
+  @@unique([schoolId, code])
+  @@index([schoolId])
+  @@index([isActive])
+}

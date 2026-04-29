@@ -40,6 +40,7 @@ import { BullBoardModule } from '@bull-board/nestjs';
 import { ExpressAdapter } from '@bull-board/express';
 import { MetricsModule } from './common/metrics/metrics.module';
 import { HttpMetricsInterceptor } from './common/metrics/http-metrics.interceptor';
+import { EngagementModule } from './engagement/engagement.module';
 
 @Module({
   imports: [
@@ -102,6 +103,7 @@ import { HttpMetricsInterceptor } from './common/metrics/http-metrics.intercepto
     AttendanceModule,
     AgoraCurriculumModule,
     MetricsModule,
+    EngagementModule,
   ],
   controllers: [AppController],
   providers: [

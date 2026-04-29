@@ -1,0 +1,173 @@
+enum TransferStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+  COMPLETED
+}
+
+model Student {
+  id            String   @id @default(cuid())
+  uid           String   @unique
+  publicId      String?  @unique // Format: AG-{schoolname}-{short alphanumeric}
+  firstName     String
+  lastName      String
+  middleName    String?
+  dateOfBirth   DateTime
+  profileImage  String? // Cloudinary URL for student profile image
+  profileLocked Boolean  @default(false)
+  nationality   String? // e.g. Nigerian, Ghanaian
+  state         String? // e.g. Lagos, Abuja (state/region of origin or residence)
+  healthInfo    Json? // Health information (bloodGroup, allergies, medications, emergencyContact, emergencyContactPhone, medicalNotes)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  enrollments           Enrollment[]
+  guardians             StudentGuardian[]
+  transfers             Transfer[]
+  personalResources     StudentResource[]
+  courseRegistrations   CourseRegistration[] // For TERTIARY: Course registrations (carry-overs, etc.)
+  assessmentSubmissions AssessmentSubmission[]
+
+  @@index([uid])
+  @@index([userId])
+  @@index([publicId])
+}
+
+model Parent {
+  id           String   @id @default(cuid())
+  firstName    String
+  lastName     String
+  phone        String
+  email        String?
+  relationship String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  userId String? @unique
+  user   User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  students StudentGuardian[]
+  otpCodes OtpCode[]
+
+  @@index([phone])
+  @@index([email])
+  @@index([userId])
+}
+
+model StudentGuardian {
+  id           String   @id @default(cuid())
+  studentId    String
+  parentId     String
+  relationship String
+  isPrimary    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  parent  Parent  @relation(fields: [parentId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, parentId])
+  @@index([studentId])
+  @@index([parentId])
+}
+
+model Enrollment {
+  id             String   @id @default(cuid())
+  studentId      String
+  schoolId       String
+  classId        String? // Link to Class model (nullable for backward compatibility)
+  classArmId     String? // Link to ClassArm (physical group)
+  termId         String? // Link to Term
+  classLevel     String // Keep for backward compatibility and quick access
+  academicYear   String // Keep for backward compatibility
+  enrollmentDate DateTime @default(now())
+  isActive       Boolean  @default(true)
+  debtBalance    Decimal  @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  student  Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  school   School    @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  class    Class?    @relation(fields: [classId], references: [id], onDelete: SetNull)
+  classArm ClassArm? @relation(fields: [classArmId], references: [id], onDelete: SetNull)
+  term     Term?     @relation(fields: [termId], references: [id], onDelete: SetNull)
+
+  grades            Grade[]
+  attendances       Attendance[]
+  fees              Fee[]
+  AcademicSession   AcademicSession? @relation(fields: [academicSessionId], references: [id])
+  academicSessionId String?
+
+  @@unique([studentId, schoolId, termId]) // One enrollment per student per term
+  @@index([studentId])
+  @@index([schoolId])
+  @@index([classId])
+  @@index([classArmId])
+  @@index([termId])
+  @@index([isActive])
+  @@index([schoolId, isActive])
+  @@index([schoolId, createdAt])
+}
+
+model Transfer {
+  id           String         @id @default(cuid())
+  studentId    String
+  fromSchoolId String
+  toSchoolId   String?
+  status       TransferStatus @default(PENDING)
+
+  // TAC fields
+  tac            String?   @unique // Transfer Access Code
+  tacGeneratedAt DateTime? // When TAC was generated
+  tacExpiresAt   DateTime? // TAC expiration (30 days from generation)
+  tacUsedAt      DateTime? // When TAC was used (one-time use)
+  tacUsedBy      String? // School ID that used the TAC
+
+  reason          String?
+  requestedBy     String?
+  approvedBy      String?
+  approvedAt      DateTime?
+  rejectedAt      DateTime?
+  rejectionReason String?
+  completedAt     DateTime? // When transfer was completed
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  student    Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  fromSchool School  @relation("TransferFrom", fields: [fromSchoolId], references: [id])
+  toSchool   School? @relation("TransferTo", fields: [toSchoolId], references: [id])
+
+  @@index([studentId])
+  @@index([fromSchoolId])
+  @@index([toSchoolId])
+  @@index([status])
+  @@index([tac]) // For fast TAC lookup
+  @@index([tacExpiresAt]) // For cleanup of expired TACs
+}
+
+model CourseRegistration {
+  id           String   @id @default(cuid())
+  studentId    String
+  subjectId    String // Link to Subject (for TERTIARY, subjects are courses)
+  semester     String? // e.g., "First Semester", "Second Semester"
+  academicYear String // e.g., "2024/2025"
+  termId       String? // Link to Term (optional, for tracking which term registration is for)
+  isCarryOver  Boolean  @default(false) // True if this is a carry-over/repeat course
+  isActive     Boolean  @default(true) // Can be deactivated if student drops the course
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  term    Term?   @relation(fields: [termId], references: [id], onDelete: SetNull)
+
+  @@unique([studentId, subjectId, termId]) // One registration per student per subject per term
+  @@index([studentId])
+  @@index([subjectId])
+  @@index([termId])
+  @@index([isActive])
+  @@index([academicYear])
+}

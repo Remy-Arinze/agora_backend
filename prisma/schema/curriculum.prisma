@@ -1,0 +1,544 @@
+enum DayOfWeek {
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+  SUNDAY
+}
+
+enum PeriodType {
+  LESSON
+  BREAK
+  ASSEMBLY
+  LUNCH
+}
+
+enum CurriculumStatus {
+  DRAFT // Teacher is still editing
+  SUBMITTED // Submitted for admin approval
+  APPROVED // Admin approved, ready to use
+  ACTIVE // Currently being taught
+  COMPLETED // Term ended, archived
+  REJECTED // Admin rejected, needs revision
+}
+
+enum WeekStatus {
+  PENDING // Not yet taught
+  IN_PROGRESS // Currently teaching
+  COMPLETED // Done teaching
+  SKIPPED // Skipped (with reason in notes)
+}
+
+model Subject {
+  id              String   @id @default(cuid())
+  name            String // e.g., "Mathematics", "English Language"
+  code            String? // e.g., "MATH", "ENG"
+  schoolId        String
+  schoolType      String? // "PRIMARY", "SECONDARY", "TERTIARY" - null means applies to all types
+  classLevelId    String? // For SECONDARY: link to ClassLevel (JSS vs SSS distinction)
+  levelStream     String? // For SECONDARY: "JUNIOR", "SENIOR", or "ALL" (General)
+  agoraSubjectId  String? // Link to global AgoraSubject bank for curriculum discovery
+  isAgoraStandard Boolean  @default(false)
+  category        String? // "CORE", "ELECTIVE", etc. copied from AgoraSubject
+  description     String?
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  school              School               @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  classLevel          ClassLevel?          @relation(fields: [classLevelId], references: [id], onDelete: SetNull)
+  agoraSubject        AgoraSubject?        @relation(fields: [agoraSubjectId], references: [id], onDelete: SetNull)
+  timetablePeriods    TimetablePeriod[]
+  subjectTeachers     SubjectTeacher[]
+  classTeachers       ClassTeacher[] // Teachers assigned to teach this subject in specific classes
+  courseRegistrations CourseRegistration[] // For TERTIARY: Students registered for this subject
+  curricula           Curriculum[] // Curricula for this subject
+  grades              Grade[] // Grades for this subject
+  assessmentTemplates AssessmentTemplate[] // Assessment templates for this subject
+  assessments         Assessment[]
+
+  @@unique([schoolId, code, schoolType])
+  @@index([schoolId])
+  @@index([schoolType])
+  @@index([classLevelId])
+  @@index([agoraSubjectId])
+  @@index([isActive])
+}
+
+model TimetablePeriod {
+  id         String     @id @default(cuid())
+  dayOfWeek  DayOfWeek
+  startTime  String // e.g., "08:00" (HH:mm format)
+  endTime    String // e.g., "09:00" (HH:mm format)
+  type       PeriodType @default(LESSON)
+  subjectId  String? // For PRIMARY/SECONDARY schools
+  courseId   String? // For TERTIARY schools (references Class model)
+  teacherId  String?
+  roomId     String?
+  classId    String? // Direct assignment to Class (for PRIMARY/SECONDARY)
+  classArmId String? // Assignment to ClassArm (optional, for sections)
+  termId     String
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  subject  Subject?  @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  course   Class?    @relation("TimetableCourse", fields: [courseId], references: [id], onDelete: SetNull)
+  class    Class?    @relation("TimetableClass", fields: [classId], references: [id], onDelete: Cascade)
+  teacher  Teacher?  @relation(fields: [teacherId], references: [id], onDelete: SetNull)
+  room     Room?     @relation(fields: [roomId], references: [id], onDelete: SetNull)
+  classArm ClassArm? @relation(fields: [classArmId], references: [id], onDelete: Cascade)
+  term     Term      @relation(fields: [termId], references: [id], onDelete: Cascade)
+
+  @@unique([termId, classId, dayOfWeek, startTime])
+  @@unique([termId, classArmId, dayOfWeek, startTime])
+  @@index([termId])
+  @@index([classId])
+  @@index([classArmId])
+  @@index([teacherId])
+  @@index([roomId])
+  @@index([subjectId])
+  @@index([courseId])
+  @@index([dayOfWeek])
+}
+
+model AgoraSubject {
+  id          String   @id @default(cuid())
+  name        String // "English Language", "Mathematics"
+  code        String   @unique // "ENG", "MTH", "BSC"
+  category    String? // "CORE", "ELECTIVE", "VOCATIONAL"
+  schoolTypes String[] // ["PRIMARY"], ["PRIMARY", "SECONDARY"], etc.
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  curriculumTemplates    AgoraCurriculumTemplate[]
+  agoraCurriculumSources AgoraCurriculumSource[]
+  agoraCurricula         AgoraCurriculum[]
+  schoolSubjects         Subject[] // School subjects linked to this global subject
+
+  @@index([code])
+  @@index([isActive])
+  @@map("NerdcSubject")
+}
+
+model AgoraCurriculumTemplate {
+  id          String   @id @default(cuid())
+  subjectId   String
+  classLevel  String // "PRIMARY_1", "PRIMARY_2", "JSS_1", "SS_1"
+  term        Int // 1, 2, or 3
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  subject         AgoraSubject                  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  weeks           AgoraCurriculumTemplateWeek[]
+  schoolCurricula Curriculum[] // School curricula based on this template
+
+  @@unique([subjectId, classLevel, term])
+  @@index([classLevel])
+  @@index([term])
+  @@map("NerdcCurriculum")
+}
+
+model AgoraCurriculumTemplateWeek {
+  id           String   @id @default(cuid())
+  curriculumId String
+  weekNumber   Int // 1-13 (Nigerian school term)
+  topic        String // Main topic
+  subTopics    String[] // Sub-topics within the week
+  objectives   String[] // Learning objectives
+  activities   String[] // Suggested activities
+  resources    String[] // Required resources
+  assessment   String? // Assessment method
+  duration     String? // e.g., "5 periods of 40 minutes"
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  curriculum AgoraCurriculumTemplate @relation(fields: [curriculumId], references: [id], onDelete: Cascade)
+
+  @@unique([curriculumId, weekNumber])
+  @@index([curriculumId])
+  @@map("NerdcCurriculumWeek")
+}
+
+model Curriculum {
+  id           String  @id @default(cuid())
+  schoolId     String? // Direct link to school (nullable for migration)
+  classId      String? // For TERTIARY (courses)
+  classLevelId String? // For PRIMARY/SECONDARY
+  subjectId    String? // Link to Subject (nullable for migration)
+  termId       String? // Link to Term (nullable for migration)
+  teacherId    String?
+  academicYear String
+
+  // Legacy field - will be deprecated
+  subject String? // For backward compatibility (use subjectId instead)
+
+  // NERDC Integration
+  nerdcCurriculumId String? // Reference to NERDC template used
+  isNerdcBased      Boolean @default(false) // Was it generated from NERDC?
+  customizations    Int     @default(0) // Number of custom changes made
+
+  // Status & Approval
+  status          CurriculumStatus @default(DRAFT)
+  submittedAt     DateTime?
+  approvedBy      String? // Admin who approved
+  approvedAt      DateTime?
+  rejectionReason String? // Reason for rejection
+
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  school          School?                  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  class           Class?                   @relation(fields: [classId], references: [id], onDelete: Cascade)
+  classLevel      ClassLevel?              @relation(fields: [classLevelId], references: [id], onDelete: Cascade)
+  subjectRef      Subject?                 @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  term            Term?                    @relation(fields: [termId], references: [id], onDelete: SetNull)
+  teacher         Teacher?                 @relation(fields: [teacherId], references: [id], onDelete: SetNull)
+  nerdcCurriculum AgoraCurriculumTemplate? @relation(fields: [nerdcCurriculumId], references: [id])
+  items           CurriculumItem[]
+
+  @@unique([schoolId, classLevelId, subjectId, termId])
+  @@unique([schoolId, classId, subjectId, termId])
+  @@index([schoolId])
+  @@index([classId])
+  @@index([classLevelId])
+  @@index([subjectId])
+  @@index([teacherId])
+  @@index([status])
+  @@index([academicYear])
+}
+
+model CurriculumItem {
+  id           String   @id @default(cuid())
+  curriculumId String
+  weekNumber   Int // Week number (1-13)
+  topic        String
+  subTopics    String[] // Sub-topics within the week
+  objectives   String[] // Learning objectives
+  activities   String[] // Suggested activities
+  resources    String[] // Required resources
+  assessment   String? // Assessment method for this week
+  order        Int      @default(0)
+
+  // Legacy field alias
+  week Int? // Deprecated - use weekNumber
+
+  // Customization tracking (for NERDC-based curricula)
+  isCustomized  Boolean @default(false) // Was this modified from NERDC?
+  originalTopic String? // What NERDC had (if customized)
+
+  // Progress tracking (Legacy - moved to CurriculumItemProgress)
+  status       WeekStatus @default(PENDING)
+  taughtAt     DateTime? // When this week was taught
+  teacherNotes String? // Teacher's notes after teaching
+  completedBy  String? // Teacher ID who marked complete
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  curriculum Curriculum               @relation(fields: [curriculumId], references: [id], onDelete: Cascade)
+  progress   CurriculumItemProgress[]
+
+  @@unique([curriculumId, weekNumber])
+  @@index([curriculumId])
+  @@index([weekNumber])
+  @@index([status])
+  @@index([order])
+}
+
+model CurriculumItemProgress {
+  id               String  @id @default(cuid())
+  curriculumItemId String
+  classArmId       String? // For primary/secondary where class arm is used
+  classId          String? // For tertiary or classes without arms
+  teacherId        String // Teacher who taught this
+
+  status       WeekStatus @default(PENDING)
+  taughtAt     DateTime?
+  teacherNotes String?
+  completedBy  String? // Optional explicit user tracking
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  item     CurriculumItem @relation(fields: [curriculumItemId], references: [id], onDelete: Cascade)
+  classArm ClassArm?      @relation(fields: [classArmId], references: [id], onDelete: Cascade)
+  class    Class?         @relation(fields: [classId], references: [id], onDelete: Cascade)
+  teacher  Teacher        @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+
+  @@unique([curriculumItemId, classArmId])
+  @@unique([curriculumItemId, classId])
+  @@index([curriculumItemId])
+  @@index([classArmId])
+  @@index([classId])
+  @@index([teacherId])
+  @@index([status])
+}
+
+enum AgoraCurriculumSourceStatus {
+  PENDING_PARSE
+  PARSING
+  PARSED
+  APPROVED
+  REJECTED
+  FAILED
+}
+
+enum AgoraCurriculumPublishStatus {
+  DRAFT
+  PUBLISHED
+}
+
+enum SchoolCurriculumDocStatus {
+  PENDING_PARSE
+  PARSING
+  PARSED
+  APPROVED
+  REJECTED
+  FAILED
+}
+
+enum SchemeOfWorkStatus {
+  QUEUED
+  VERIFYING
+  GENERATING
+  DRAFT
+  APPROVED
+  PUBLISHED
+  FAILED
+  CANCELLED
+}
+
+enum SchemeGenerationMode {
+  AGORA_ONLY
+  SCHOOL_ONLY
+  MERGED
+}
+
+model AgoraCurriculumSource {
+  id         String @id @default(cuid())
+  subjectId  String
+  gradeLevel String // "PRIMARY_1", "JSS_1", "SS_1", etc.
+
+  // Source content
+  sourceType String // "MANUAL" | "FILE_UPLOAD"
+  fileName   String? // Original filename (for uploads)
+  fileUrl    String? // Cloudinary URL (for uploads)
+  fileType   String? // "PDF" | "DOCX"
+
+  // Parsed content
+  parsedData  Json? // AI-extracted structured content
+  parseErrors String? // Any parsing errors/warnings
+
+  status AgoraCurriculumSourceStatus @default(PENDING_PARSE)
+
+  // Manual entry fields
+  manualContent Json? // Structured manual entry data
+
+  createdBy  String // Super admin user ID
+  approvedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  batchId    String? // For tracking multiple file uploads together
+
+  subject AgoraSubject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@index([subjectId])
+  @@index([gradeLevel])
+  @@index([status])
+  @@index([subjectId, gradeLevel])
+}
+
+model AgoraCurriculum {
+  id         String @id @default(cuid())
+  subjectId  String
+  gradeLevel String
+
+  version Int                          @default(1)
+  status  AgoraCurriculumPublishStatus @default(DRAFT)
+
+  // Consolidation metadata
+  sourceIds          String[] // IDs of sources used in this consolidation
+  consolidationNotes String? // AI notes about the consolidation process
+
+  publishedAt DateTime?
+  publishedBy String? // Super admin user ID
+  createdBy   String // Super admin user ID who created this version
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  subject       AgoraSubject           @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  topics        AgoraCurriculumTopic[]
+  schemesOfWork SchemeOfWork[]
+
+  @@unique([subjectId, gradeLevel, version])
+  @@index([subjectId])
+  @@index([gradeLevel])
+  @@index([status])
+  @@index([subjectId, gradeLevel])
+}
+
+model AgoraCurriculumTopic {
+  id           String   @id @default(cuid())
+  curriculumId String
+  term         Int      @default(1) // 1, 2, or 3 — which term this topic belongs to
+  title        String
+  description  String?
+  weekNumber   Int // Week within the term (1-13)
+  topic        String? // Legacy field
+  subTopics    String[]
+
+  // Dual learning outcomes
+  learningOutcomes        String[] // Formal version (for teachers/admin)
+  studentFriendlyOutcomes String[] // Simplified version (for students)
+
+  suggestedActivities String[]
+  resources           String[]
+  assessmentType      String? // "Quiz", "Project", "Written Test", etc.
+  assessmentGuidance  String?
+  duration            String?
+
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  curriculum AgoraCurriculum @relation(fields: [curriculumId], references: [id], onDelete: Cascade)
+
+  @@unique([curriculumId, term, weekNumber])
+  @@index([curriculumId])
+  @@index([term])
+  @@index([weekNumber])
+}
+
+model SchoolCurriculumDoc {
+  id         String @id @default(cuid())
+  schoolId   String
+  subjectId  String // References the school's Subject
+  gradeLevel String
+  termNumber Int? // 1, 2, or 3
+
+  // Source content
+  sourceType String // "MANUAL" | "FILE_UPLOAD"
+  fileName   String?
+  fileUrl    String?
+  fileType   String? // "PDF" | "DOCX" | "XLSX"
+
+  // Parsed content
+  parsedData  Json?
+  parseErrors String?
+
+  // Manual entry
+  manualContent Json?
+
+  status SchoolCurriculumDocStatus @default(PENDING_PARSE)
+
+  uploadedBy String
+  approvedAt DateTime?
+  approvedBy String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  school        School         @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  schemesOfWork SchemeOfWork[]
+
+  @@unique([schoolId, subjectId, gradeLevel, termNumber])
+  @@index([schoolId])
+  @@index([subjectId])
+  @@index([gradeLevel])
+  @@index([status])
+}
+
+model SchemeOfWork {
+  id           String  @id @default(cuid())
+  schoolId     String
+  classLevelId String?
+  classArmId   String? // For PRIMARY/SECONDARY
+  classId      String? // For TERTIARY or direct class reference
+  subjectId    String
+  termId       String
+
+  // Generation context
+  generationMode         SchemeGenerationMode
+  agoraCurriculumId      String? // Which Agora Curriculum version was used
+  agoraCurriculumVersion Int?
+  schoolCurriculumId     String? // Which school curriculum doc was used
+  mergeWeightAgora       Int? // e.g., 70 (percentage)
+  mergeWeightSchool      Int? // e.g., 30 (percentage)
+
+  version Int                @default(1)
+  status  SchemeOfWorkStatus @default(DRAFT)
+
+  // Fork tracking
+  parentSchemeId String? // If this is a forked version
+  isFork         Boolean @default(false)
+
+  generatedAt DateTime?
+  approvedAt  DateTime?
+  approvedBy  String?
+  publishedAt DateTime?
+  publishedBy String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  school           School               @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  classLevel       ClassLevel?          @relation(fields: [classLevelId], references: [id], onDelete: SetNull)
+  agoraCurriculum  AgoraCurriculum?     @relation(fields: [agoraCurriculumId], references: [id], onDelete: SetNull)
+  schoolCurriculum SchoolCurriculumDoc? @relation(fields: [schoolCurriculumId], references: [id], onDelete: SetNull)
+  parentScheme     SchemeOfWork?        @relation("SchemeOfWorkFork", fields: [parentSchemeId], references: [id], onDelete: SetNull)
+  forks            SchemeOfWork[]       @relation("SchemeOfWorkFork")
+  weeks            SchemeOfWorkWeek[]
+
+  @@index([schoolId])
+  @@index([classLevelId])
+  @@index([classArmId])
+  @@index([classId])
+  @@index([subjectId])
+  @@index([termId])
+  @@index([status])
+  @@index([schoolId, subjectId, termId])
+}
+
+model SchemeOfWorkWeek {
+  id                String    @id @default(cuid())
+  schemeOfWorkId    String
+  weekNumber        Int // Maps to timetable week structure
+  calendarStartDate DateTime? // Actual calendar date from timetable
+  calendarEndDate   DateTime?
+
+  topic     String
+  subTopics String[]
+
+  // Dual learning outcomes
+  learningOutcomes        String[] // Formal (teacher view)
+  studentFriendlyOutcomes String[] // Simplified (student view)
+
+  suggestedActivities String[]
+  resources           String[]
+  assessmentType      String?
+  teacherNotes        String? // Admin-set notes
+
+  // Teacher private notes (only visible to the teacher)
+  privateTeacherNotes String?
+
+  // Delivery tracking
+  isDelivered Boolean   @default(false)
+  deliveredAt DateTime?
+  deliveredBy String? // Teacher ID who marked as delivered
+
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  schemeOfWork SchemeOfWork @relation(fields: [schemeOfWorkId], references: [id], onDelete: Cascade)
+
+  @@unique([schemeOfWorkId, weekNumber])
+  @@index([schemeOfWorkId])
+  @@index([weekNumber])
+  @@index([isDelivered])
+}
