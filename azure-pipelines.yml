@@ -34,11 +34,11 @@ stages:
     steps:
     - task: NodeTool@0
       inputs:
-        versionSpec: '22.x'          # ✅ Fixed: match Azure Node version
+        versionSpec: '22.x'
       displayName: 'Install Node.js 22'
 
-    - script: npm ci                  # ✅ ci is faster and cleaner than install
-      displayName: 'Install Dependencies'
+    - script: npm ci
+      displayName: 'Install All Dependencies'
 
     - script: |
         echo "=== Environment: $(environmentName) ==="
@@ -63,14 +63,16 @@ stages:
       env:
         NODE_OPTIONS: '--max-old-space-size=4096'
 
+    - script: npm prune --production
+      displayName: 'Remove Dev Dependencies'
+
     - bash: |
         DEPLOY_DIR=$(Build.SourcesDirectory)/deploy_api
         mkdir -p $DEPLOY_DIR
         cp -r dist $DEPLOY_DIR/
         cp package.json $DEPLOY_DIR/
-        cp package-lock.json $DEPLOY_DIR/   # ✅ needed for npm ci on Azure
+        cp -r node_modules $DEPLOY_DIR/
         if [ -d "prisma" ]; then cp -r prisma $DEPLOY_DIR/; fi
-        # ✅ DO NOT copy node_modules — Azure will install them fresh
       displayName: 'Assemble Package'
 
     - task: ArchiveFiles@2
