@@ -7,9 +7,6 @@ trigger:
 pool:
   vmImage: 'ubuntu-latest'
 
-# ──────────────────────────────────────────────────────────
-# Branch-Based Variables (Fixed Syntax)
-# ──────────────────────────────────────────────────────────
 variables:
 - ${{ if eq(variables['Build.SourceBranchName'], 'dev') }}:
   - group: agora-dev-rg
@@ -37,10 +34,10 @@ stages:
     steps:
     - task: NodeTool@0
       inputs:
-        versionSpec: '20.x'
-      displayName: 'Install Node.js'
+        versionSpec: '22.x'          # ✅ Fixed: match Azure Node version
+      displayName: 'Install Node.js 22'
 
-    - script: npm install
+    - script: npm ci                  # ✅ ci is faster and cleaner than install
       displayName: 'Install Dependencies'
 
     - script: |
@@ -52,8 +49,7 @@ stages:
         npx prisma generate --schema=prisma/schema
       displayName: 'Migrate Database and Update Prisma Client'
       env:
-        # Prisma expects DB_URL (all caps)
-        DB_URL: $(DB_Url) 
+        DB_URL: $(DB_Url)
 
     - script: |
         echo "=== Building NestJS Application ==="
@@ -67,16 +63,14 @@ stages:
       env:
         NODE_OPTIONS: '--max-old-space-size=4096'
 
-    - script: npm prune --production
-      displayName: 'Prune Dev Dependencies'
-
     - bash: |
         DEPLOY_DIR=$(Build.SourcesDirectory)/deploy_api
         mkdir -p $DEPLOY_DIR
         cp -r dist $DEPLOY_DIR/
         cp package.json $DEPLOY_DIR/
-        cp -r node_modules $DEPLOY_DIR/
+        cp package-lock.json $DEPLOY_DIR/   # ✅ needed for npm ci on Azure
         if [ -d "prisma" ]; then cp -r prisma $DEPLOY_DIR/; fi
+        # ✅ DO NOT copy node_modules — Azure will install them fresh
       displayName: 'Assemble Package'
 
     - task: ArchiveFiles@2
