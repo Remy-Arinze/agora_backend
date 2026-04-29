@@ -352,3 +352,40 @@ model AiCreditPurchase {
   @@index([subscriptionId])
   @@index([reference])
 }
+
+enum CampaignStatus {
+  DRAFT
+  SCHEDULED
+  ACTIVE
+  PAUSED
+  COMPLETED
+  CANCELLED
+}
+
+enum CampaignTarget {
+  ALL_SCHOOLS
+  ACTIVE_SCHOOLS
+  INACTIVE_SCHOOLS
+  SPECIFIC_SCHOOLS
+}
+
+model Campaign {
+  id            String         @id @default(cuid())
+  name          String
+  subject       String
+  content       String         // HTML or rich text for the email/in-app body
+  type          String         @default("EMAIL") // EMAIL, IN_APP, BOTH
+  target        CampaignTarget @default(ALL_SCHOOLS)
+  targetSchools String[]       // Array of school IDs if target is SPECIFIC_SCHOOLS
+  status        CampaignStatus @default(DRAFT)
+  scheduledAt   DateTime?
+  sentAt        DateTime?
+  createdBy     String         // Super Admin User ID
+  metrics       Json?          // Store sent/opened/clicked counts
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@index([status])
+  @@index([scheduledAt])
+  @@index([createdBy])
+}
