@@ -2,6 +2,9 @@
   "name": "agora-backend",
   "version": "1.0.0",
   "private": true,
+  "engines": {
+    "node": "22.x"
+  },
   "scripts": {
     "build": "prisma generate && nest build",
     "dev": "ts-node-dev --respawn --transpile-only src/main.ts",
