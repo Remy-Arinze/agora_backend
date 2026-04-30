@@ -35,8 +35,7 @@ import { VECTOR_QUEUE_NAME } from './vector.processor';
 
         const isCluster =
           config.get<string>('REDIS_IS_CLUSTER') === 'true' ||
-          config.get<boolean>('REDIS_IS_CLUSTER') === true ||
-          port === 10000;
+          config.get<boolean>('REDIS_IS_CLUSTER') === true;
 
         if (isCluster) {
           logger.log(

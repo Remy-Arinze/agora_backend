@@ -61,7 +61,7 @@ export class EngagementQueueProcessor extends WorkerHost {
     if (!campaign || campaign.status !== 'ACTIVE') return;
 
     this.logger.log(`Dispatching campaign: ${campaign.name}`);
-    
+
     let targetSchoolIds: string[] = [];
 
     if (campaign.target === 'ALL_SCHOOLS') {
@@ -82,7 +82,7 @@ export class EngagementQueueProcessor extends WorkerHost {
       if (owner && owner.user?.email) {
         // Here you would use the EmailService to send the actual email using campaign.subject and campaign.content
         // await this.emailService.sendCampaignEmail(owner.user.email, campaign.subject, campaign.content);
-        
+
         // Log it to prevent duplicate spam
         await this.prisma.notificationLog.create({
           data: {
@@ -101,8 +101,8 @@ export class EngagementQueueProcessor extends WorkerHost {
 
     await this.prisma.campaign.update({
       where: { id: campaignId },
-      data: { 
-        status: 'COMPLETED', 
+      data: {
+        status: 'COMPLETED',
         sentAt: new Date(),
         metrics: { sent: sentCount }
       }
@@ -127,7 +127,7 @@ export class EngagementQueueProcessor extends WorkerHost {
 
     if (owner && owner.user?.email) {
       // await this.emailService.sendNudgeEmail(owner.user.email, subject);
-      
+
       await this.prisma.notificationLog.create({
         data: {
           userId: owner.userId,

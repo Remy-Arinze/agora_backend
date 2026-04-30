@@ -10,14 +10,14 @@ export class EngagementService {
   constructor(
     @InjectQueue('retention-queue') private readonly retentionQueue: Queue,
     private readonly prisma: PrismaService,
-  ) {}
+  ) { }
 
   /**
    * Schedule the Playbook A onboarding checks
    */
   async scheduleOnboardingPlaybook(schoolId: string) {
     this.logger.log(`Scheduling onboarding playbook for school ${schoolId}`);
-    
+
     // Day 1 Check: Session created?
     await this.retentionQueue.add(
       'check-onboarding-session',

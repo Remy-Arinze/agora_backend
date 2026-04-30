@@ -25,4 +25,4 @@ import { SchoolVerifiedListener } from './listeners/school-verified.listener';
   ],
   exports: [EngagementService, CampaignService],
 })
-export class EngagementModule {}
+export class EngagementModule { }
