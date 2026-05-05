@@ -85,6 +85,8 @@ model Enrollment {
   academicYear   String // Keep for backward compatibility
   enrollmentDate DateTime @default(now())
   isActive       Boolean  @default(true)
+  /// Set only by subscription downgrade — cannot be cleared by admin UI; renewed payments unlock.
+  billingLocked  Boolean  @default(false)
   debtBalance    Decimal  @default(0)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -110,6 +112,7 @@ model Enrollment {
   @@index([isActive])
   @@index([schoolId, isActive])
   @@index([schoolId, createdAt])
+  @@index([schoolId, billingLocked])
 }
 
 model Transfer {

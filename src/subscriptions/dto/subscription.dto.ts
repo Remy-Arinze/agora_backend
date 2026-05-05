@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsEnum, IsInt, Min, IsBoolean, IsDateString } from 'class-validator';
+import { IsString, IsOptional, IsEnum, IsInt, Min, IsBoolean, IsDateString, IsArray } from 'class-validator';
 
 // Enums matching Prisma schema
 export enum SubscriptionTier {
@@ -56,12 +56,22 @@ export class SubscriptionDto {
   toolAccess: SchoolToolAccessDto[];
 }
 
+export type SubscriptionBillingPhase = 'OK' | 'GRACE_PERIOD' | 'ADMIN_ACTION_REQUIRED';
+
+export class SubscriptionBillingSummaryDto {
+  phase: SubscriptionBillingPhase;
+  graceEndsAt: string | null;
+  paidPeriodEndDate: string | null;
+}
+
 export class SubscriptionSummaryDto {
   tier: SubscriptionTier;
   isActive: boolean;
   aiCredits: number;
   aiCreditsUsed: number;
   aiCreditsRemaining: number;
+  /** False when the paid-through date has passed; AI is off even if credits remain (they roll over on renewal). */
+  aiPeriodActive?: boolean;
   limits: {
     maxStudents: number;
     maxTeachers: number;
@@ -73,6 +83,16 @@ export class SubscriptionSummaryDto {
     status: ToolStatus;
     hasAccess: boolean;
   }[];
+  /** Present when subscription row includes billing lifecycle fields. */
+  billing?: SubscriptionBillingSummaryDto;
+}
+
+/** Principal-only: IDs of enrollments that stay ACTIVE after downgrade to Free (exactly free tier cap when over cap). */
+export class DowngradeToFreeDto {
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  keepEnrollmentIds?: string[];
 }
 
 // Request DTOs
@@ -89,6 +109,13 @@ export class UseAiCreditsDto {
   @IsString()
   @IsOptional()
   action?: string; // e.g., "generate_flashcards", "grade_essay"
+}
+
+/** Principal-only: increase the school's AI credit pool during an active billing period. */
+export class TopUpAiCreditsDto {
+  @IsInt()
+  @Min(1)
+  credits: number;
 }
 
 export class UpgradeSubscriptionDto {

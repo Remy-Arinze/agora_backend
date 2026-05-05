@@ -50,6 +50,7 @@ model School {
   knowledgeChunks     KnowledgeChunk[]
   schoolCurricula     SchoolCurriculumDoc[] // School-uploaded curriculum documents
   schemesOfWork       SchemeOfWork[] // Generated schemes of work
+  subscriptionBillingAuditLogs SubscriptionBillingAuditLog[]
 
   @@index([schoolId])
   @@index([isActive])
@@ -211,6 +212,13 @@ enum SubscriptionTier {
   CUSTOM
 }
 
+/// School-wide billing UX phase (Paystack + lifecycle jobs).
+enum SchoolBillingPhase {
+  OK
+  GRACE_PERIOD
+  ADMIN_ACTION_REQUIRED
+}
+
 enum ToolStatus {
   ACTIVE
   TRIAL
@@ -281,6 +289,10 @@ model Subscription {
   aiCredits       Int              @default(0) // Monthly AI credits
   aiCreditsUsed   Int              @default(0) // Credits used this month
   lastCreditReset DateTime? // When credits were last reset
+  billingPhase              SchoolBillingPhase @default(OK)
+  gracePeriodEndsAt         DateTime?
+  billingGraceReminderLastAt DateTime?
+  paystackSubscriptionCode   String?
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
 
@@ -294,6 +306,20 @@ model Subscription {
   @@index([planId])
   @@index([tier])
   @@index([isActive])
+  @@index([billingPhase])
+}
+
+model SubscriptionBillingAuditLog {
+  id           String   @id @default(cuid())
+  schoolId     String
+  action       String
+  actorUserId  String?
+  payload      Json?
+  createdAt    DateTime @default(now())
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId, createdAt])
 }
 
 model SchoolToolAccess {

@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../database/prisma.service';
 import { SubscriptionTier } from '../subscriptions/dto/subscription.dto';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
+import { SubscriptionBillingService } from '../subscriptions/subscription-billing.service';
 import * as crypto from 'crypto';
 
 export interface InitializePaymentOptions {
@@ -61,8 +62,8 @@ export class PaymentsService {
   // Pricing configuration (in Naira) - 3 tiers: FREE, PRO, PRO_PLUS
   private readonly pricing: Record<SubscriptionTier, { monthly: number; yearly: number }> = {
     [SubscriptionTier.FREE]: { monthly: 0, yearly: 0 },
-    [SubscriptionTier.PRO]: { monthly: 20000, yearly: 200000 },
-    [SubscriptionTier.PRO_PLUS]: { monthly: 50000, yearly: 500000 },
+    [SubscriptionTier.PRO]: { monthly: 49999, yearly: 499990 },
+    [SubscriptionTier.PRO_PLUS]: { monthly: 99999, yearly: 999990 },
     [SubscriptionTier.CUSTOM]: { monthly: 0, yearly: 0 },
   };
 
@@ -70,6 +71,7 @@ export class PaymentsService {
     private readonly configService: ConfigService,
     private readonly prisma: PrismaService,
     private readonly subscriptionsService: SubscriptionsService,
+    private readonly subscriptionBillingService: SubscriptionBillingService,
     private readonly metricsService: MetricsService,
   ) {
     this.secretKey = this.configService.get<string>('PAYSTACK_SECRET_KEY') || null;
@@ -271,9 +273,12 @@ export class PaymentsService {
       Number(payment.amount)
     );
 
-    // Handle upgrade via SubscriptionsService if possible, or directly if needed
-    // Calculate end date
-    const endDate = new Date();
+    // Stack renewal: extend from current paid-through date when still in the future.
+    const now = new Date();
+    const currentEnd = payment.subscription.endDate;
+    const base =
+      currentEnd && currentEnd.getTime() > now.getTime() ? new Date(currentEnd) : now;
+    const endDate = new Date(base);
     if (metadata.isYearly) {
       endDate.setFullYear(endDate.getFullYear() + 1);
     } else {
@@ -283,12 +288,21 @@ export class PaymentsService {
     // Update subscription directly to ensure it matches the new core tiered logic
     const tierLimits = {
       [SubscriptionTier.FREE]: { maxStudents: 100, maxTeachers: 10, maxAdmins: 2, aiCredits: 0 },
-      [SubscriptionTier.PRO]: { maxStudents: 500, maxTeachers: 50, maxAdmins: 10, aiCredits: 5000 },
-      [SubscriptionTier.PRO_PLUS]: { maxStudents: 2000, maxTeachers: 200, maxAdmins: 25, aiCredits: 20000 },
+      [SubscriptionTier.PRO]: { maxStudents: 800, maxTeachers: 80, maxAdmins: 20, aiCredits: 10000 },
+      [SubscriptionTier.PRO_PLUS]: { maxStudents: 2000, maxTeachers: 150, maxAdmins: 35, aiCredits: 25000 },
       [SubscriptionTier.CUSTOM]: { maxStudents: -1, maxTeachers: -1, maxAdmins: -1, aiCredits: -1 },
     };
 
     const limits = tierLimits[metadata.tier] || tierLimits[SubscriptionTier.FREE];
+
+    const sub = payment.subscription;
+    let newAiCredits = limits.aiCredits;
+    if (limits.aiCredits === -1) {
+      newAiCredits = -1;
+    } else if (limits.aiCredits > 0 && sub.aiCredits !== -1) {
+      const rolloverCredits = Math.max(0, sub.aiCredits - sub.aiCreditsUsed);
+      newAiCredits = limits.aiCredits + rolloverCredits;
+    }
 
     await this.prisma.subscription.update({
       where: { id: payment.subscriptionId },
@@ -299,8 +313,8 @@ export class PaymentsService {
         maxStudents: limits.maxStudents,
         maxTeachers: limits.maxTeachers,
         maxAdmins: limits.maxAdmins,
-        aiCredits: limits.aiCredits,
-        aiCreditsUsed: 0, // Reset usage on upgrade
+        aiCredits: newAiCredits,
+        aiCreditsUsed: 0,
         lastCreditReset: new Date(),
       },
     });
@@ -311,6 +325,8 @@ export class PaymentsService {
       payment.subscriptionId,
       metadata.tier
     );
+
+    await this.subscriptionBillingService.onSuccessfulPaidRenewal(payment.subscription.schoolId);
 
     this.logger.log(`Subscription upgraded and tool access synced: ${payment.subscription.schoolId} -> ${metadata.tier}`);
   }
@@ -331,6 +347,12 @@ export class PaymentsService {
           where: { reference: data.reference },
           data: { status: 'FAILED' },
         });
+        break;
+
+      case 'invoice.payment_failed':
+      case 'subscription.disable':
+      case 'subscription.not_renew':
+        this.logger.log(`Paystack subscription lifecycle event (not yet wired to billing phase): ${event}`);
         break;
 
       default:

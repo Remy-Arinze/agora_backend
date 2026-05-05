@@ -7,6 +7,7 @@ import { NotificationService } from '../notification/notification.service';
 import { UserWithContext } from '../auth/types/user-with-context.type';
 import { UserRole } from '@prisma/client';
 import { MetricsService } from '../common/metrics/metrics.service';
+import { SubscriptionBillingService } from '../subscriptions/subscription-billing.service';
 
 @Injectable()
 export class AssessmentsService {
@@ -17,6 +18,7 @@ export class AssessmentsService {
         private readonly aiService: AiService,
         private readonly notificationService: NotificationService,
         private readonly metricsService: MetricsService,
+        private readonly subscriptionBilling: SubscriptionBillingService,
     ) { }
 
     async createAssessment(schoolId: string, dto: CreateAssessmentDto, user: UserWithContext) {
@@ -36,6 +38,8 @@ export class AssessmentsService {
         if (!teacher) {
             throw new ForbiddenException('Teacher not found in this school');
         }
+
+        await this.subscriptionBilling.assertTeacherMayWrite(schoolId, teacherProfileId);
 
         // Resolve and validate class/arm IDs
         let finalClassId = dto.classId;
@@ -122,7 +126,26 @@ export class AssessmentsService {
         return assessment;
     }
 
-    async getClassAssessments(schoolId: string, classId: string, termId?: string, studentId?: string) {
+    async getClassAssessments(
+        schoolId: string,
+        classId: string,
+        termId?: string,
+        studentId?: string,
+        user?: UserWithContext,
+    ) {
+        let effectiveStudentId = studentId;
+        if (user?.role === UserRole.STUDENT) {
+            const student = await this.prisma.student.findUnique({
+                where: { userId: user.id },
+                select: { id: true },
+            });
+            if (!student) {
+                throw new ForbiddenException('Student profile not found');
+            }
+            await this.subscriptionBilling.assertStudentEnrollmentOperational(student.id, schoolId);
+            effectiveStudentId = student.id;
+        }
+
         const assessments = await this.prisma.assessment.findMany({
             where: {
                 schoolId,
@@ -138,9 +161,9 @@ export class AssessmentsService {
                 _count: {
                     select: { submissions: true }
                 },
-                ...(studentId ? {
+                ...(effectiveStudentId ? {
                     submissions: {
-                        where: { studentId },
+                        where: { studentId: effectiveStudentId },
                         select: { id: true, status: true, totalScore: true, submittedAt: true }
                     }
                 } : {}),
@@ -149,7 +172,7 @@ export class AssessmentsService {
             }
         });
 
-        if (studentId) {
+        if (effectiveStudentId) {
             return assessments.map(a => ({
                 ...a,
                 isSubmitted: a.submissions.length > 0,
@@ -161,6 +184,17 @@ export class AssessmentsService {
     }
 
     async getAssessmentById(schoolId: string, assessmentId: string, user: UserWithContext) {
+        if (user.role === UserRole.STUDENT) {
+            const student = await this.prisma.student.findUnique({
+                where: { userId: user.id },
+                select: { id: true },
+            });
+            if (!student) {
+                throw new ForbiddenException('Student profile not found');
+            }
+            await this.subscriptionBilling.assertStudentEnrollmentOperational(student.id, schoolId);
+        }
+
         const assessment = await this.prisma.assessment.findUnique({
             where: { id: assessmentId },
             include: {
@@ -207,6 +241,8 @@ export class AssessmentsService {
         if (!student) {
             throw new ForbiddenException('Student profile not found');
         }
+
+        await this.subscriptionBilling.assertStudentEnrollmentOperational(student.id, schoolId);
 
         const assessment = await this.prisma.assessment.findUnique({
             where: { id: assessmentId }
@@ -270,6 +306,8 @@ export class AssessmentsService {
 
         if (!student) throw new ForbiddenException();
 
+        await this.subscriptionBilling.assertStudentEnrollmentOperational(student.id, schoolId);
+
         const submission = await this.prisma.assessmentSubmission.findUnique({
             where: { assessmentId_studentId: { assessmentId, studentId: student.id } },
             include: { assessment: true }
@@ -322,6 +360,8 @@ export class AssessmentsService {
         if (!student) {
             throw new ForbiddenException('Student profile not found');
         }
+
+        await this.subscriptionBilling.assertStudentEnrollmentOperational(student.id, schoolId);
 
         const assessment = await this.prisma.assessment.findUnique({
             where: { id: assessmentId },
@@ -491,7 +531,7 @@ export class AssessmentsService {
         return submission;
     }
 
-    async getSubmissionById(schoolId: string, submissionId: string) {
+    async getSubmissionById(schoolId: string, submissionId: string, user: UserWithContext) {
         const submission = await this.prisma.assessmentSubmission.findUnique({
             where: { id: submissionId },
             include: {
@@ -505,6 +545,17 @@ export class AssessmentsService {
 
         if (!submission || (submission.assessment.schoolId !== schoolId)) {
             throw new NotFoundException('Submission not found');
+        }
+
+        if (user.role === UserRole.STUDENT) {
+            const student = await this.prisma.student.findUnique({
+                where: { userId: user.id },
+                select: { id: true },
+            });
+            if (!student || submission.studentId !== student.id) {
+                throw new ForbiddenException('You do not have permission to view this submission');
+            }
+            await this.subscriptionBilling.assertStudentEnrollmentOperational(student.id, schoolId);
         }
 
         return submission;
@@ -546,6 +597,11 @@ export class AssessmentsService {
             if (!teacherProfile || submission.assessment.teacherId !== teacherProfile.id) {
                 throw new ForbiddenException('You do not have permission to grade this assessment');
             }
+            await this.subscriptionBilling.assertTeacherMayWrite(schoolId, teacherProfile.id);
+        }
+
+        if (user.role === 'SCHOOL_ADMIN' && user.currentProfileId) {
+            await this.subscriptionBilling.assertSchoolAdminNotBillingSuspended(schoolId, user.currentProfileId);
         }
 
         const currentTotalScore = dto.totalScore !== undefined ? dto.totalScore : Number(submission.totalScore);
@@ -655,6 +711,11 @@ export class AssessmentsService {
             if (!teacherProfile || assessment.teacherId !== teacherProfile.id) {
                 throw new ForbiddenException('You do not have permission to delete this assessment');
             }
+            await this.subscriptionBilling.assertTeacherMayWrite(schoolId, teacherProfile.id);
+        }
+
+        if (user.role === 'SCHOOL_ADMIN' && user.currentProfileId) {
+            await this.subscriptionBilling.assertSchoolAdminNotBillingSuspended(schoolId, user.currentProfileId);
         }
 
         // Logic: Cannot delete if it has submissions (to protect student data)

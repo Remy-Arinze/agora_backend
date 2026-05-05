@@ -4,12 +4,20 @@ import { SubscriptionsService } from './subscriptions.service';
 import { SubscriptionPlansController } from './plans/plans.controller';
 import { SubscriptionPlansService } from './plans/plans.service';
 import { DatabaseModule } from '../database/database.module';
+import { NotificationModule } from '../notification/notification.module';
+import { SubscriptionBillingService } from './subscription-billing.service';
+import { SubscriptionBillingScheduler } from './subscription-billing.scheduler';
 
 @Module({
-  imports: [DatabaseModule],
+  imports: [DatabaseModule, NotificationModule],
   controllers: [SubscriptionsController, SubscriptionPlansController],
-  providers: [SubscriptionsService, SubscriptionPlansService],
-  exports: [SubscriptionsService, SubscriptionPlansService],
+  providers: [
+    SubscriptionsService,
+    SubscriptionPlansService,
+    SubscriptionBillingService,
+    SubscriptionBillingScheduler,
+  ],
+  exports: [SubscriptionsService, SubscriptionPlansService, SubscriptionBillingService],
 })
 export class SubscriptionsModule { }
 

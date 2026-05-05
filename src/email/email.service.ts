@@ -1691,6 +1691,69 @@ If you didn't request this code, please ignore this email or contact support imm
   }
 
   /**
+   * Notify the principal when a pending school registration has been rejected by super admin.
+   */
+  async sendSchoolRejectedEmail(
+    email: string,
+    schoolName: string,
+    principalName: string,
+    reason: string,
+  ): Promise<void> {
+    const fromEmail =
+      this.configService.get<string>('MAIL_FROM') ||
+      this.configService.get<string>('SMTP_FROM') ||
+      this.configService.get<string>('MAIL_USER');
+
+    if (!fromEmail) {
+      throw new Error('Email configuration error: No FROM address');
+    }
+
+    const esc = (s: string) =>
+      s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const escapedPrincipal = esc(principalName);
+    const escapedSchool = esc(schoolName);
+    const escapedReason = esc(reason).replace(/\n/g, '<br>');
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Registration Not Approved</title>
+      </head>
+      <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+        ${this.getEmailHeaderHtml('Registration Update')}
+        <div style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px;">
+          <h2 style="color: #1f2937; margin-top: 0;">Your School Registration Was Not Approved</h2>
+          <p>Hello ${escapedPrincipal},</p>
+          <p>After review, we are unable to approve the registration for <strong>${escapedSchool}</strong> on Agora at this time.</p>
+          <div style="background-color: #fee2e2; border-left: 4px solid #ef4444; padding: 15px; margin: 20px 0; border-radius: 4px;">
+            <p style="margin: 0; color: #991b1b; font-weight: bold;">Reason provided by our team:</p>
+            <p style="margin: 10px 0 0; color: #7f1d1d;">${escapedReason}</p>
+          </div>
+          <p style="color: #6b7280; font-size: 14px;">
+            If you believe this was a mistake or you would like to discuss next steps, please reply to this email or contact support.
+          </p>
+          <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
+          <p style="color: #9ca3af; font-size: 12px; text-align: center;">© ${new Date().getFullYear()} Agora Open Schools.</p>
+        </div>
+      </body>
+      </html>
+    `;
+
+    await this.transporter.sendMail({
+      from: this.getFormattedFrom(),
+      replyTo: this.getReplyTo(),
+      to: email,
+      subject: `Your Agora registration for ${schoolName} was not approved`,
+      headers: this.getEmailHeaders(),
+      html,
+    });
+    this.logger.log(`School rejection email sent to ${email} for school: ${schoolName}`);
+  }
+
+  /**
    * Notify super admin about a new school registration
    */
   async sendNewRegistrationNotificationEmail(
@@ -1699,6 +1762,7 @@ If you didn't request this code, please ignore this email or contact support imm
     schoolName: string,
     principalEmail: string,
     principalName: string,
+    schoolId?: string,
   ): Promise<void> {
     const fromEmail =
       this.configService.get<string>('MAIL_FROM') ||
@@ -1708,7 +1772,11 @@ If you didn't request this code, please ignore this email or contact support imm
     if (!fromEmail) return; // Silent return if not configured
 
     const frontendUrl = this.getFrontendUrl();
-    const reviewUrl = `${frontendUrl}/dashboard/super-admin/schools?tab=pending`;
+    
+    // Create direct school detail URL if school ID is available
+    const reviewUrl = schoolId 
+      ? `${frontendUrl}/dashboard/super-admin/schools/${schoolId}`
+      : `${frontendUrl}/dashboard/super-admin/schools?tab=pending`;
 
     const html = `
       <!DOCTYPE html>
@@ -1742,7 +1810,15 @@ If you didn't request this code, please ignore this email or contact support imm
             <a href="${reviewUrl}" style="background-color: #10b981; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: bold;">Review Application</a>
           </div>
           <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
-          <p style="color: #9ca3af; font-size: 12px; text-align: center;">© ${new Date().getFullYear()} Agora Open Schools.</p>
+          <p style="font-size: 14px; color: #6b7280; margin-bottom: 0;">
+            ${schoolId 
+              ? `Direct access to school details enabled. Click "Review Application" to view and verify the school immediately.`
+              : `Please review the pending applications in your dashboard to verify this school.`
+            }
+          </p>
+        </div>
+        <div style="background-color: #f9fafb; padding: 20px; text-align: center; border-radius: 0 0 8px 8px; border-top: 2px solid #e5e7eb;">
+          <p style="color: #6b7280; font-size: 12px; margin: 0;">© ${new Date().getFullYear()} Agora Open Schools. All rights reserved.</p>
         </div>
       </body>
       </html>
@@ -1756,64 +1832,6 @@ If you didn't request this code, please ignore this email or contact support imm
       headers: this.getEmailHeaders(),
       html,
     });
-  }
-
-  /**
-   * Send rejection email to school
-   */
-  async sendSchoolRejectedEmail(
-    email: string,
-    schoolName: string,
-    principalName: string,
-    reason?: string,
-  ): Promise<void> {
-    const fromEmail =
-      this.configService.get<string>('MAIL_FROM') ||
-      this.configService.get<string>('SMTP_FROM') ||
-      this.configService.get<string>('MAIL_USER');
-
-    if (!fromEmail) return;
-
-    const reasonHtml = reason ?
-      `< div style = "background-color: #fef2f2; border-left: 4px solid #ef4444; padding: 15px; margin: 20px 0; border-radius: 4px;" >
-      <p style="margin: 0; color: #991b1b;" > <strong>Reason for rejection: </strong><br>${reason}</p >
-        </div>` : '';
-
-    const html = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Registration Update</title>
-      </head>
-      <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-        ${this.getEmailHeaderHtml('Registration Update')}
-        <div style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px;">
-          <h2 style="color: #1f2937; margin-top: 0;">Update on Your Application</h2>
-          <p>Hello ${principalName},</p>
-          <p>Thank you for your interest in using Agora for <strong>${schoolName}</strong>.</p>
-          <p>After reviewing your application, we have decided not to proceed with verification at this time.</p>
-          ${reasonHtml}
-          <p>If you believe this is a mistake or if your situation has changed, you are welcome to apply again in the future.</p>
-          <p style="color: #6b7280; font-size: 14px; margin-top: 30px;">
-            Thank you again for your time and interest in Agora.
-          </p>
-          <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
-          <p style="color: #9ca3af; font-size: 12px; text-align: center;">© ${new Date().getFullYear()} Agora Open Schools.</p>
-        </div>
-      </body>
-      </html>
-    `;
-
-    await this.transporter.sendMail({
-      from: this.getFormattedFrom(),
-      replyTo: this.getReplyTo(),
-      to: email,
-      subject: 'Update on Your Agora School Registration',
-      headers: this.getEmailHeaders(),
-      html,
-    });
-    this.logger.log(`School rejected email sent to ${email}`);
+    this.logger.log(`New registration notification sent to ${adminEmail} for school: ${schoolName} (${schoolId || 'no ID'})`);
   }
 }

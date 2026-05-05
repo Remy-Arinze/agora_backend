@@ -54,6 +54,23 @@ export interface StudentReassignedPayload {
     timestamp: string;
 }
 
+export interface AcademicRiskDigestPayload {
+  schoolId: string;
+  schoolName: string;
+  atRiskCount: number;
+  preview: { studentName: string; avgPercent: number }[];
+  timestamp: string;
+}
+
+export interface SubscriptionBillingReminderPayload {
+  schoolId: string;
+  schoolName: string;
+  kind: 'GRACE_PERIOD' | 'ADMIN_ACTION_REQUIRED';
+  graceEndsAt: string;
+  graceDay: number;
+  timestamp: string;
+}
+
 @Injectable()
 export class NotificationService {
     private readonly logger = new Logger(NotificationService.name);
@@ -84,4 +101,18 @@ export class NotificationService {
         this.logger.log(`Emitting student reassigned notification for ${payload.teacherIds.length} teachers: ${payload.studentName}`);
         this.eventEmitter.emit('student.reassigned', payload);
     }
+
+  emitAcademicRiskDigest(payload: AcademicRiskDigestPayload) {
+    this.logger.log(
+      `Emitting academic risk digest for school ${payload.schoolId}: ${payload.atRiskCount} student(s) below threshold`,
+    );
+    this.eventEmitter.emit('academic.risk.digest', payload);
+  }
+
+  emitSubscriptionBillingReminder(payload: SubscriptionBillingReminderPayload) {
+    this.logger.log(
+      `Emitting subscription billing reminder for school ${payload.schoolId} (${payload.kind}, day ${payload.graceDay})`,
+    );
+    this.eventEmitter.emit('subscription.billing.reminder', payload);
+  }
 }
