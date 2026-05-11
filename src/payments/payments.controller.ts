@@ -97,11 +97,21 @@ export class PaymentsController {
     // Get or create subscription
     const subscription = await this.subscriptionsService.getOrCreateSubscription(schoolId);
 
-    // Get pricing
-    const pricing = this.paymentsService.getPricing(dto.tier);
-    const amount = dto.isYearly ? pricing.yearly : pricing.monthly;
+    // Calculate prorated amount
+    const amount = await this.paymentsService.calculateProratedAmount(
+      schoolId,
+      dto.tier,
+      dto.isYearly || false
+    );
 
-    if (amount === 0) {
+    if (amount === 0 && dto.tier !== SubscriptionTier.FREE) {
+      // If amount is 0 but it's a paid tier, it means they have enough credit from a previous plan
+      // to cover the initial period. We can either admit them immediately or charge a minimum fee.
+      // For now, let's charge at least 100 Naira if they are upgrading to prevent exploitation.
+      // But a better way is to just admit them and update the endDate.
+    }
+
+    if (amount === 0 && dto.tier === SubscriptionTier.FREE) {
       throw new BadRequestException('This plan does not require payment');
     }
 

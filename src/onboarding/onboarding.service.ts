@@ -132,11 +132,12 @@ export class OnboardingService {
         const dateOfBirth = row.dateOfBirth ? String(row.dateOfBirth).trim() : null;
         const parentPhone = row.parentPhone ? String(row.parentPhone).trim() : null;
         const email = row.email ? String(row.email).trim() : null;
+        const gender = row.gender ? String(row.gender).trim().toUpperCase() : null;
         const nationality = row.nationality ? String(row.nationality).trim() : null;
         const state = row.state ? String(row.state).trim() : null;
 
         // Validate required fields
-        if (!firstName || !lastName || !dateOfBirth || !classLevel || !parentPhone || !email || !nationality || !state) {
+        if (!firstName || !lastName || !dateOfBirth || !classLevel || !parentPhone || !email || !nationality || !state || !gender) {
           const missingFields: string[] = [];
           if (!firstName) missingFields.push('firstName');
           if (!lastName) missingFields.push('lastName');
@@ -144,6 +145,7 @@ export class OnboardingService {
           if (!classLevel) missingFields.push('class/classLevel');
           if (!parentPhone) missingFields.push('parentPhone');
           if (!email) missingFields.push('email');
+          if (!gender) missingFields.push('gender');
           if (!nationality) missingFields.push('nationality');
           if (!state) missingFields.push('state');
 
@@ -175,6 +177,7 @@ export class OnboardingService {
           lastName: lastName,
           middleName: row.middleName ? String(row.middleName).trim() : undefined,
           dateOfBirth: dateOfBirth,
+          gender: gender,
           classLevel: classArmId ? undefined : classLevel, // Only send classLevel if no classArmId
           classArmId: classArmId, // Send classArmId if found
           email,

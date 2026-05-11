@@ -7,6 +7,7 @@ import { DatabaseModule } from '../database/database.module';
 import { NotificationModule } from '../notification/notification.module';
 import { SubscriptionBillingService } from './subscription-billing.service';
 import { SubscriptionBillingScheduler } from './subscription-billing.scheduler';
+import { SubscriptionAuditService } from './subscription-audit.service';
 
 @Module({
   imports: [DatabaseModule, NotificationModule],
@@ -16,8 +17,9 @@ import { SubscriptionBillingScheduler } from './subscription-billing.scheduler';
     SubscriptionPlansService,
     SubscriptionBillingService,
     SubscriptionBillingScheduler,
+    SubscriptionAuditService,
   ],
-  exports: [SubscriptionsService, SubscriptionPlansService, SubscriptionBillingService],
+  exports: [SubscriptionsService, SubscriptionPlansService, SubscriptionBillingService, SubscriptionAuditService],
 })
 export class SubscriptionsModule { }
 

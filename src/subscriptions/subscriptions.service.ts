@@ -250,12 +250,14 @@ export class SubscriptionsService {
    */
   async getSubscriptionSummary(schoolId: string): Promise<SubscriptionSummaryDto> {
     const subscription = await this.getOrCreateSubscription(schoolId);
-    const row = await this.prisma.subscription.findUnique({
+    const row = await (this.prisma.subscription as any).findUnique({
       where: { schoolId },
       select: {
         billingPhase: true,
         gracePeriodEndsAt: true,
         endDate: true,
+        isRecurring: true,
+        paystackSubscriptionCode: true,
       },
     });
 
@@ -290,9 +292,11 @@ export class SubscriptionsService {
       }),
       billing: row
         ? {
-            phase: row.billingPhase as SubscriptionBillingPhase,
-            graceEndsAt: row.gracePeriodEndsAt?.toISOString() ?? null,
-            paidPeriodEndDate: row.endDate?.toISOString() ?? null,
+            phase: (row as any).billingPhase as SubscriptionBillingPhase,
+            graceEndsAt: (row as any).gracePeriodEndsAt?.toISOString() ?? null,
+            paidPeriodEndDate: (row as any).endDate?.toISOString() ?? null,
+            isRecurring: (row as any).isRecurring,
+            paystackSubscriptionCode: (row as any).paystackSubscriptionCode,
           }
         : undefined,
     };

@@ -32,6 +32,7 @@ import { StudentsService } from './students.service';
 import { StudentAdmissionService } from './student-admission.service';
 import { StudentDto, StudentWithEnrollmentDto } from './dto/student.dto';
 import { AddStudentDto } from '../schools/dto/add-student.dto';
+import { SubmitAdmissionApplicationDto, ApproveAdmissionApplicationDto, RejectAdmissionApplicationDto } from './dto/admission-application.dto';
 import { UpdateStudentDto } from './dto/update-student.dto';
 import { PaginationDto, PaginatedResponseDto } from '../common/dto/pagination.dto';
 import { GetStudentsDto } from './dto/get-students.dto';
@@ -45,6 +46,7 @@ import { ReassignStudentDto } from './dto/reassign-student.dto';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { UserWithContext } from '../auth/types/user-with-context.type';
 import { Throttle } from '@nestjs/throttler';
+import { AdmissionStatus } from '@prisma/client';
 
 /**
  * standard tier: Student data listing and entity fetches.
@@ -197,6 +199,43 @@ export class SchoolStudentAdmissionController {
   ): Promise<ResponseDto<any>> {
     const data = await this.studentAdmissionService.addStudent(schoolId, addStudentDto);
     return ResponseDto.ok(data, data.message || 'Student admitted successfully');
+  }
+
+  @Get('admissions/applications')
+  @RequirePermission(PermissionResource.STUDENTS, PermissionType.READ)
+  @ApiOperation({ summary: 'Get admission applications for the school' })
+  async getApplications(
+    @Param('schoolId') schoolId: string,
+    @Query('status') status?: AdmissionStatus
+  ): Promise<ResponseDto<any[]>> {
+    const data = await this.studentAdmissionService.getApplications(schoolId, status);
+    return ResponseDto.ok(data, 'Applications retrieved successfully');
+  }
+
+  @Post('admissions/applications/:applicationId/approve')
+  @RequirePermission(PermissionResource.STUDENTS, PermissionType.WRITE)
+  @ApiOperation({ summary: 'Approve an admission application' })
+  async approveApplication(
+    @Param('schoolId') schoolId: string,
+    @Param('applicationId') applicationId: string,
+    @Body() approveDto: ApproveAdmissionApplicationDto,
+    @CurrentUser() user: UserWithContext
+  ): Promise<ResponseDto<any>> {
+    const data = await this.studentAdmissionService.approveApplication(schoolId, applicationId, approveDto, user.id);
+    return ResponseDto.ok(data, 'Application approved successfully');
+  }
+
+  @Post('admissions/applications/:applicationId/reject')
+  @RequirePermission(PermissionResource.STUDENTS, PermissionType.WRITE)
+  @ApiOperation({ summary: 'Reject an admission application' })
+  async rejectApplication(
+    @Param('schoolId') schoolId: string,
+    @Param('applicationId') applicationId: string,
+    @Body() rejectDto: RejectAdmissionApplicationDto,
+    @CurrentUser() user: UserWithContext
+  ): Promise<ResponseDto<any>> {
+    const data = await this.studentAdmissionService.rejectApplication(schoolId, applicationId, rejectDto.reason, user.id);
+    return ResponseDto.ok(data, 'Application rejected successfully');
   }
 
   @Post('bulk-import')

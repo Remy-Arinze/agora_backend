@@ -10,10 +10,17 @@ export class SubscriptionBillingScheduler {
 
   @Cron(CronExpression.EVERY_DAY_AT_8AM)
   async runDaily(): Promise<void> {
+    this.logger.log('Starting daily subscription billing lifecycle...');
+    const start = Date.now();
     try {
       await this.billing.runDailyBillingLifecycle();
+      this.logger.log(`Daily subscription billing lifecycle completed in ${Date.now() - start}ms`);
     } catch (e) {
-      this.logger.error(`Subscription billing lifecycle failed: ${e}`);
+      // Log the full error so it surfaces in monitoring/alerting
+      this.logger.error(
+        `Daily subscription billing lifecycle FAILED after ${Date.now() - start}ms: ${e}`,
+        e instanceof Error ? e.stack : undefined,
+      );
     }
   }
 }

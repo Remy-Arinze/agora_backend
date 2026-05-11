@@ -1,7 +1,8 @@
-import { Injectable, Logger, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, ForbiddenException, OnModuleInit } from '@nestjs/common';
 import { Prisma, SchoolBillingPhase, SubscriptionTier } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 import { SubscriptionsService } from './subscriptions.service';
+import { SubscriptionAuditService } from './subscription-audit.service';
 import { SubscriptionTier as SubTierDto } from './dto/subscription.dto';
 import { SUBSCRIPTION_GRACE_DAYS, SUBSCRIPTION_GRACE_REMINDER_DAYS } from './subscription-billing.constants';
 import { operationalEnrollmentWhere } from './enrollment-operational';
@@ -26,36 +27,81 @@ function calendarDaysAfter(from: Date, to: Date): number {
 const PAID_TIERS: SubscriptionTier[] = [SubscriptionTier.PRO, SubscriptionTier.PRO_PLUS, SubscriptionTier.CUSTOM];
 
 @Injectable()
-export class SubscriptionBillingService {
+export class SubscriptionBillingService implements OnModuleInit {
   private readonly logger = new Logger(SubscriptionBillingService.name);
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly subscriptions: SubscriptionsService,
     private readonly notifications: NotificationService,
+    private readonly audit: SubscriptionAuditService,
   ) {}
+
+  /** On startup, reconcile any stale billing phases (e.g. if the cron job failed or the server
+   *  was down during a phase transition). This ensures the DB is the source of truth and the
+   *  system self-heals after a restart.
+   */
+  async onModuleInit() {
+    try {
+      this.logger.log('Running startup billing phase reconciliation...');
+      await this.runDailyBillingLifecycle();
+      this.logger.log('Startup billing phase reconciliation complete');
+    } catch (error) {
+      this.logger.error(`Startup billing phase reconciliation failed: ${error}`);
+      // Don't throw — allow the app to start even if reconciliation fails
+    }
+  }
 
   private caps(tier: SubscriptionTier) {
     return this.subscriptions.getTierLimitCaps(tier as SubTierDto);
   }
 
   async appendAuditLog(schoolId: string, action: string, actorUserId?: string | null, payload?: Record<string, unknown>) {
-    await this.prisma.subscriptionBillingAuditLog.create({
-      data: {
-        schoolId,
-        action,
-        actorUserId: actorUserId ?? undefined,
-        payload: payload !== undefined ? (payload as Prisma.InputJsonValue) : undefined,
-      },
+    await this.audit.logChange({
+      schoolId,
+      action,
+      actorUserId: actorUserId ?? undefined,
+      payload,
     });
   }
 
-  /** After successful Paystack payment — clear grace, unlock billing-locked enrollments, unsuspend staff. */
-  async onSuccessfulPaidRenewal(schoolId: string, actorUserId?: string): Promise<void> {
+  /** After successful Paystack payment — atomically update subscription fields, clear grace,
+   *  unlock billing-locked enrollments, and unsuspend staff in a single transaction.
+   *
+   *  @param schoolId  The school whose subscription was just paid.
+   *  @param subscriptionUpdate  Optional subscription field overrides (tier, endDate, limits, credits).
+   *                             When provided the subscription row is updated inside the same transaction
+   *                             so there is never a window where endDate is updated but billingPhase is stale.
+   */
+  async onSuccessfulPaidRenewal(
+    schoolId: string,
+    subscriptionUpdate?: {
+      tier?: SubscriptionTier;
+      endDate?: Date;
+      isActive?: boolean;
+      maxStudents?: number;
+      maxTeachers?: number;
+      maxAdmins?: number;
+      aiCredits?: number;
+      aiCreditsUsed?: number;
+      lastCreditReset?: Date;
+      paystackSubscriptionCode?: string;
+      paystackEmailToken?: string;
+      paystackCustomerId?: string;
+      isRecurring?: boolean;
+    },
+    actorUserId?: string,
+  ): Promise<void> {
+    const currentSub = await this.prisma.subscription.findUnique({
+      where: { schoolId },
+    });
+
     await this.prisma.$transaction([
       this.prisma.subscription.update({
         where: { schoolId },
         data: {
+          // Apply any subscription field updates first, then always reset billing phase
+          ...(subscriptionUpdate ?? {}),
           billingPhase: SchoolBillingPhase.OK,
           gracePeriodEndsAt: null,
           billingGraceReminderLastAt: null,
@@ -75,7 +121,17 @@ export class SubscriptionBillingService {
       }),
     ]);
 
-    await this.appendAuditLog(schoolId, 'renewal_success', actorUserId, { schoolId });
+    await this.audit.logChange({
+      schoolId,
+      action: 'RENEWAL_SUCCESS',
+      actorUserId,
+      previousTier: currentSub?.tier,
+      newTier: subscriptionUpdate?.tier ?? currentSub?.tier,
+      previousEndDate: currentSub?.endDate ?? undefined,
+      newEndDate: subscriptionUpdate?.endDate ?? currentSub?.endDate ?? undefined,
+      payload: { ...subscriptionUpdate },
+    });
+    
     this.logger.log(`Billing: renewal cleared billing locks for school ${schoolId}`);
   }
 
@@ -194,9 +250,34 @@ export class SubscriptionBillingService {
   ) {
     const row = await this.prisma.subscription.findUnique({
       where: { schoolId },
-      select: { billingPhase: true },
+      select: { billingPhase: true, endDate: true, tier: true },
     });
-    const phase = row?.billingPhase ?? SchoolBillingPhase.OK;
+
+    // Self-heal: if the DB phase says blocked/grace but endDate is in the future (e.g. payment
+    // succeeded but the cron hasn't run yet, or the phase was never reset after renewal), treat
+    // the subscription as OK so the blocking modal doesn't persist after a successful payment.
+    let phase = row?.billingPhase ?? SchoolBillingPhase.OK;
+    if (
+      phase !== SchoolBillingPhase.OK &&
+      row?.endDate &&
+      row.endDate.getTime() > Date.now()
+    ) {
+      // Phase is stale — the paid period is still active. Correct it in the background so the
+      // cron doesn't have to run before the UI recovers.
+      phase = SchoolBillingPhase.OK;
+      this.prisma.subscription
+        .update({
+          where: { schoolId },
+          data: {
+            billingPhase: SchoolBillingPhase.OK,
+            gracePeriodEndsAt: null,
+            billingGraceReminderLastAt: null,
+          },
+        })
+        .catch((err) =>
+          this.logger.error(`Failed to self-heal stale billingPhase for school ${schoolId}: ${err}`),
+        );
+    }
 
     if (role === 'SCHOOL_ADMIN') {
       if (!adminIsPrincipal) {
@@ -426,5 +507,72 @@ export class SubscriptionBillingService {
       }
       throw new ForbiddenException('No active enrollment for this school.');
     }
+  }
+
+  /**
+   * Handle a failed renewal payment
+   */
+  async handleFailedRenewal(schoolId: string, reason?: string) {
+    const sub = await this.prisma.subscription.findUnique({
+      where: { schoolId },
+    });
+
+    if (!sub) return;
+
+    // If already in a worse phase, don't upgrade to grace period
+    if (sub.billingPhase === SchoolBillingPhase.ADMIN_ACTION_REQUIRED) return;
+
+    const graceEnd = addUtcDays(new Date(), SUBSCRIPTION_GRACE_DAYS);
+
+    await this.prisma.subscription.update({
+      where: { schoolId },
+      data: {
+        billingPhase: SchoolBillingPhase.GRACE_PERIOD,
+        gracePeriodEndsAt: graceEnd,
+      },
+    });
+
+    await this.audit.logChange({
+      schoolId,
+      action: 'PAYMENT_FAILED_GRACE_PERIOD',
+      payload: { reason, graceEndsAt: graceEnd },
+    });
+
+    this.notifications.emitSubscriptionBillingReminder({
+      schoolId,
+      schoolName: 'Your school',
+      kind: 'GRACE_PERIOD',
+      graceEndsAt: graceEnd.toISOString(),
+      graceDay: 1,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  /**
+   * Lock a school due to total subscription failure
+   */
+  async lockSchoolDueToPayment(schoolId: string, reason?: string) {
+    await this.prisma.subscription.update({
+      where: { schoolId },
+      data: {
+        billingPhase: SchoolBillingPhase.ADMIN_ACTION_REQUIRED,
+        isActive: false,
+      },
+    });
+
+    await this.audit.logChange({
+      schoolId,
+      action: 'SUBSCRIPTION_LOCKED',
+      payload: { reason },
+    });
+
+    this.notifications.emitSubscriptionBillingReminder({
+      schoolId,
+      schoolName: 'Your school',
+      kind: 'ADMIN_ACTION_REQUIRED',
+      graceEndsAt: new Date().toISOString(),
+      graceDay: SUBSCRIPTION_GRACE_DAYS + 1,
+      timestamp: new Date().toISOString(),
+    });
   }
 }

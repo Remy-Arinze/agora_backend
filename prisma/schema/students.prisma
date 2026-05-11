@@ -6,6 +6,12 @@ enum TransferStatus {
   COMPLETED
 }
 
+enum AdmissionStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+}
+
 model Student {
   id            String   @id @default(cuid())
   uid           String   @unique
@@ -173,4 +179,49 @@ model CourseRegistration {
   @@index([termId])
   @@index([isActive])
   @@index([academicYear])
+}
+
+model AdmissionApplication {
+  id                    String          @id @default(cuid())
+  schoolId              String
+  firstName             String
+  middleName            String?
+  lastName              String
+  email                 String
+  phone                 String?
+  dateOfBirth           DateTime
+  gender                String
+  address               String?
+  nationality           String
+  state                 String
+  classLevel            String?
+  classArmId            String?
+  academicYear          String?
+
+  // Parent info
+  parentName            String
+  parentPhone           String
+  parentEmail           String?
+  parentRelationship    String
+
+  // Health info
+  bloodGroup            String?
+  allergies             String?
+  medications           String?
+  emergencyContact      String?
+  emergencyContactPhone String?
+  medicalNotes          String?
+
+  status                AdmissionStatus @default(PENDING)
+  reviewedBy            String?         // SchoolAdmin ID
+  reviewedAt            DateTime?
+  rejectionReason       String?
+
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+
+  school                School          @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId])
+  @@index([status])
 }
