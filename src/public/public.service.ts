@@ -90,4 +90,30 @@ export class PublicService {
       totalTeachers,
     };
   }
+
+  /**
+   * Get public information about a specific school
+   */
+  async getSchoolInfo(schoolId: string): Promise<any> {
+    const school = await this.prisma.school.findUnique({
+      where: { id: schoolId, isActive: true },
+      select: {
+        id: true,
+        name: true,
+        logo: true,
+        address: true,
+        city: true,
+        state: true,
+        hasPrimary: true,
+        hasSecondary: true,
+        hasTertiary: true,
+      },
+    });
+
+    if (!school) {
+      throw new Error('School not found or inactive');
+    }
+
+    return school;
+  }
 }

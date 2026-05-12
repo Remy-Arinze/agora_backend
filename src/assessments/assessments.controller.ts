@@ -41,12 +41,13 @@ export class AssessmentsController {
     @Roles(UserRole.TEACHER, UserRole.SCHOOL_ADMIN, UserRole.STUDENT)
     @ApiOperation({ summary: 'List assessments for a class' })
     async getClassAssessments(
+        @Request() req: any,
         @Param('schoolId') schoolId: string,
         @Param('classId') classId: string,
         @Query('termId') termId?: string,
         @Query('studentId') studentId?: string
     ): Promise<ResponseDto<any[]>> {
-        const data = await this.assessmentsService.getClassAssessments(schoolId, classId, termId, studentId);
+        const data = await this.assessmentsService.getClassAssessments(schoolId, classId, termId, studentId, req.user);
         return ResponseDto.ok(data, 'Assessments retrieved successfully');
     }
 
@@ -104,10 +105,11 @@ export class AssessmentsController {
     @Roles(UserRole.TEACHER, UserRole.SCHOOL_ADMIN, UserRole.STUDENT)
     @ApiOperation({ summary: 'Get a specific submission' })
     async getSubmissionById(
+        @Request() req: any,
         @Param('schoolId') schoolId: string,
         @Param('submissionId') submissionId: string
     ): Promise<ResponseDto<any>> {
-        const data = await this.assessmentsService.getSubmissionById(schoolId, submissionId);
+        const data = await this.assessmentsService.getSubmissionById(schoolId, submissionId, req.user);
         return ResponseDto.ok(data, 'Submission retrieved successfully');
     }
 

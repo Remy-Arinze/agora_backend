@@ -64,3 +64,8 @@ See [`docs/env-reference.md`](docs/env-reference.md) for a full description of e
 ## Architecture
 
 See [`docs/architecture.md`](docs/architecture.md) for the full system architecture, module breakdown, data model, AI pipeline, permission system, and deployment topology.
+
+## Frontend Architecture Notes
+
+- [`docs/frontend-architecture.md`](docs/frontend-architecture.md)
+- [`docs/adr/ADR-0001-country-selector-regional-scoping.md`](docs/adr/ADR-0001-country-selector-regional-scoping.md)

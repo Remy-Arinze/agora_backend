@@ -143,7 +143,7 @@ export class SchoolRegistrationService {
 
             // 10. Notify Super Admin about new registration
             try {
-                await this.notifySuperAdmin(sanitizedName, sanitizedOwnerEmail, owner.firstName.trim());
+                await this.notifySuperAdmin(sanitizedName, sanitizedOwnerEmail, owner.firstName.trim(), result.school.id);
             } catch (emailErr) {
                 this.logger.warn(`Failed to notify super admin about new registration: ${emailErr.message}`);
             }
@@ -167,7 +167,7 @@ export class SchoolRegistrationService {
     /**
      * Notify super admin(s) about a new school registration
      */
-    private async notifySuperAdmin(schoolName: string, principalEmail: string, principalFirstName: string): Promise<void> {
+    private async notifySuperAdmin(schoolName: string, principalEmail: string, principalFirstName: string, schoolId: string): Promise<void> {
         const superAdmins = await this.prisma.user.findMany({
             where: { role: 'SUPER_ADMIN', accountStatus: 'ACTIVE' },
             select: { email: true, firstName: true },
@@ -182,6 +182,7 @@ export class SchoolRegistrationService {
                         schoolName,
                         principalEmail,
                         principalFirstName,
+                        schoolId, // Pass the school ID for direct access
                     );
                 } catch (err) {
                     this.logger.warn(`Failed to notify super admin ${admin.email}: ${err.message}`);

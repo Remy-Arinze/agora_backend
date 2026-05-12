@@ -30,7 +30,9 @@ import {
   getClassLevelCode,
 } from './dto/nerdc-curriculum.dto';
 import { UserWithContext } from '../../auth/types/user-with-context.type';
+import { UserRole } from '@prisma/client';
 import { SubscriptionsService } from '../../subscriptions/subscriptions.service';
+import { SubscriptionBillingService } from '../../subscriptions/subscription-billing.service';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { CURRICULUM_PROCESSING_QUEUE, JOB_PROCESS_SOURCE } from '../../agora-curriculum/curriculum.processor';
@@ -54,10 +56,22 @@ export class CurriculumService {
     private readonly staffRepository: StaffRepository,
     private readonly nerdcService: NerdcCurriculumService,
     private readonly subscriptionsService: SubscriptionsService,
+    private readonly subscriptionBilling: SubscriptionBillingService,
     private readonly aiService: AiService,
     private readonly cloudinaryService: CloudinaryService,
     @InjectQueue(CURRICULUM_PROCESSING_QUEUE) private readonly curriculumQueue: Queue
   ) { }
+
+  /** Blocks billing-suspended teachers/admins from curriculum writes (curation, schemes, status). */
+  private async assertStaffMayMutateCurriculum(schoolId: string, user: UserWithContext): Promise<void> {
+    if (user.role === UserRole.SUPER_ADMIN) return;
+    if (user.role === UserRole.TEACHER && user.currentProfileId) {
+      await this.subscriptionBilling.assertTeacherMayWrite(schoolId, user.currentProfileId);
+    }
+    if (user.role === UserRole.SCHOOL_ADMIN && user.currentProfileId) {
+      await this.subscriptionBilling.assertSchoolAdminNotBillingSuspended(schoolId, user.currentProfileId);
+    }
+  }
 
   // ============================================
   // Timetable-Driven Subject Discovery
@@ -269,6 +283,8 @@ export class CurriculumService {
       throw new BadRequestException('School not found');
     }
 
+    await this.assertStaffMayMutateCurriculum(schoolId, user);
+
     // Resolve class/classLevel
     const { classLevelId, targetClassId } = await this.resolveClassTarget(
       schoolId,
@@ -375,6 +391,8 @@ export class CurriculumService {
     if (!school) {
       throw new BadRequestException('School not found');
     }
+
+    await this.assertStaffMayMutateCurriculum(schoolId, user);
 
     // Get class level info
     const classLevel = await (this.prisma as any).classLevel.findUnique({
@@ -708,6 +726,8 @@ export class CurriculumService {
       throw new BadRequestException('School not found');
     }
 
+    await this.assertStaffMayMutateCurriculum(schoolId, user);
+
     const curriculum = await (this.prisma as any).curriculum.findFirst({
       where: {
         id: curriculumId,
@@ -814,6 +834,8 @@ export class CurriculumService {
       throw new BadRequestException('School not found');
     }
 
+    await this.assertStaffMayMutateCurriculum(schoolId, user);
+
     const curriculum = await (this.prisma as any).curriculum.findFirst({
       where: {
         id: curriculumId,
@@ -855,6 +877,7 @@ export class CurriculumService {
     curriculumId: string,
     user: UserWithContext
   ): Promise<CurriculumDto> {
+    await this.assertStaffMayMutateCurriculum(schoolId, user);
     const curriculum = await this.getCurriculumById(schoolId, curriculumId, user);
 
     if (curriculum.status !== 'DRAFT' && curriculum.status !== 'REJECTED') {
@@ -902,6 +925,8 @@ export class CurriculumService {
       throw new ForbiddenException('Only admins can approve curricula');
     }
 
+    await this.assertStaffMayMutateCurriculum(schoolId, user);
+
     const curriculum = await this.getCurriculumById(schoolId, curriculumId, user);
 
     if (curriculum.status !== 'SUBMITTED') {
@@ -945,6 +970,8 @@ export class CurriculumService {
       throw new ForbiddenException('Only admins can reject curricula');
     }
 
+    await this.assertStaffMayMutateCurriculum(schoolId, user);
+
     const curriculum = await this.getCurriculumById(schoolId, curriculumId, user);
 
     if (curriculum.status !== 'SUBMITTED') {
@@ -982,6 +1009,7 @@ export class CurriculumService {
     curriculumId: string,
     user: UserWithContext
   ): Promise<CurriculumDto> {
+    await this.assertStaffMayMutateCurriculum(schoolId, user);
     const curriculum = await this.getCurriculumById(schoolId, curriculumId, user);
 
     if (curriculum.status !== 'APPROVED') {
@@ -1023,6 +1051,7 @@ export class CurriculumService {
     classId: string | undefined,
     user: UserWithContext
   ): Promise<CurriculumItemDto> {
+    await this.assertStaffMayMutateCurriculum(schoolId, user);
     const curriculum = await this.getCurriculumById(schoolId, curriculumId, user);
     const teacher = await this.getTeacherFromContext(user, schoolId);
 
@@ -1110,6 +1139,7 @@ export class CurriculumService {
     classId: string | undefined,
     user: UserWithContext
   ): Promise<CurriculumItemDto> {
+    await this.assertStaffMayMutateCurriculum(schoolId, user);
     const curriculum = await this.getCurriculumById(schoolId, curriculumId, user);
     const teacher = await this.getTeacherFromContext(user, schoolId);
 
@@ -1174,6 +1204,7 @@ export class CurriculumService {
     classId: string | undefined,
     user: UserWithContext
   ): Promise<CurriculumItemDto> {
+    await this.assertStaffMayMutateCurriculum(schoolId, user);
     const curriculum = await this.getCurriculumById(schoolId, curriculumId, user);
     const teacher = await this.getTeacherFromContext(user, schoolId);
 
@@ -1407,6 +1438,7 @@ export class CurriculumService {
    * Set up a multi-term (Yearly) Scheme of Work when termId is not provided
    */
   async setupYearlySchemeOfWork(schoolId: string, dto: SetupSchemeOfWorkDto, user: UserWithContext) {
+    await this.assertStaffMayMutateCurriculum(schoolId, user);
     const { classLevelId, classId, subjectId, mode } = dto;
 
     // Get all terms for the current session
@@ -1496,6 +1528,7 @@ export class CurriculumService {
     dto: SetupSchemeOfWorkDto,
     user: UserWithContext
   ) {
+    await this.assertStaffMayMutateCurriculum(schoolId, user);
     if (!dto.termId) {
       return this.setupYearlySchemeOfWork(schoolId, dto, user);
     }
@@ -1716,6 +1749,8 @@ export class CurriculumService {
     if (!isAdmin) {
       throw new ForbiddenException('Only administrators can delete schemes');
     }
+
+    await this.assertStaffMayMutateCurriculum(schoolId, user);
 
     await (this.prisma as any).schemeOfWork.delete({
       where: { id: schemeId }

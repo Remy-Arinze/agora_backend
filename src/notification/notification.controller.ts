@@ -9,7 +9,9 @@ import {
     AssessmentPublishedPayload, 
     GradePublishedPayload,
     AgoraSubjectAddedPayload,
-    StudentReassignedPayload
+    StudentReassignedPayload,
+    AcademicRiskDigestPayload,
+    SubscriptionBillingReminderPayload,
 } from './notification.service';
 import { PrismaService } from '../database/prisma.service';
 
@@ -248,6 +250,75 @@ export class NotificationController {
                 catch (err) { }
             });
         });
+    }
+
+    @OnEvent('academic.risk.digest')
+    async handleAcademicRiskDigest(payload: AcademicRiskDigestPayload) {
+        const admins = await this.prisma.schoolAdmin.findMany({
+            where: { schoolId: payload.schoolId },
+            select: { userId: true },
+        });
+
+        const eventData = JSON.stringify({
+            type: 'ACADEMIC_RISK_DIGEST',
+            schoolId: payload.schoolId,
+            schoolName: payload.schoolName,
+            atRiskCount: payload.atRiskCount,
+            preview: payload.preview,
+            timestamp: payload.timestamp,
+        });
+
+        for (const { userId } of admins) {
+            const teacher = await this.prisma.teacher.findFirst({
+                where: { userId, schoolId: payload.schoolId },
+                select: { id: true },
+            });
+            const profileId = teacher?.id ?? userId;
+            const connections = this.teacherConnections.get(profileId);
+            if (!connections?.size) continue;
+            connections.forEach((res) => {
+                try {
+                    res.write(`event: notification\ndata: ${eventData}\n\n`);
+                } catch {
+                    // ignore
+                }
+            });
+        }
+    }
+
+    @OnEvent('subscription.billing.reminder')
+    async handleSubscriptionBillingReminder(payload: SubscriptionBillingReminderPayload) {
+        const admins = await this.prisma.schoolAdmin.findMany({
+            where: { schoolId: payload.schoolId },
+            select: { userId: true },
+        });
+
+        const eventData = JSON.stringify({
+            type: 'SUBSCRIPTION_BILLING_REMINDER',
+            kind: payload.kind,
+            schoolId: payload.schoolId,
+            schoolName: payload.schoolName,
+            graceEndsAt: payload.graceEndsAt,
+            graceDay: payload.graceDay,
+            timestamp: payload.timestamp,
+        });
+
+        for (const { userId } of admins) {
+            const teacher = await this.prisma.teacher.findFirst({
+                where: { userId, schoolId: payload.schoolId },
+                select: { id: true },
+            });
+            const profileId = teacher?.id ?? userId;
+            const connections = this.teacherConnections.get(profileId);
+            if (!connections?.size) continue;
+            connections.forEach((res) => {
+                try {
+                    res.write(`event: notification\ndata: ${eventData}\n\n`);
+                } catch {
+                    // ignore
+                }
+            });
+        }
     }
 
     @OnEvent('student.reassigned')

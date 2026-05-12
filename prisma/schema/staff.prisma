@@ -11,6 +11,8 @@ model Teacher {
   profileImage String? // Cloudinary URL for teacher profile image
   schoolType   String? // "PRIMARY", "SECONDARY", "TERTIARY" - scopes teacher to a specific school type
   isTemporary  Boolean  @default(false)
+  /// Subscription downgrade — blocks write-heavy flows until renewal or headcount fixed.
+  billingSuspended Boolean @default(false)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -36,6 +38,7 @@ model Teacher {
   @@index([schoolType])
   @@index([teacherId])
   @@index([publicId])
+  @@index([schoolId, billingSuspended])
 }
 
 model SchoolAdmin {
@@ -49,6 +52,7 @@ model SchoolAdmin {
   profileImage String? // Cloudinary URL for admin profile image
   role         String   @default("Administrator") // Store role as string to support custom roles
   schoolType   String? // "PRIMARY", "SECONDARY", "TERTIARY" - scopes admin to a specific school type
+  billingSuspended Boolean @default(false)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -66,6 +70,7 @@ model SchoolAdmin {
   @@index([adminId])
   @@index([publicId])
   @@index([schoolType])
+  @@index([schoolId, billingSuspended])
 }
 
 model ClassTeacher {

@@ -50,6 +50,8 @@ model School {
   knowledgeChunks     KnowledgeChunk[]
   schoolCurricula     SchoolCurriculumDoc[] // School-uploaded curriculum documents
   schemesOfWork       SchemeOfWork[] // Generated schemes of work
+  admissionApplications AdmissionApplication[]
+  subscriptionBillingAuditLogs SubscriptionBillingAuditLog[]
 
   @@index([schoolId])
   @@index([isActive])
@@ -211,6 +213,13 @@ enum SubscriptionTier {
   CUSTOM
 }
 
+/// School-wide billing UX phase (Paystack + lifecycle jobs).
+enum SchoolBillingPhase {
+  OK
+  GRACE_PERIOD
+  ADMIN_ACTION_REQUIRED
+}
+
 enum ToolStatus {
   ACTIVE
   TRIAL
@@ -247,6 +256,8 @@ model SubscriptionPlan {
   description    String?
   monthlyPrice   Decimal          @default(0)
   yearlyPrice    Decimal          @default(0)
+  paystackMonthlyPlanCode String?  @unique // Paystack plan code for monthly
+  paystackYearlyPlanCode  String?  @unique // Paystack plan code for yearly
   features       Json? // Format: [{ text: string, included: boolean, isGlowing?: boolean }]
   highlight      Boolean          @default(false)
   cta            String           @default("Upgrade")
@@ -281,6 +292,16 @@ model Subscription {
   aiCredits       Int              @default(0) // Monthly AI credits
   aiCreditsUsed   Int              @default(0) // Credits used this month
   lastCreditReset DateTime? // When credits were last reset
+  billingPhase              SchoolBillingPhase @default(OK)
+  gracePeriodEndsAt         DateTime?
+  billingGraceReminderLastAt DateTime?
+  
+  // Paystack Recurring Billing fields
+  paystackSubscriptionCode   String? @unique
+  paystackEmailToken         String? // For managing subscriptions via Paystack
+  paystackCustomerId         String? // Store customer ID for recurring charges
+  isRecurring                Boolean @default(false)
+  
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
 
@@ -294,6 +315,36 @@ model Subscription {
   @@index([planId])
   @@index([tier])
   @@index([isActive])
+  @@index([billingPhase])
+  @@index([paystackSubscriptionCode])
+}
+
+model PaymentIdempotency {
+  id          String   @id @default(cuid())
+  eventKey    String   @unique // Usually event_id from Paystack or reference
+  status      String   // PROCESSED, FAILED
+  provider    String   @default("PAYSTACK")
+  processedAt DateTime @default(now())
+  metadata    Json?
+
+  @@index([eventKey])
+}
+
+model SubscriptionBillingAuditLog {
+  id           String   @id @default(cuid())
+  schoolId     String
+  action       String   // e.g., RENEWAL, UPGRADE, DOWNGRADE, GRACE_PERIOD_START, LOCKED
+  actorUserId  String?
+  previousTier SubscriptionTier?
+  newTier     SubscriptionTier?
+  previousEndDate DateTime?
+  newEndDate     DateTime?
+  payload      Json?
+  createdAt    DateTime @default(now())
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId, createdAt])
 }
 
 model SchoolToolAccess {
@@ -325,6 +376,7 @@ model SubscriptionPayment {
   currency       String    @default("NGN")
   status         String    @default("PENDING") // PENDING, SUCCESS, FAILED
   reference      String    @unique // Paystack reference
+  type           String    @default("INITIAL") // INITIAL, RECURRING, TOPUP
   provider       String    @default("PAYSTACK")
   metadata       Json?
   paidAt         DateTime?
@@ -335,6 +387,7 @@ model SubscriptionPayment {
   @@index([subscriptionId])
   @@index([reference])
   @@index([status])
+  @@index([type])
 }
 
 model AiCreditPurchase {

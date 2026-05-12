@@ -11,6 +11,7 @@ import {
   ToolStatus,
   ToolDto,
   SchoolToolAccessDto,
+  SubscriptionBillingPhase,
 } from './dto/subscription.dto';
 
 /**
@@ -27,12 +28,12 @@ export class SubscriptionsService {
     { maxStudents: number; maxTeachers: number; maxAdmins: number; aiCredits: number }
   > = {
       [SubscriptionTier.FREE]: { maxStudents: 100, maxTeachers: 10, maxAdmins: 2, aiCredits: 0 },
-      [SubscriptionTier.PRO]: { maxStudents: 500, maxTeachers: 50, maxAdmins: 10, aiCredits: 5000 },
+      [SubscriptionTier.PRO]: { maxStudents: 800, maxTeachers: 80, maxAdmins: 20, aiCredits: 10000 },
       [SubscriptionTier.PRO_PLUS]: {
         maxStudents: 2000,
-        maxTeachers: 200,
-        maxAdmins: 25,
-        aiCredits: 20000,
+        maxTeachers: 150,
+        maxAdmins: 35,
+        aiCredits: 25000,
       },
       [SubscriptionTier.CUSTOM]: {
         maxStudents: -1,
@@ -51,6 +52,86 @@ export class SubscriptionsService {
   };
 
   constructor(private readonly prisma: PrismaService) { }
+
+  /** Caps used for billing, admissions, and Paystack success handler (keep aligned with `SubscriptionPlan` seed). */
+  getTierLimitCaps(tier: SubscriptionTier) {
+    return { ...this.tierLimits[tier] };
+  }
+
+  /**
+   * Agora AI is tied to the subscription paid-through date (`endDate`), not the credit counter alone.
+   * Unused credits stay on the subscription for rollover when a new paid period is purchased.
+   */
+  isAiBillingPeriodActive(sub: {
+    tier: SubscriptionTier | string;
+    endDate: Date | null;
+    aiCredits: number;
+  }): boolean {
+    const now = Date.now();
+    const tier = sub.tier as SubscriptionTier;
+    if (tier === SubscriptionTier.FREE) {
+      return false;
+    }
+
+    const endMs = sub.endDate ? new Date(sub.endDate).getTime() : null;
+
+    if (tier === SubscriptionTier.CUSTOM && sub.aiCredits === -1) {
+      return endMs === null || endMs > now;
+    }
+    if (tier === SubscriptionTier.CUSTOM) {
+      return endMs !== null && endMs > now;
+    }
+    // PRO / PRO_PLUS: treat missing endDate as open-ended (legacy); otherwise must be before now.
+    if (endMs === null) {
+      return true;
+    }
+    return endMs > now;
+  }
+
+  /** Principal-only: add credits to the pool while the billing period is still active. */
+  async topUpAiCreditPool(schoolId: string, credits: number): Promise<AiCreditsResultDto> {
+    if (!Number.isFinite(credits) || credits < 1) {
+      throw new BadRequestException('Invalid credits amount');
+    }
+
+    const subscription = await this.prisma.subscription.findUnique({
+      where: { schoolId },
+    });
+
+    if (!subscription) {
+      throw new NotFoundException('Subscription not found');
+    }
+
+    if (subscription.aiCredits === -1) {
+      return {
+        success: true,
+        creditsUsed: 0,
+        creditsRemaining: -1,
+        message: 'This plan has unlimited AI credits.',
+      };
+    }
+
+    if (!this.isAiBillingPeriodActive(subscription)) {
+      throw new ForbiddenException(
+        'Credits can only be topped up during an active billing period. Renew your subscription to use AI again; unused credits roll over into the new period.',
+      );
+    }
+
+    const updated = await this.prisma.subscription.update({
+      where: { schoolId },
+      data: {
+        aiCredits: { increment: credits },
+      },
+    });
+
+    this.logger.log(`School ${schoolId} AI credit pool topped up by ${credits} (principal)`);
+
+    return {
+      success: true,
+      creditsUsed: 0,
+      creditsRemaining: updated.aiCredits - updated.aiCreditsUsed,
+    };
+  }
 
   /**
    * Validate that the current user is a Principal of their school
@@ -71,6 +152,16 @@ export class SubscriptionsService {
     if (!admin || !isPrincipalRole(admin.role)) {
       throw new ForbiddenException('Only school leaders (Owner, Principal, Head Teacher) can manage subscriptions');
     }
+  }
+
+  /** True when the caller is a school admin whose staff role is a principal (subscription / billing UX). */
+  async isSchoolAdminPrincipal(user: UserWithContext): Promise<boolean> {
+    if (user.role !== 'SCHOOL_ADMIN' || !user.currentProfileId) return false;
+    const admin = await this.prisma.schoolAdmin.findUnique({
+      where: { id: user.currentProfileId },
+      select: { role: true },
+    });
+    return !!admin && isPrincipalRole(admin.role);
   }
 
   /**
@@ -159,6 +250,22 @@ export class SubscriptionsService {
    */
   async getSubscriptionSummary(schoolId: string): Promise<SubscriptionSummaryDto> {
     const subscription = await this.getOrCreateSubscription(schoolId);
+    const row = await (this.prisma.subscription as any).findUnique({
+      where: { schoolId },
+      select: {
+        billingPhase: true,
+        gracePeriodEndsAt: true,
+        endDate: true,
+        isRecurring: true,
+        paystackSubscriptionCode: true,
+      },
+    });
+
+    const aiPeriodActive = this.isAiBillingPeriodActive({
+      tier: subscription.tier,
+      endDate: subscription.endDate ? new Date(subscription.endDate as Date) : null,
+      aiCredits: subscription.aiCredits,
+    });
 
     return {
       tier: subscription.tier,
@@ -166,17 +273,32 @@ export class SubscriptionsService {
       aiCredits: subscription.aiCredits,
       aiCreditsUsed: subscription.aiCreditsUsed,
       aiCreditsRemaining: subscription.aiCreditsRemaining,
+      aiPeriodActive,
       limits: {
         maxStudents: subscription.maxStudents,
         maxTeachers: subscription.maxTeachers,
         maxAdmins: subscription.maxAdmins,
       },
-      tools: subscription.toolAccess.map((ta) => ({
-        slug: ta.tool.slug,
-        name: ta.tool.name,
-        status: ta.status,
-        hasAccess: ta.status === ToolStatus.ACTIVE || ta.status === ToolStatus.TRIAL,
-      })),
+      tools: subscription.toolAccess.map((ta) => {
+        const baseAccess = ta.status === ToolStatus.ACTIVE || ta.status === ToolStatus.TRIAL;
+        const hasAccess =
+          ta.tool.slug === 'agora-ai' ? baseAccess && aiPeriodActive : baseAccess;
+        return {
+          slug: ta.tool.slug,
+          name: ta.tool.name,
+          status: ta.status,
+          hasAccess,
+        };
+      }),
+      billing: row
+        ? {
+            phase: (row as any).billingPhase as SubscriptionBillingPhase,
+            graceEndsAt: (row as any).gracePeriodEndsAt?.toISOString() ?? null,
+            paidPeriodEndDate: (row as any).endDate?.toISOString() ?? null,
+            isRecurring: (row as any).isRecurring,
+            paystackSubscriptionCode: (row as any).paystackSubscriptionCode,
+          }
+        : undefined,
     };
   }
 
@@ -233,6 +355,20 @@ export class SubscriptionsService {
           reason: 'expired',
         };
       }
+      if (tool.slug === 'agora-ai') {
+        const sub = await this.prisma.subscription.findUnique({
+          where: { schoolId },
+          select: { tier: true, endDate: true, aiCredits: true },
+        });
+        if (!sub || !this.isAiBillingPeriodActive(sub)) {
+          return {
+            hasAccess: false,
+            status: ToolStatus.ACTIVE,
+            tool: this.mapToToolDto(tool),
+            reason: 'billing_period_ended',
+          };
+        }
+      }
       return {
         hasAccess: true,
         status: ToolStatus.ACTIVE,
@@ -259,6 +395,22 @@ export class SubscriptionsService {
       const trialDaysRemaining = toolAccess.trialEndsAt
         ? Math.ceil((toolAccess.trialEndsAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
         : 0;
+
+      if (tool.slug === 'agora-ai') {
+        const sub = await this.prisma.subscription.findUnique({
+          where: { schoolId },
+          select: { tier: true, endDate: true, aiCredits: true },
+        });
+        if (!sub || !this.isAiBillingPeriodActive(sub)) {
+          return {
+            hasAccess: false,
+            status: ToolStatus.TRIAL,
+            tool: this.mapToToolDto(tool),
+            reason: 'billing_period_ended',
+            trialDaysRemaining,
+          };
+        }
+      }
 
       return {
         hasAccess: true,
@@ -292,6 +444,20 @@ export class SubscriptionsService {
 
     if (!subscription) {
       throw new NotFoundException('Subscription not found');
+    }
+
+    if (!this.isAiBillingPeriodActive(subscription)) {
+      const creditsRemaining =
+        subscription.aiCredits === -1
+          ? -1
+          : Math.max(0, subscription.aiCredits - subscription.aiCreditsUsed);
+      return {
+        success: false,
+        creditsUsed: 0,
+        creditsRemaining,
+        message:
+          'Your billing period has ended. AI is inactive until you renew; unused credits roll over when you resubscribe.',
+      };
     }
 
     // Check if unlimited
@@ -405,13 +571,17 @@ export class SubscriptionsService {
 
     if (maxStudents === -1) {
       const currentCount = await this.prisma.student.count({
-        where: { enrollments: { some: { schoolId } } },
+        where: {
+          enrollments: { some: { schoolId, isActive: true, billingLocked: false } },
+        },
       });
       return { canAdd: true, currentCount, maxAllowed: -1 };
     }
 
     const currentCount = await this.prisma.student.count({
-      where: { enrollments: { some: { schoolId } } },
+      where: {
+        enrollments: { some: { schoolId, isActive: true, billingLocked: false } },
+      },
     });
 
     if (currentCount >= maxStudents) {
@@ -440,11 +610,11 @@ export class SubscriptionsService {
     const maxTeachers = subscription?.maxTeachers ?? this.tierLimits[SubscriptionTier.FREE].maxTeachers;
 
     if (maxTeachers === -1) {
-      const currentCount = await this.prisma.teacher.count({ where: { schoolId } });
+      const currentCount = await this.prisma.teacher.count({ where: { schoolId, billingSuspended: false } });
       return { canAdd: true, currentCount, maxAllowed: -1 };
     }
 
-    const currentCount = await this.prisma.teacher.count({ where: { schoolId } });
+    const currentCount = await this.prisma.teacher.count({ where: { schoolId, billingSuspended: false } });
 
     if (currentCount >= maxTeachers) {
       const tier = subscription?.tier ?? 'FREE';
@@ -476,12 +646,12 @@ export class SubscriptionsService {
 
     // -1 means unlimited
     if (maxAdmins === -1) {
-      const currentCount = await this.prisma.schoolAdmin.count({ where: { schoolId } });
+      const currentCount = await this.prisma.schoolAdmin.count({ where: { schoolId, billingSuspended: false } });
       return { canAdd: true, currentCount, maxAllowed: -1 };
     }
 
-    // Count current admins
-    const currentCount = await this.prisma.schoolAdmin.count({ where: { schoolId } });
+    // Count current admins (exclude billing-suspended seats from cap)
+    const currentCount = await this.prisma.schoolAdmin.count({ where: { schoolId, billingSuspended: false } });
 
     if (currentCount >= maxAdmins) {
       const tier = subscription?.tier ?? 'FREE';

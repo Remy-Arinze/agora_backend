@@ -1,12 +1,13 @@
-import { Injectable, BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
+import { Injectable, BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { SchoolRepository } from '../schools/domain/repositories/school.repository';
 import { IdGeneratorService } from '../schools/shared/id-generator.service';
 import { AuthService } from '../auth/auth.service';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { AddStudentDto } from '../schools/dto/add-student.dto';
-import { TermStatus, SessionStatus } from '@prisma/client';
+import { TermStatus, SessionStatus, AdmissionStatus } from '@prisma/client';
 import { generateSecurePasswordHash } from '../common/utils/password.utils';
+import { SubmitAdmissionApplicationDto, ApproveAdmissionApplicationDto } from './dto/admission-application.dto';
 
 @Injectable()
 export class StudentAdmissionService {
@@ -278,6 +279,142 @@ export class StudentAdmissionService {
         ? 'Student created successfully. An email with login credentials has been sent.'
         : 'Student created successfully. Please provide the student with their Public ID for login.',
     };
+  }
+
+  /**
+   * Submit an admission application (public)
+   */
+  async submitApplication(schoolId: string, dto: SubmitAdmissionApplicationDto) {
+    const school = await this.schoolRepository.findById(schoolId);
+    if (!school) {
+      throw new BadRequestException('School not found');
+    }
+
+    // Check if student email exists globally
+    const existingUser = await this.prisma.user.findUnique({
+      where: { email: dto.email },
+      include: { studentProfile: true },
+    });
+
+    if (existingUser && existingUser.studentProfile) {
+      throw new ConflictException(
+        `A student with email ${dto.email} already exists in the Agora system. ` +
+        `Please log in and initiate a transfer instead.`
+      );
+    }
+
+    return this.prisma.admissionApplication.create({
+      data: {
+        schoolId,
+        firstName: dto.firstName,
+        middleName: dto.middleName,
+        lastName: dto.lastName,
+        email: dto.email,
+        phone: dto.phone,
+        dateOfBirth: new Date(dto.dateOfBirth),
+        gender: dto.gender,
+        address: dto.address,
+        nationality: dto.nationality,
+        state: dto.state,
+        classLevel: dto.classLevel,
+        classArmId: dto.classArmId,
+        academicYear: dto.academicYear,
+        parentName: dto.parentName,
+        parentPhone: dto.parentPhone,
+        parentEmail: dto.parentEmail,
+        parentRelationship: dto.parentRelationship,
+        status: AdmissionStatus.PENDING,
+      },
+    });
+  }
+
+  /**
+   * Get applications for a school
+   */
+  async getApplications(schoolId: string, status?: AdmissionStatus) {
+    return this.prisma.admissionApplication.findMany({
+      where: {
+        schoolId,
+        ...(status ? { status } : {}),
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  /**
+   * Approve an application and admit student
+   */
+  async approveApplication(schoolId: string, applicationId: string, approvalDto: ApproveAdmissionApplicationDto, reviewerId: string) {
+    const application = await this.prisma.admissionApplication.findUnique({
+      where: { id: applicationId },
+    });
+
+    if (!application || application.schoolId !== schoolId) {
+      throw new NotFoundException('Application not found');
+    }
+
+    if (application.status !== AdmissionStatus.PENDING) {
+      throw new BadRequestException('Application is already processed');
+    }
+
+    // Convert application data to AddStudentDto
+    const studentData: AddStudentDto = {
+      firstName: application.firstName,
+      middleName: application.middleName || undefined,
+      lastName: application.lastName,
+      email: application.email,
+      phone: application.phone || undefined,
+      dateOfBirth: application.dateOfBirth.toISOString(),
+      gender: application.gender,
+      address: application.address || undefined,
+      nationality: application.nationality,
+      state: application.state,
+      classLevel: approvalDto.classLevel || application.classLevel || undefined,
+      classArmId: approvalDto.classArmId || application.classArmId || undefined,
+      academicYear: approvalDto.academicYear || application.academicYear || undefined,
+      parentName: application.parentName,
+      parentPhone: application.parentPhone,
+      parentEmail: application.parentEmail || undefined,
+      parentRelationship: application.parentRelationship,
+    } as any;
+
+    // Use existing addStudent logic
+    const result = await this.addStudent(schoolId, studentData);
+
+    // Update application status
+    await this.prisma.admissionApplication.update({
+      where: { id: applicationId },
+      data: {
+        status: AdmissionStatus.ACCEPTED,
+        reviewedBy: reviewerId,
+        reviewedAt: new Date(),
+      },
+    });
+
+    return result;
+  }
+
+  /**
+   * Reject an application
+   */
+  async rejectApplication(schoolId: string, applicationId: string, reason: string, reviewerId: string) {
+    const application = await this.prisma.admissionApplication.findUnique({
+      where: { id: applicationId },
+    });
+
+    if (!application || application.schoolId !== schoolId) {
+      throw new NotFoundException('Application not found');
+    }
+
+    return this.prisma.admissionApplication.update({
+      where: { id: applicationId },
+      data: {
+        status: AdmissionStatus.DECLINED,
+        rejectionReason: reason,
+        reviewedBy: reviewerId,
+        reviewedAt: new Date(),
+      },
+    });
   }
 
   /**

@@ -35,6 +35,12 @@ export class AddStudentDto {
   @IsNotEmpty({ message: 'Date of birth is required' })
   dateOfBirth: string;
 
+  @ApiProperty({ description: 'Student gender' })
+  @IsString({ message: 'Gender must be a string' })
+  @IsNotEmpty({ message: 'Gender is required' })
+  @Transform(({ value }) => sanitizeString(value, 10))
+  gender: string;
+
   @ApiProperty({ description: 'Student email' })
   @IsEmail({}, { message: 'Please provide a valid email address' })
   @IsNotEmpty({ message: 'Student email is required' })

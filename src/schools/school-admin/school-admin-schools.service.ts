@@ -144,128 +144,85 @@ export class SchoolAdminSchoolsService {
     const lastMonth = new Date(now);
     lastMonth.setMonth(lastMonth.getMonth() - 1);
 
-    // Get all data in parallel
-    const [
-      currentEnrollments,
-      previousEnrollments,
-      currentTeachers,
-      previousTeachers,
-      currentCourses,
-      previousCourses,
-      pendingAdmissions,
-      previousPendingAdmissions,
-      allEnrollments,
-      recentEnrollments,
-      weeklyAdmissions,
-      weeklyTransfers,
-    ] = await Promise.all([
-      // Current counts - filter by schoolType if provided
-      this.prisma.enrollment.count({
-        where: {
-          schoolId,
-          isActive: true,
-          ...(schoolType &&
-            classIds &&
-            classLevels &&
-            (classIds.length > 0 || classLevels.length > 0)
-            ? {
-              OR: [
-                ...(classIds.length > 0 ? [{ classId: { in: classIds } }] : []),
-                ...(classLevels.length > 0 ? [{ classLevel: { in: classLevels } }] : []),
-              ],
-            }
-            : {}),
-        },
-      }),
-      // Previous month counts for comparison
-      this.prisma.enrollment.count({
-        where: {
-          schoolId,
-          isActive: true,
-          createdAt: { lte: lastMonth },
-          ...(schoolType &&
-            classIds &&
-            classLevels &&
-            (classIds.length > 0 || classLevels.length > 0)
-            ? {
-              OR: [
-                ...(classIds.length > 0 ? [{ classId: { in: classIds } }] : []),
-                ...(classLevels.length > 0 ? [{ classLevel: { in: classLevels } }] : []),
-              ],
-            }
-            : {}),
-        },
-      }),
-      // Teachers - count all teachers for the school
-      // (teachers may or may not be assigned to classes yet)
-      this.prisma.teacher.count({
-        where: { schoolId },
-      }),
-      this.prisma.teacher.count({
-        where: {
-          schoolId,
-          createdAt: { lte: lastMonth },
-        },
-      }),
-      // Classes/Courses - count classes filtered by schoolType if provided
-      this.prisma.class.count({
-        where: {
-          schoolId,
-          isActive: true,
-          ...(schoolType ? { type: schoolType as any } : {}),
-        },
-      }),
-      this.prisma.class.count({
-        where: {
-          schoolId,
-          isActive: true,
-          createdAt: { lte: lastMonth },
-          ...(schoolType ? { type: schoolType as any } : {}),
-        },
-      }),
-      // Pending admissions (placeholder - will be 0 if Admission model doesn't exist)
-      this.getPendingAdmissionsCount(schoolId).catch(() => 0),
-      this.getPendingAdmissionsCount(schoolId, lastMonth).catch(() => 0),
-      // Omit full list; growth trends use per-month counts below (indexed, bounded)
-      Promise.resolve([] as { createdAt: Date }[]),
-      // Recent students (last 5) - filter by schoolType if provided
-      this.prisma.enrollment.findMany({
-        where: {
-          schoolId,
-          isActive: true,
-          ...(schoolType &&
-            classIds &&
-            classLevels &&
-            (classIds.length > 0 || classLevels.length > 0)
-            ? {
-              OR: [
-                ...(classIds.length > 0 ? [{ classId: { in: classIds } }] : []),
-                ...(classLevels.length > 0 ? [{ classLevel: { in: classLevels } }] : []),
-              ],
-            }
-            : {}),
-        },
-        include: {
-          student: {
-            select: {
-              id: true,
-              firstName: true,
-              middleName: true,
-              lastName: true,
-              profileImage: true,
-              uid: true,
-              publicId: true,
-            },
+    const enrollmentWhereActive = {
+      schoolId,
+      isActive: true,
+      ...(schoolType &&
+        classIds &&
+        classLevels &&
+        (classIds.length > 0 || classLevels.length > 0)
+        ? {
+          OR: [
+            ...(classIds.length > 0 ? [{ classId: { in: classIds } }] : []),
+            ...(classLevels.length > 0 ? [{ classLevel: { in: classLevels } }] : []),
+          ],
+        }
+        : {}),
+    };
+    const enrollmentWherePrevious = {
+      schoolId,
+      isActive: true,
+      createdAt: { lte: lastMonth },
+      ...(schoolType &&
+        classIds &&
+        classLevels &&
+        (classIds.length > 0 || classLevels.length > 0)
+        ? {
+          OR: [
+            ...(classIds.length > 0 ? [{ classId: { in: classIds } }] : []),
+            ...(classLevels.length > 0 ? [{ classLevel: { in: classLevels } }] : []),
+          ],
+        }
+        : {}),
+    };
+
+    // Run one query at a time so tiny Postgres pools (e.g. Neon free tier) are not
+    // exhausted by a single dashboard request opening many connections at once.
+    const currentEnrollments = await this.prisma.enrollment.count({
+      where: enrollmentWhereActive,
+    });
+    const previousEnrollments = await this.prisma.enrollment.count({
+      where: enrollmentWherePrevious,
+    });
+    const currentTeachers = await this.prisma.teacher.count({ where: { schoolId } });
+    const previousTeachers = await this.prisma.teacher.count({
+      where: { schoolId, createdAt: { lte: lastMonth } },
+    });
+    const currentCourses = await this.prisma.class.count({
+      where: { schoolId, isActive: true, ...(schoolType ? { type: schoolType as any } : {}) },
+    });
+    const previousCourses = await this.prisma.class.count({
+      where: {
+        schoolId,
+        isActive: true,
+        createdAt: { lte: lastMonth },
+        ...(schoolType ? { type: schoolType as any } : {}),
+      },
+    });
+
+    const pendingAdmissions = await this.getPendingAdmissionsCount(schoolId).catch(() => 0);
+    const previousPendingAdmissions = await this.getPendingAdmissionsCount(
+      schoolId,
+      lastMonth
+    ).catch(() => 0);
+    const recentEnrollments = await this.prisma.enrollment.findMany({
+      where: enrollmentWhereActive,
+      include: {
+        student: {
+          select: {
+            id: true,
+            firstName: true,
+            middleName: true,
+            lastName: true,
+            profileImage: true,
+            uid: true,
+            publicId: true,
           },
         },
-        orderBy: { createdAt: 'desc' },
-        take: 5,
-      }),
-      // Omit full list; weekly activity uses per-day counts below (indexed, bounded)
-      Promise.resolve([] as { createdAt: Date }[]),
-      // Weekly transfers (assuming there's a transfer model or we track it via enrollment changes)
-      Promise.resolve([]), // Placeholder for transfers
-    ]);
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 5,
+    });
 
     // Calculate stats with percentage changes
     const stats: DashboardStatsDto = {
@@ -325,28 +282,26 @@ export class SchoolAdminSchoolsService {
       const monthDate = new Date(currentYear, currentMonth - i, 1);
       const nextMonthDate = new Date(currentYear, currentMonth - i + 1, 1);
 
-      const [monthEnrollments, monthTeachers, monthCourses] = await Promise.all([
-        this.prisma.enrollment.count({
-          where: {
-            schoolId,
-            createdAt: { gte: monthDate, lt: nextMonthDate },
-            ...enrollmentTrendWhere,
-          },
-        }),
-        this.prisma.teacher.count({
-          where: {
-            schoolId,
-            createdAt: { gte: monthDate, lt: nextMonthDate },
-          },
-        }),
-        this.prisma.class.count({
-          where: {
-            schoolId,
-            isActive: true,
-            createdAt: { gte: monthDate, lt: nextMonthDate },
-          },
-        }),
-      ]);
+      const monthEnrollments = await this.prisma.enrollment.count({
+        where: {
+          schoolId,
+          createdAt: { gte: monthDate, lt: nextMonthDate },
+          ...enrollmentTrendWhere,
+        },
+      });
+      const monthTeachers = await this.prisma.teacher.count({
+        where: {
+          schoolId,
+          createdAt: { gte: monthDate, lt: nextMonthDate },
+        },
+      });
+      const monthCourses = await this.prisma.class.count({
+        where: {
+          schoolId,
+          isActive: true,
+          createdAt: { gte: monthDate, lt: nextMonthDate },
+        },
+      });
 
       growthTrends.push({
         name: monthNames[monthDate.getMonth()],
@@ -356,7 +311,7 @@ export class SchoolAdminSchoolsService {
       });
     }
 
-    // Calculate weekly activity (last 7 days) using indexed count per day (batched)
+    // Calculate weekly activity (last 7 days); counts run sequentially for small DB pools.
     const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     const weeklyAdmissionWhere =
       schoolType && classIds && classLevels && (classIds.length > 0 || classLevels.length > 0)
@@ -377,17 +332,18 @@ export class SchoolAdminSchoolsService {
       return { dayDate, nextDayDate };
     });
 
-    const dayAdmissionCounts = await Promise.all(
-      dayRanges.map(({ dayDate, nextDayDate }) =>
-        this.prisma.enrollment.count({
+    const dayAdmissionCounts: number[] = [];
+    for (const { dayDate, nextDayDate } of dayRanges) {
+      dayAdmissionCounts.push(
+        await this.prisma.enrollment.count({
           where: {
             schoolId,
             createdAt: { gte: dayDate, lt: nextDayDate },
             ...weeklyAdmissionWhere,
           },
         })
-      )
-    );
+      );
+    }
 
     const weeklyActivity: WeeklyActivityDataDto[] = dayRanges.map(({ dayDate }, idx) => ({
       name: dayNames[dayDate.getDay()],
