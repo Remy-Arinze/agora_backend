@@ -7,16 +7,14 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm ci --legacy-peer-deps
 
-# Copy all source files (needed for prisma schema folder discovery and build)
+# Copy all source files
 COPY . .
 
-# Generate Prisma client — schema uses prismaSchemaFolder preview feature.
-# DB_URL is not needed at generate time but Prisma 5 validates the datasource env var.
-# We pass a dummy value so the build doesn't fail on a missing env var.
-RUN DB_URL="postgresql://dummy:dummy@localhost:5432/dummy" node --max-old-space-size=2048 node_modules/.bin/prisma generate
-
-# Build NestJS application (skip prisma generate — already done above)
-RUN DB_URL="postgresql://dummy:dummy@localhost:5432/dummy" npx nest build
+# npm run build = "prisma generate && nest build"
+# DB_URL must be set so Prisma doesn't fail on missing env var at generate time.
+# This is a dummy value — the real DB_URL is injected at runtime only.
+ENV DB_URL="postgresql://dummy:dummy@localhost:5432/dummy"
+RUN npm run build
 
 # Production stage: minimal image to run the API
 FROM node:22-alpine AS production
@@ -30,21 +28,19 @@ ENV PORT=4000
 COPY package.json package-lock.json* ./
 RUN npm ci --omit=dev --legacy-peer-deps
 
-# Prisma CLI for migrate deploy at runtime (optional)
+# Prisma CLI for migrate deploy at runtime
 RUN npm install prisma --no-save --legacy-peer-deps
 
-# Prisma schema + migrations (for prisma migrate deploy)
+# Prisma schema + migrations (for prisma migrate deploy at startup)
 COPY prisma ./prisma
 
-# Generated Prisma client from builder (so we don't need to run generate again)
+# Generated Prisma client from builder
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 
 # Built application
 COPY --from=builder /app/dist ./dist
 
-# Optional: run migrations then start (uncomment CMD and use entrypoint for migrate)
-# We use a simple start script that can run migrate then node
 COPY docker-entrypoint.sh ./
 RUN chmod +x docker-entrypoint.sh
 
