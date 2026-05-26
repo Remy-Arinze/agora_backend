@@ -7,9 +7,10 @@ coverage
 
 # Environment
 .env
-.env.example
 .env.local
 .env.*.local
+.env.prod
+# .env.prod.example is intentionally NOT ignored — it is the template for production setup
 
 # Logs
 *.log
