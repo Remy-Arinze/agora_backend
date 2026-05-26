@@ -4,8 +4,10 @@ FROM node:22-alpine AS builder
 WORKDIR /app
 
 # Install dependencies (including devDependencies for build)
+# NODE_ENV must NOT be production here — npm skips devDependencies when it is,
+# and we need @nestjs/cli, prisma, typescript etc. to build.
 COPY package.json package-lock.json* ./
-RUN npm ci --legacy-peer-deps
+RUN NODE_ENV=development npm ci --legacy-peer-deps
 
 # Verify CLI binaries exist before attempting build
 RUN ls node_modules/.bin/nest node_modules/.bin/prisma
