@@ -13,7 +13,7 @@ COPY . .
 # Generate Prisma client — schema uses prismaSchemaFolder preview feature.
 # DB_URL is not needed at generate time but Prisma 5 validates the datasource env var.
 # We pass a dummy value so the build doesn't fail on a missing env var.
-RUN DB_URL="postgresql://dummy:dummy@localhost:5432/dummy" npx prisma generate
+RUN DB_URL="postgresql://dummy:dummy@localhost:5432/dummy" node --max-old-space-size=2048 node_modules/.bin/prisma generate
 
 # Build NestJS application (skip prisma generate — already done above)
 RUN DB_URL="postgresql://dummy:dummy@localhost:5432/dummy" npx nest build
