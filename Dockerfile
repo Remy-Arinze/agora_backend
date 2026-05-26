@@ -7,15 +7,14 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm ci --legacy-peer-deps
 
-# Prisma schema and migrations (needed for generate)
-COPY prisma ./prisma
-
-# Generate Prisma client — schema uses prismaSchemaFolder preview feature
-# so we must point to the schema directory, not a single schema.prisma file
-RUN npx prisma generate --schema=./prisma/schema
-
-# Application source and build
+# Copy all source files (needed for prisma schema folder discovery and build)
 COPY . .
+
+# Generate Prisma client — schema uses prismaSchemaFolder preview feature.
+# Must run after full COPY so Prisma can discover prisma/schema/ via package.json context.
+RUN npx prisma generate
+
+# Build NestJS application
 RUN npm run build
 
 # Production stage: minimal image to run the API
