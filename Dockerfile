@@ -21,7 +21,7 @@ COPY . .
 # npm run build = "prisma generate && nest build"
 # DB_URL must be set so Prisma doesn't fail on missing env var at generate time.
 # This is a dummy value — the real DB_URL is injected at runtime only.
-ENV DB_URL="postgresql://dummy:dummy@localhost:5432/dummy"
+ENV DB_URL="postgresql://x:x@x:5432/x"
 RUN npm run build
 
 # Production stage: minimal image to run the API
