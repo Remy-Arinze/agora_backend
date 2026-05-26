@@ -3,6 +3,9 @@ FROM node:22-alpine AS builder
 
 WORKDIR /app
 
+# Install OpenSSL — required by Prisma client on Alpine
+RUN apk add --no-cache openssl
+
 # Install dependencies (including devDependencies for build)
 # NODE_ENV must NOT be production here — npm skips devDependencies when it is,
 # and we need @nestjs/cli, prisma, typescript etc. to build.
@@ -28,6 +31,9 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 ENV PORT=4000
+
+# Install OpenSSL — required by Prisma client on Alpine
+RUN apk add --no-cache openssl
 
 # Production dependencies only
 COPY package.json package-lock.json* ./
