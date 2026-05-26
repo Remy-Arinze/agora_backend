@@ -11,11 +11,12 @@ RUN npm ci --legacy-peer-deps
 COPY . .
 
 # Generate Prisma client — schema uses prismaSchemaFolder preview feature.
-# Must run after full COPY so Prisma can discover prisma/schema/ via package.json context.
-RUN npx prisma generate
+# DB_URL is not needed at generate time but Prisma 5 validates the datasource env var.
+# We pass a dummy value so the build doesn't fail on a missing env var.
+RUN DB_URL="postgresql://dummy:dummy@localhost:5432/dummy" npx prisma generate
 
-# Build NestJS application
-RUN npm run build
+# Build NestJS application (skip prisma generate — already done above)
+RUN DB_URL="postgresql://dummy:dummy@localhost:5432/dummy" npx nest build
 
 # Production stage: minimal image to run the API
 FROM node:22-alpine AS production
