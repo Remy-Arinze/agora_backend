@@ -1,5 +1,5 @@
 # Build stage: install deps, generate Prisma client, build NestJS
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 
 WORKDIR /app
 
@@ -10,15 +10,16 @@ RUN npm ci --legacy-peer-deps
 # Prisma schema and migrations (needed for generate)
 COPY prisma ./prisma
 
-# Generate Prisma client (uses prisma/schema.prisma; DB_URL not needed for generate)
-RUN npx prisma generate
+# Generate Prisma client — schema uses prismaSchemaFolder preview feature
+# so we must point to the schema directory, not a single schema.prisma file
+RUN npx prisma generate --schema=./prisma/schema
 
 # Application source and build
 COPY . .
 RUN npm run build
 
 # Production stage: minimal image to run the API
-FROM node:20-alpine AS production
+FROM node:22-alpine AS production
 
 WORKDIR /app
 
