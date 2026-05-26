@@ -5,7 +5,9 @@
     "strictNullChecks": false,
     "strictBindCallApply": false,
     "noUnusedLocals": false,
-    "noUnusedParameters": false
+    "noUnusedParameters": false,
+    "noEmitOnError": false,
+    "skipLibCheck": true
   },
   "exclude": ["node_modules", "dist", "**/*.spec.ts", "**/*.test.ts"]
 }
