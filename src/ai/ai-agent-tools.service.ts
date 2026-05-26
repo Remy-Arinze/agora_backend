@@ -223,7 +223,7 @@ export class AiAgentToolsService {
 
     const scopeCheck = this.assertSqlScopedToSchool(trimmedSql, schoolId);
     if (!scopeCheck.ok) {
-      return { data: { error: scopeCheck.message }, usage: null };
+      return { data: { error: (scopeCheck as { ok: false; message: string }).message }, usage: null };
     }
 
     try {
