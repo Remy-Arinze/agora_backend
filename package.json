@@ -6,7 +6,7 @@
     "node": "22.x"
   },
   "scripts": {
-    "build": "prisma generate && nest build",
+    "build": "npx prisma generate && npx nest build",
     "dev": "ts-node-dev --respawn --transpile-only src/main.ts",
     "start": "nest start",
     "start:dev": "nest start --watch",

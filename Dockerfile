@@ -7,6 +7,9 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm ci --legacy-peer-deps
 
+# Verify CLI binaries exist before attempting build
+RUN ls node_modules/.bin/nest node_modules/.bin/prisma
+
 # Copy all source files
 COPY . .
 
