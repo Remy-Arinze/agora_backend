@@ -68,26 +68,33 @@ async function bootstrap() {
   );
 
   // CORS configuration - allow credentials for httpOnly cookies
-  // Always allow subdomains of the configured FRONTEND_URL and localhost for development
   const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-  
+  // Support comma-separated list of allowed origins e.g. "https://app.com,https://staging.app.com"
+  const allowedOrigins = frontendUrl
+    .split(',')
+    .map((u) => u.trim())
+    .filter(Boolean);
+
   app.enableCors({
     origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
-      // Allow requests with no origin (like mobile apps or curl)
+      // Allow requests with no origin (mobile apps, curl, server-to-server)
       if (!origin) return callback(null, true);
-      
-      const isLocalhost = origin.includes('localhost:3000') || origin.includes('127.0.0.1:3000');
-      const isProductionDomain = origin.endsWith('.agora-schools.com') || origin === 'https://agora-schools.com';
-      const isConfiguredFrontend = frontendUrl && origin.includes(new URL(frontendUrl).hostname);
 
-      if (isLocalhost || isProductionDomain || isConfiguredFrontend) {
+      const isLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+      const isProductionDomain =
+        origin.endsWith('.agora-schools.com') || origin === 'https://agora-schools.com';
+      const isConfiguredOrigin = allowedOrigins.some(
+        (allowed) => origin === allowed || origin.startsWith(allowed),
+      );
+
+      if (isLocalhost || isProductionDomain || isConfiguredOrigin) {
         callback(null, true);
       } else {
         logger.warn(`CORS blocked for origin: ${origin}`);
         callback(new Error('Not allowed by CORS'));
       }
     },
-    credentials: true, // Required for cookies
+    credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'x-tenant-id'],
   });
