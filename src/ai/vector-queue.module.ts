@@ -23,9 +23,18 @@ import { VECTOR_QUEUE_NAME } from './vector.processor';
 
         const redisUrl = config.get<string>('REDIS_URL');
         if (redisUrl) {
-          return {
-            connection: redisUrl as any,
-          };
+          logger.log('Connecting to Redis via REDIS_URL');
+          // BullMQ requires an ioredis instance or options object, not a raw URL string.
+          // Parse the URL into an ioredis instance so the connection is handled correctly.
+          const redisInstance = new Redis(redisUrl, {
+            maxRetriesPerRequest: null,
+            enableReadyCheck: false,
+            lazyConnect: true,
+          });
+          redisInstance.on('error', (err) => {
+            logger.warn(`Redis error (non-fatal): ${err.message}`);
+          });
+          return { connection: redisInstance };
         }
 
         const host = config.get<string>('REDIS_HOST', 'localhost');
