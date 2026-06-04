@@ -5,6 +5,7 @@ import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import helmet from 'helmet';
 import * as Sentry from '@sentry/nestjs';
+import { OpenObserveLogger } from './common/logger/openobserve-logger.service';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const cookieParser = require('cookie-parser');
 
@@ -13,21 +14,25 @@ async function bootstrap() {
 
   const isProduction = process.env.NODE_ENV === 'production';
 
-  // Initialize Sentry before app creation - Only in Production
-  if (isProduction && process.env.SENTRY_DSN) {
+  // Initialize Bugsink (Sentry-compatible) - Only in Production
+  if (isProduction && process.env.BUGSINK_DSN) {
     Sentry.init({
-      dsn: process.env.SENTRY_DSN,
+      dsn: process.env.BUGSINK_DSN,
       environment: process.env.NODE_ENV || 'production',
       tracesSampleRate: 1.0,
       debug: false,
       integrations: [],
     });
-    logger.log('🕵️ Sentry initialized');
+    logger.log('🐛 Bugsink error tracking initialized');
   } else {
-    logger.log('🛡️ Sentry disabled (Not in production or DSN missing)');
+    logger.log('🛡️ Bugsink disabled (Not in production or DSN missing)');
   }
 
-  const app = await NestFactory.create(AppModule);
+  // Create app with OpenObserve logger
+  const app = await NestFactory.create(AppModule, {
+    logger: new OpenObserveLogger(),
+    bufferLogs: true,
+  });
 
   // Removed global prefix - routes are directly accessible
   // Swagger docs will be available at /api

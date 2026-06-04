@@ -41,6 +41,7 @@ import { ExpressAdapter } from '@bull-board/express';
 import { MetricsModule } from './common/metrics/metrics.module';
 import { HttpMetricsInterceptor } from './common/metrics/http-metrics.interceptor';
 import { EngagementModule } from './engagement/engagement.module';
+import { LoggerModule } from './common/logger/logger.module';
 
 @Module({
   imports: [
@@ -104,6 +105,7 @@ import { EngagementModule } from './engagement/engagement.module';
     AgoraCurriculumModule,
     MetricsModule,
     EngagementModule,
+    LoggerModule,
   ],
   controllers: [AppController],
   providers: [
