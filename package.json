@@ -33,8 +33,8 @@
     "schema": "prisma/schema"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.821.0",
-    "@aws-sdk/lib-storage": "^3.821.0",
+    "@aws-sdk/client-s3": "^3.1062.0",
+    "@aws-sdk/lib-storage": "^3.1062.0",
     "@bull-board/api": "^6.20.6",
     "@bull-board/express": "^6.20.6",
     "@bull-board/nestjs": "^6.20.6",
@@ -56,7 +56,7 @@
     "@willsoto/nestjs-prometheus": "^6.1.0",
     "axios": "^1.17.0",
     "bcryptjs": "^2.4.3",
-    "bullmq": "^5.3.0",
+    "bullmq": "^5.78.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
     "cloudinary": "^2.8.0",
@@ -80,7 +80,7 @@
     "reflect-metadata": "^0.1.14",
     "rxjs": "^7.8.1",
     "sharp": "^0.33.5",
-    "uuid": "^11.1.0",
+    "uuid": "^14.0.0",
     "validator": "^13.15.26"
   },
   "devDependencies": {
@@ -96,8 +96,8 @@
     "@types/passport-jwt": "^4.0.1",
     "@types/pdf-parse": "^1.1.4",
     "@types/uuid": "^10.0.0",
-    "@typescript-eslint/eslint-plugin": "^6.19.0",
-    "@typescript-eslint/parser": "^6.19.0",
+    "@typescript-eslint/eslint-plugin": "^8.60.1",
+    "@typescript-eslint/parser": "^8.60.1",
     "eslint": "^8.56.0",
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-prettier": "^5.1.3",
@@ -112,6 +112,13 @@
     "tsconfig-paths": "^4.2.0",
     "tsx": "^4.7.0",
     "typescript": "^5.3.3"
+  },
+  "overrides": {
+    "fast-uri": "^3.1.2",
+    "qs": "^6.15.2",
+    "brace-expansion": "^5.0.6",
+    "tmp": "^0.2.6",
+    "uuid": "^14.0.0"
   },
   "jest": {
     "moduleFileExtensions": [
