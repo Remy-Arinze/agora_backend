@@ -29,10 +29,14 @@ export class OpenObserveLogger extends ConsoleLogger implements NestLoggerServic
     const accessKey = process.env.OPENOBSERVE_ACCESS_KEY;
     const isProduction = process.env.NODE_ENV === 'production';
 
+    // Only ship logs to OpenObserve in production — never from dev or staging
+    // to avoid polluting observability data with noise.
+    if (!isProduction) {
+      return;
+    }
+
     if (!endpoint || !accessKey) {
-      if (isProduction) {
-        console.warn('⚠️ OpenObserve not configured - logs will only output to console');
-      }
+      console.warn('⚠️ OpenObserve not configured - logs will only output to console');
       return;
     }
 

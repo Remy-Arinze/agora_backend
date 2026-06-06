@@ -138,6 +138,14 @@ services:
       GRAFANA_CLOUD_PROMETHEUS_URL: ${GRAFANA_CLOUD_PROMETHEUS_URL}
       GRAFANA_CLOUD_PROMETHEUS_USER: ${GRAFANA_CLOUD_PROMETHEUS_USER}
       GRAFANA_CLOUD_PROMETHEUS_TOKEN: ${GRAFANA_CLOUD_PROMETHEUS_TOKEN}
+      # PostgreSQL monitoring user — read-only DSN for the postgres exporter
+      POSTGRES_MONITOR_URL: ${POSTGRES_MONITOR_URL}
+      # Redis — for the redis exporter
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      # OpenObserve — base URL without stream path (alloy appends /prometheus/api/v1/write)
+      OPENOBSERVE_ENDPOINT_BASE: ${OPENOBSERVE_ENDPOINT_BASE}
+      OPENOBSERVE_ACCESS_KEY: ${OPENOBSERVE_ACCESS_KEY}
     depends_on:
       - api
     networks:
