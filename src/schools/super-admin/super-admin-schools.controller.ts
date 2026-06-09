@@ -10,6 +10,7 @@ import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Throttle } from '@nestjs/throttler';
+import { PrismaService } from '../../database/prisma.service';
 
 /**
  * standard tier: Super Admin management of school entities.
@@ -21,7 +22,10 @@ import { Throttle } from '@nestjs/throttler';
 @ApiBearerAuth()
 @Throttle({ standard: {} })
 export class SuperAdminSchoolsController {
-  constructor(private readonly superAdminSchoolsService: SuperAdminSchoolsService) { }
+  constructor(
+    private readonly superAdminSchoolsService: SuperAdminSchoolsService,
+    private readonly prisma: PrismaService,
+  ) { }
 
   @Post()
   @ApiOperation({ summary: 'Create a new school (Super Admin only)' })
@@ -62,6 +66,23 @@ export class SuperAdminSchoolsController {
   async getPendingSchools(): Promise<ResponseDto<SchoolDto[]>> {
     const data = await this.superAdminSchoolsService.findPendingSchools();
     return ResponseDto.ok(data, 'Pending schools retrieved successfully');
+  }
+
+  @Get(':id/subscription-tier')
+  @ApiOperation({ summary: 'Get a school\'s current subscription tier (Super Admin only)' })
+  @ApiResponse({ status: 200, description: 'Subscription tier' })
+  async getSchoolSubscriptionTier(
+    @Param('id') id: string,
+  ): Promise<ResponseDto<{ tier: string; isActive: boolean }>> {
+    const subscription = await this.prisma.subscription.findFirst({
+      where: { schoolId: id },
+      orderBy: { createdAt: 'desc' },
+      select: { tier: true, isActive: true },
+    });
+    return ResponseDto.ok(
+      { tier: subscription?.tier ?? 'FREE', isActive: subscription?.isActive ?? false },
+      'Subscription tier retrieved successfully',
+    );
   }
 
   @Get(':id')

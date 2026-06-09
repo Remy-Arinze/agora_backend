@@ -239,6 +239,19 @@ export class AuthController {
     return ResponseDto.ok(undefined, 'Password reset successfully. All other sessions have been signed out.');
   }
 
+  @Post('resend-reset-by-token')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ standard: { ttl: 300000, limit: 3 } }) // 3 resends per 5 minutes
+  @ApiOperation({ summary: 'Resend password setup email using the original (expired) reset token — no email input required' })
+  @ApiBody({ schema: { type: 'object', properties: { token: { type: 'string' } }, required: ['token'] } })
+  @ApiResponse({ status: 200, description: 'A new password setup email has been sent if the token was valid' })
+  @ApiResponse({ status: 429, description: 'Too many resend attempts.' })
+  async resendResetByToken(@Body('token') token: string): Promise<ResponseDto<void>> {
+    if (!token) throw new BadRequestException('Token is required');
+    await this.authService.resendPasswordResetByToken(token);
+    return ResponseDto.ok(undefined, 'If this link was recently generated, a new password setup email has been sent.');
+  }
+
   @Post('request-change-password')
   @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
