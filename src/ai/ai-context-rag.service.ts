@@ -26,10 +26,7 @@ export class AiContextRagService {
 
     const startTime = Date.now();
     try {
-      const modelName =
-        this.configService.get<string>('AZURE_OPENAI_EMBEDDIGN_MODEL_NAME') ||
-        this.configService.get<string>('AZURE_OPENAI_EMBEDDING_MODEL_NAME') ||
-        'text-embedding-3-small';
+      const modelName = this.llm.getEmbeddingsModel();
 
       const response = await embeddingsClient.embeddings.create({
         model: modelName,
