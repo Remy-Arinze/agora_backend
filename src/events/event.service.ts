@@ -108,13 +108,11 @@ export class EventService {
     endDate: Date,
     schoolType?: 'PRIMARY' | 'SECONDARY' | 'TERTIARY'
   ): Promise<EventDto[]> {
-    const school = await this.schoolRepository.findById(schoolId);
-    if (!school) {
-      throw new BadRequestException('School not found');
-    }
+    // SchoolDataAccessGuard already validated the school exists and belongs to the user.
+    // No need for a redundant findById round-trip here.
 
     const where: any = {
-      schoolId: school.id,
+      schoolId: schoolId,
       AND: [
         {
           OR: [
@@ -163,30 +161,34 @@ export class EventService {
     days: number = 7,
     schoolType?: 'PRIMARY' | 'SECONDARY' | 'TERTIARY'
   ): Promise<EventDto[]> {
-    const school = await this.schoolRepository.findById(schoolId);
-    if (!school) {
-      throw new BadRequestException('School not found');
-    }
+    // SchoolDataAccessGuard already validated the school. No extra findById needed.
 
     const now = new Date();
     const futureDate = new Date();
     futureDate.setDate(futureDate.getDate() + days);
 
     const where: any = {
-      schoolId: school.id,
+      schoolId: schoolId,
       startDate: {
         gte: now,
         lte: futureDate,
       },
+      AND: [],
     };
 
-    // Filter by school type: include events that are null (all types) or match the requested type
+    // Filter by school type: include events that are null (all types) or match the requested type.
+    // Use AND nesting to avoid the OR leaking the schoolId/startDate filters.
     if (schoolType) {
-      where.OR = [
-        { schoolType: null }, // Events for all types
-        { schoolType: schoolType }, // Events for this specific type
-      ];
+      where.AND.push({
+        OR: [
+          { schoolType: null },
+          { schoolType: schoolType },
+        ],
+      });
     }
+
+    // Clean up empty AND array (Prisma ignores it but be explicit)
+    if (where.AND.length === 0) delete where.AND;
 
     const events = await this.eventModel.findMany({
       where,

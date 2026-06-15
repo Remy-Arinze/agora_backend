@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsNotEmpty, IsOptional, IsEnum } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsEnum, IsArray, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
 
 // Define enums locally to avoid dependency on Prisma client generation
 export enum DayOfWeek {
@@ -103,4 +104,65 @@ export class CreateMasterScheduleDto {
     endTime: string;
     type?: PeriodType;
   }>;
+}
+
+export class ReplaceTimetablePeriodDto {
+  @IsEnum(DayOfWeek)
+  @IsNotEmpty()
+  dayOfWeek: DayOfWeek;
+
+  @IsString()
+  @IsNotEmpty()
+  startTime: string;
+
+  @IsString()
+  @IsNotEmpty()
+  endTime: string;
+
+  @IsEnum(PeriodType)
+  @IsOptional()
+  type?: PeriodType;
+
+  @IsString()
+  @IsOptional()
+  subjectId?: string;
+
+  @IsString()
+  @IsOptional()
+  courseId?: string;
+
+  @IsString()
+  @IsOptional()
+  teacherId?: string;
+
+  @IsString()
+  @IsOptional()
+  roomId?: string;
+
+  @IsString()
+  @IsOptional()
+  classId?: string;
+
+  @IsString()
+  @IsOptional()
+  classArmId?: string;
+}
+
+export class ReplaceTimetableDto {
+  @IsString()
+  @IsNotEmpty()
+  termId: string;
+
+  @IsString()
+  @IsOptional()
+  classId?: string;
+
+  @IsString()
+  @IsOptional()
+  classArmId?: string;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ReplaceTimetablePeriodDto)
+  periods: ReplaceTimetablePeriodDto[];
 }

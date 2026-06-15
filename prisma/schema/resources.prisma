@@ -142,3 +142,70 @@ model KnowledgeChunk {
 
   @@index([schoolId])
 }
+
+/// DB-managed Lois skills.
+/// Each skill is a named block of instructions injected into the system prompt
+/// at runtime for users matching the targetRoles.
+/// Super admins craft and publish these — zero code deployment needed.
+model LoisSkill {
+  id           String   @id @default(cuid())
+  name         String
+  description  String   // Internal description visible in the dashboard
+  content      String   @db.Text // The actual instructions injected into the prompt
+  /// Comma-separated roles: TEACHER | SCHOOL_ADMIN | STUDENT | ALL
+  targetRoles  String   @default("ALL")
+  category     String   @default("behavior") // behavior | knowledge | tone | workflow
+  isActive     Boolean  @default(true)
+  priority     Int      @default(100) // lower = injected first
+  /// Internal notes for super admins — never injected into Lois's prompt
+  internalNotes String? @db.Text
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([isActive])
+  @@index([priority])
+}
+
+/// Global system-level Lois configuration managed by super admins.
+/// Stores custom overrides for the core system prompt sections.
+/// There is at most one row (singleton, keyed by id = 'global').
+model SystemPromptConfig {
+  id String @id @default("global")
+
+  /// Override for the core identity/intro block (replaces the default Lois identity paragraph)
+  identityOverride     String?  @db.Text
+  /// Additional rules to append after core operational rules
+  additionalRules      String?  @db.Text
+  /// Override for the TEACHER role-specific rules block
+  teacherRulesOverride String?  @db.Text
+  /// Override for the SCHOOL_ADMIN role-specific rules block
+  adminRulesOverride   String?  @db.Text
+  /// Override for the STUDENT role-specific rules block
+  studentRulesOverride String?  @db.Text
+  /// Free-form notes visible only to super admins (not injected into prompt)
+  internalNotes        String?  @db.Text
+
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+}
+
+/// Per-school Lois configuration.
+/// Allows school admins to customise Lois personality/tone without a code change.
+model LoisConfig {
+  id               String   @id @default(cuid())
+  schoolId         String   @unique
+  /// Optional custom greeting shown at conversation start
+  customGreeting   String?
+  /// Tone guidance injected into the system prompt (e.g. "Always reply formally")
+  toneNote         String?
+  /// Topics Lois should refuse to discuss for this school
+  restrictedTopics String?
+  /// Additional school-specific context (e.g. "We are a faith-based school")
+  schoolContext    String?  @db.Text
+  updatedAt        DateTime @updatedAt
+  createdAt        DateTime @default(now())
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId])
+}

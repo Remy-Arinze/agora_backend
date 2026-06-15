@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Patch,
+  Put,
   Delete,
   Body,
   Param,
@@ -15,6 +16,7 @@ import { ResourcesService } from './resources.service';
 import {
   CreateTimetablePeriodDto,
   CreateMasterScheduleDto,
+  ReplaceTimetableDto,
 } from './dto/create-timetable-period.dto';
 import { TimetablePeriodDto } from './dto/timetable.dto';
 import {
@@ -201,6 +203,21 @@ export class TimetableController {
   ): Promise<ResponseDto<void>> {
     await this.timetableService.deletePeriod(schoolId, periodId);
     return ResponseDto.ok(undefined, 'Period deleted successfully');
+  }
+
+  @Put('class/:classId/replace')
+  @RequirePermission(PermissionResource.TIMETABLES, PermissionType.WRITE)
+  @ApiOperation({
+    summary: 'Atomically replace all timetable periods for a class/term',
+    description: 'Deletes all existing periods and inserts the new set in a single transaction. Use this instead of individual create/update/delete calls when saving from the edit table.',
+  })
+  @ApiResponse({ status: 200, description: 'Timetable replaced successfully' })
+  async replaceTimetable(
+    @Param('schoolId') schoolId: string,
+    @Body() dto: ReplaceTimetableDto
+  ): Promise<ResponseDto<{ replaced: number }>> {
+    const data = await this.timetableService.replaceTimetable(schoolId, dto);
+    return ResponseDto.ok(data, `Timetable replaced: ${data.replaced} periods saved`);
   }
 
   @Delete('class/:classId')
@@ -503,6 +520,30 @@ export class TimetableController {
       sessionId
     );
     return ResponseDto.ok(undefined, 'Assignment removed successfully');
+  }
+
+  // ============================================
+  // COVERAGE GAPS (REQ-4)
+  // ============================================
+
+  @Get('coverage-gaps')
+  @RequirePermission(PermissionResource.TIMETABLES, PermissionType.READ)
+  @ApiOperation({
+    summary: 'Get SECONDARY assignment coverage gaps',
+    description:
+      'Returns ClassTeacher assignments that have no TimetablePeriod scheduled in the given term. Helps admins find subjects that are assigned but not yet timetabled.',
+  })
+  @ApiQuery({ name: 'termId', required: true, description: 'Term ID to check coverage for' })
+  @ApiResponse({
+    status: 200,
+    description: 'Coverage gaps retrieved successfully',
+  })
+  async getCoverageGaps(
+    @Param('schoolId') schoolId: string,
+    @Query('termId') termId: string
+  ): Promise<ResponseDto<any[]>> {
+    const data = await this.resourcesService.getCoverageGaps(schoolId, termId);
+    return ResponseDto.ok(data, `Found ${data.length} coverage gap(s)`);
   }
 
   // ============================================

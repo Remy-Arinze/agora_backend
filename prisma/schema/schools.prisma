@@ -52,6 +52,7 @@ model School {
   schemesOfWork       SchemeOfWork[] // Generated schemes of work
   admissionApplications AdmissionApplication[]
   subscriptionBillingAuditLogs SubscriptionBillingAuditLog[]
+  loisConfig            LoisConfig?
 
   @@index([schoolId])
   @@index([isActive])
@@ -177,6 +178,7 @@ model Event {
   @@index([schoolId])
   @@index([schoolType])
   @@index([startDate])
+  @@index([schoolId, startDate, endDate])
   @@index([type])
   @@index([isAllDay])
   @@index([googleEventId])
