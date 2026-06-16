@@ -293,8 +293,8 @@ export class AiChatPromptService {
 
       if (recentGrades.length) {
         const gradeLines = recentGrades.map(g => {
-          const pct = g.maxScore > 0 ? Math.round((g.score / g.maxScore) * 100) : 0;
-          return `  - ${g.subject} (${g.gradeType}): ${g.score}/${g.maxScore} (${pct}%)`;
+          const pct = Number(g.maxScore) > 0 ? Math.round((Number(g.score) / Number(g.maxScore)) * 100) : 0;
+          return `  - ${g.subject} (${g.gradeType}): ${Number(g.score)}/${Number(g.maxScore)} (${pct}%)`;
         });
         ctx += `Recent published grades:\n${gradeLines.join('\n')}\n`;
       }
