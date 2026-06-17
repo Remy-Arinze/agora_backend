@@ -822,6 +822,33 @@ export class AuthService {
   }
 
   /**
+   * Resend password reset email using the original (possibly expired) token.
+   * Looks up the userId from the token record — no email input required.
+   * Rate-limited: only works if the original token was generated within the last 7 days.
+   */
+  async resendPasswordResetByToken(token: string): Promise<void> {
+    const resetToken = await this.prisma.passwordResetToken.findUnique({
+      where: { token },
+      select: { userId: true, createdAt: true },
+    });
+
+    if (!resetToken) {
+      // Don't reveal whether the token existed — always succeed silently
+      this.logger.warn(`[RESEND_BY_TOKEN] Token not found: ${token.substring(0, 8)}...`);
+      return;
+    }
+
+    // Reject tokens older than 7 days (prevents abuse of ancient links)
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    if (resetToken.createdAt < sevenDaysAgo) {
+      this.logger.warn(`[RESEND_BY_TOKEN] Token too old for user ${resetToken.userId}`);
+      return;
+    }
+
+    await this.resendPasswordResetEmail(resetToken.userId);
+  }
+
+  /**
    * Generate and send password reset token for new user (used when creating school/admin/teacher)
    */
   async sendPasswordResetForNewUser(

@@ -1,4 +1,4 @@
-import { Body, Controller, Post, Get, Delete, UseGuards, Request, Param, BadRequestException, ForbiddenException, Query, Res, Header } from '@nestjs/common';
+import { Body, Controller, Post, Get, Delete, Put, UseGuards, Request, Param, BadRequestException, ForbiddenException, Query, Res, Header } from '@nestjs/common';
 import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -9,6 +9,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { RequirePermission } from '../common/decorators/permission.decorator';
 import { PermissionResource, PermissionType } from '../schools/dto/permission.dto';
 import { AiService } from './ai.service';
+import { LoisConfigService } from './lois-config.service';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { SubscriptionBillingService } from '../subscriptions/subscription-billing.service';
 import { KnowledgeIndexingService } from './knowledge-indexing.service';
@@ -34,6 +35,7 @@ import { toLoisStreamErrorPayload } from './ai-stream-errors';
 export class AiController {
     constructor(
         private readonly aiService: AiService,
+        private readonly loisConfigService: LoisConfigService,
         private readonly subscriptionsService: SubscriptionsService,
         private readonly subscriptionBilling: SubscriptionBillingService,
         private readonly indexingService: KnowledgeIndexingService,
@@ -319,5 +321,64 @@ export class AiController {
             success: true, 
             message: `School knowledge base updated. Indexed school profiles, teachers, and ${students.length} students.` 
         };
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // LOIS CONFIGURATION (Per-school personality customisation)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /** School admin: fetch their school's Lois config */
+    @Get('lois-config')
+    @Roles(UserRole.SCHOOL_ADMIN)
+    @RequirePermission(PermissionResource.OVERVIEW, PermissionType.READ)
+    @ApiOperation({ summary: 'Get Lois configuration for this school' })
+    async getLoisConfig(@Param('schoolId') schoolId: string) {
+        const config = await this.loisConfigService.getForSchool(schoolId);
+        return { success: true, data: config ?? null };
+    }
+
+    /** School admin (principal only): save their Lois config */
+    @Put('lois-config')
+    @Roles(UserRole.SCHOOL_ADMIN)
+    @RequirePermission(PermissionResource.OVERVIEW, PermissionType.WRITE)
+    @ApiOperation({ summary: 'Save Lois configuration for this school (principal only)' })
+    async upsertLoisConfig(
+        @Request() req: any,
+        @Param('schoolId') schoolId: string,
+        @Body() body: { customGreeting?: string; toneNote?: string; restrictedTopics?: string; schoolContext?: string },
+    ) {
+        // Only school owners / principals may edit Lois config
+        const admin = await this.prisma.schoolAdmin.findFirst({
+            where: { userId: req.user.id, schoolId },
+            select: { role: true },
+        });
+        const principalRoles = ['school_owner', 'principal', 'head_teacher', 'headmaster', 'headmistress'];
+        if (!admin || !principalRoles.includes(admin.role?.toLowerCase() ?? '')) {
+            throw new ForbiddenException('Only the school principal or owner can modify Lois configuration.');
+        }
+
+        const config = await this.loisConfigService.upsertForSchool(schoolId, body);
+        return { success: true, data: config };
+    }
+
+    /** School admin (principal only): reset Lois config to defaults */
+    @Delete('lois-config')
+    @Roles(UserRole.SCHOOL_ADMIN)
+    @RequirePermission(PermissionResource.OVERVIEW, PermissionType.WRITE)
+    @ApiOperation({ summary: 'Reset Lois configuration to platform defaults' })
+    async deleteLoisConfig(
+        @Request() req: any,
+        @Param('schoolId') schoolId: string,
+    ) {
+        const admin = await this.prisma.schoolAdmin.findFirst({
+            where: { userId: req.user.id, schoolId },
+            select: { role: true },
+        });
+        const principalRoles = ['school_owner', 'principal', 'head_teacher', 'headmaster', 'headmistress'];
+        if (!admin || !principalRoles.includes(admin.role?.toLowerCase() ?? '')) {
+            throw new ForbiddenException('Only the school principal or owner can reset Lois configuration.');
+        }
+        await this.loisConfigService.deleteForSchool(schoolId);
+        return { success: true, message: 'Lois configuration reset to platform defaults.' };
     }
 }

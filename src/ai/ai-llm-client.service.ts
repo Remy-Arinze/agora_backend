@@ -5,23 +5,45 @@ import OpenAI, { AzureOpenAI } from 'openai';
 import { PrismaService } from '../database/prisma.service';
 
 /**
- * Central OpenAI / Azure client, embedding client, model id, and read-only Prisma for Lois SQL.
- * Other AI services depend on this instead of duplicating client construction.
+ * Central LLM + embeddings client.
+ *
+ * Chat provider priority (first configured wins):
+ *   1. Standard OpenAI   — OPENAI_API_KEY
+ *   2. OpenRouter        — OPENROUTER_API_KEY  (OpenAI-compatible, acts as fallback)
+ *   3. Azure OpenAI      — AZURE_OPENAI_API_KEY + AZURE_OPENAI_ENDPOINT + AZURE_OPENAI_DEPLOYMENT
+ *
+ * Embeddings provider priority:
+ *   1. Standard OpenAI   — OPENAI_API_KEY  (uses text-embedding-3-small by default)
+ *   2. Azure Embeddings  — AZURE_OPENAI_EMBEDDING_API_KEY + endpoint + deployment
+ *   3. Falls back to the chat client if neither is available
+ *
+ * Model resolution (chat):
+ *   OPENAI_MODEL env var → default depends on provider:
+ *     OpenAI / OpenRouter: gpt-4o-mini
+ *     Azure: value from AZURE_OPENAI_DEPLOYMENT
  */
 @Injectable()
 export class AiLlmClientService {
   private readonly logger = new Logger(AiLlmClientService.name);
+
   private openai: OpenAI | null = null;
   private embeddingsClient: OpenAI | null = null;
   private readonly model: string;
   private readonly readOnlyPrisma: PrismaClient;
-  /** Main chat client is Azure; Azure rejects `signal` on chat.completions (400 unknown argument). */
+
+  /** Azure chat API rejects the `signal` field — callers must check this. */
   private readonly mainChatUsesAzureOpenAi: boolean = false;
+
+  /** Which provider is active — for log messages only. */
+  private readonly chatProviderName: string = 'none';
+  private readonly embeddingsProviderName: string = 'none';
+  private readonly embeddingsModel: string;
 
   constructor(
     private readonly configService: ConfigService,
     private readonly prisma: PrismaService,
   ) {
+    // ── Read-only Prisma ────────────────────────────────────────────────────
     const readOnlyUrl =
       this.configService.get<string>('READONLY_DATABASE_URL') ||
       this.configService.get<string>('DATABASE_URL') ||
@@ -30,7 +52,12 @@ export class AiLlmClientService {
       datasources: { db: { url: readOnlyUrl } },
     });
 
-    const apiKey = this.configService.get<string>('OPENAI_API_KEY');
+    // ── Env vars ────────────────────────────────────────────────────────────
+    const openaiKey = this.configService.get<string>('OPENAI_API_KEY');
+    const openrouterKey = this.configService.get<string>('OPENROUTER_API_KEY');
+    const openrouterBaseUrl = this.configService.get<string>('OPENROUTER_BASE_URL') || 'https://openrouter.ai/api/v1';
+    const appUrl = this.configService.get<string>('FRONTEND_URL') || 'https://agora-schools.com';
+
     const azureApiKey = this.configService.get<string>('AZURE_OPENAI_API_KEY');
     const azureEndpoint = this.configService.get<string>('AZURE_OPENAI_ENDPOINT');
     const azureDeployment = this.configService.get<string>('AZURE_OPENAI_DEPLOYMENT');
@@ -43,41 +70,79 @@ export class AiLlmClientService {
     const azureEmbedDeployment = this.configService.get<string>('AZURE_OPENAI_EMBEDDING_DEPLOYMENT');
     const azureEmbedApiVersion = this.configService.get<string>('AZURE_OPENAI_EMBEDDING_API_VERSION');
 
-    this.model = this.configService.get<string>('OPENAI_MODEL') || 'gpt-4o';
+    const customModel = this.configService.get<string>('OPENAI_MODEL');
 
-    if (azureApiKey && azureEndpoint && azureDeployment) {
-      this.mainChatUsesAzureOpenAi = true;
+    // ── Chat client — priority: OpenAI → OpenRouter → Azure ─────────────────
+    if (openaiKey && openaiKey !== 'your_openai_api_key_here') {
+      this.openai = new OpenAI({ apiKey: openaiKey });
+      this.model = customModel || 'gpt-4o-mini';
+      (this as any).chatProviderName = 'openai';
+      this.logger.log(`Chat provider: Standard OpenAI (model: ${this.model})`);
+
+    } else if (openrouterKey) {
+      this.openai = new OpenAI({
+        apiKey: openrouterKey,
+        baseURL: openrouterBaseUrl,
+        defaultHeaders: {
+          'HTTP-Referer': appUrl,
+          'X-Title': 'Agora Education Platform',
+        },
+      });
+      this.model = customModel || 'openai/gpt-4o-mini';
+      (this as any).chatProviderName = 'openrouter';
+      this.logger.log(`Chat provider: OpenRouter (model: ${this.model})`);
+
+    } else if (azureApiKey && azureEndpoint && azureDeployment) {
+      (this as any).mainChatUsesAzureOpenAi = true;
       this.openai = new AzureOpenAI({
         apiKey: azureApiKey,
         endpoint: azureEndpoint,
         apiVersion: azureApiVersion || '2025-01-01-preview',
         deployment: azureDeployment,
       }) as any;
-      this.logger.log(`Azure OpenAI initialized with deployment: ${azureDeployment}`);
-    } else if (apiKey && apiKey !== 'your_openai_api_key_here') {
-      this.mainChatUsesAzureOpenAi = false;
-      this.openai = new OpenAI({ apiKey });
-      this.logger.log('Standard OpenAI client initialized');
+      this.model = customModel || azureDeployment;
+      (this as any).chatProviderName = 'azure';
+      this.logger.log(`Chat provider: Azure OpenAI (deployment: ${azureDeployment})`);
+
     } else {
-      this.mainChatUsesAzureOpenAi = false;
-      this.logger.warn('AI services are not configured (neither OpenAI nor Azure)');
+      this.model = customModel || 'gpt-4o-mini';
+      this.logger.warn(
+        'AI chat is not configured. Set OPENAI_API_KEY (preferred) or OPENROUTER_API_KEY (fallback).',
+      );
     }
 
-    if (azureEmbedKey && azureEmbedEndpoint && azureEmbedDeployment) {
+    // ── Embeddings client — priority: OpenAI → Azure ─────────────────────
+    if (openaiKey && openaiKey !== 'your_openai_api_key_here') {
+      // Re-use the same standard OpenAI client — no extra instance needed
+      this.embeddingsClient = this.openai;
+      this.embeddingsModel = 'text-embedding-3-small';
+      (this as any).embeddingsProviderName = 'openai';
+      this.logger.log('Embeddings provider: Standard OpenAI (text-embedding-3-small)');
+
+    } else if (azureEmbedKey && azureEmbedEndpoint && azureEmbedDeployment) {
       this.embeddingsClient = new AzureOpenAI({
         apiKey: azureEmbedKey,
         endpoint: azureEmbedEndpoint,
         apiVersion: azureEmbedApiVersion || '2023-05-15',
         deployment: azureEmbedDeployment,
       }) as any;
-      this.logger.log(`Azure OpenAI Embeddings initialized with deployment: ${azureEmbedDeployment}`);
+      this.embeddingsModel = azureEmbedDeployment;
+      (this as any).embeddingsProviderName = 'azure';
+      this.logger.log(`Embeddings provider: Azure OpenAI (deployment: ${azureEmbedDeployment})`);
+
     } else {
+      // Final fallback: share the chat client (works for OpenRouter if model supports embeddings,
+      // but OpenRouter doesn't — this path only gets used if nothing else is set)
       this.embeddingsClient = this.openai;
+      this.embeddingsModel = 'text-embedding-3-small';
+      (this as any).embeddingsProviderName = 'fallback';
       if (this.openai) {
-        this.logger.log('Using default OpenAI client for embeddings fallback');
+        this.logger.warn('Embeddings: falling back to chat client — set OPENAI_API_KEY for dedicated embeddings.');
       }
     }
   }
+
+  // ── Public API ──────────────────────────────────────────────────────────────
 
   isConfigured(): boolean {
     return this.openai !== null;
@@ -85,7 +150,9 @@ export class AiLlmClientService {
 
   ensureConfigured(): void {
     if (!this.openai) {
-      throw new BadRequestException('AI features are not configured. Please contact your administrator.');
+      throw new BadRequestException(
+        'AI features are not configured. Please contact your administrator.',
+      );
     }
   }
 
@@ -107,9 +174,17 @@ export class AiLlmClientService {
   }
 
   /**
-   * When true, do not pass `signal` to `chat.completions.create` — Azure returns 400
-   * "Unrecognized request argument supplied: signal". Abort is still handled between
-   * turns and via stream `controller.abort()` where applicable.
+   * The embeddings model name to pass to `embeddings.create({ model })`.
+   * Standard OpenAI: "text-embedding-3-small"
+   * Azure: the deployment name (Azure ignores the model field but some callers set it)
+   */
+  getEmbeddingsModel(): string {
+    return this.embeddingsModel;
+  }
+
+  /**
+   * Azure rejects passing `signal` to chat.completions.create (returns 400).
+   * Callers use this to conditionally omit the signal field.
    */
   chatClientRejectsAbortSignal(): boolean {
     return this.mainChatUsesAzureOpenAi;
@@ -119,7 +194,6 @@ export class AiLlmClientService {
     return this.readOnlyPrisma;
   }
 
-  /** Primary Prisma (read-write) for app data — same instance as Nest PrismaService. */
   getPrisma(): PrismaService {
     return this.prisma;
   }

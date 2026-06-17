@@ -260,17 +260,67 @@ export class TeacherSubjectsService {
       throw new BadRequestException(`Teacher is not currently assigned to teach ${subject.name}`);
     }
 
-    // Check if teacher is currently teaching this subject in any class (includes TimetablePeriod)
-    const assignmentCount = await this.staffRepository.getTeacherSubjectAssignmentCount(
-      teacherId,
-      subject.name,
-      subjectId // Pass subjectId for TimetablePeriod lookup
-    );
-    if (assignmentCount > 0) {
+    // Check if teacher is currently assigned to teach this subject in any class arm (SECONDARY)
+    // or has timetable periods for it, and build a detailed error if so.
+    const activeClassTeachers = await this.prisma.classTeacher.findMany({
+      where: {
+        teacherId,
+        subjectId,
+      },
+      include: {
+        classArm: {
+          include: { classLevel: { select: { name: true } } },
+        },
+        session: { select: { name: true } },
+      },
+    });
+
+    const timetablePeriods = await this.prisma.timetablePeriod.findMany({
+      where: {
+        teacherId,
+        subjectId,
+      },
+      include: {
+        classArm: {
+          include: { classLevel: { select: { name: true } } },
+        },
+        term: { select: { name: true } },
+      },
+      distinct: ['classArmId', 'classId'],
+    });
+
+    if (activeClassTeachers.length > 0 || timetablePeriods.length > 0) {
+      const parts: string[] = [];
+
+      if (activeClassTeachers.length > 0) {
+        const classArmList = activeClassTeachers
+          .map((ct: any) => {
+            const armName = ct.classArm
+              ? `${ct.classArm.classLevel.name} ${ct.classArm.name}`
+              : ct.classArmId;
+            const sessionName = ct.session ? ` (${ct.session.name})` : '';
+            return `${armName}${sessionName}`;
+          })
+          .join(', ');
+        parts.push(`Active class assignments: ${classArmList}`);
+      }
+
+      if (timetablePeriods.length > 0) {
+        const periodList = timetablePeriods
+          .map((p: any) => {
+            const armName = p.classArm
+              ? `${p.classArm.classLevel.name} ${p.classArm.name}`
+              : p.classArmId || p.classId;
+            const termName = p.term ? ` (${p.term.name})` : '';
+            return `${armName}${termName}`;
+          })
+          .join(', ');
+        parts.push(`Timetable periods in: ${periodList}`);
+      }
+
       throw new ConflictException(
-        `Cannot remove ${subject.name} from teacher's competencies. ` +
-          `Teacher is currently assigned to teach this subject in ${assignmentCount} class(es). ` +
-          `Please remove the class assignments first.`
+        `Cannot remove "${subject.name}" from teacher's competencies. ` +
+          `Please remove the following assignments first — ${parts.join('. ')}`
       );
     }
 

@@ -655,6 +655,13 @@ export class ResourcesService {
       throw new NotFoundException('Subject not found');
     }
 
+    // Agora standard subjects are read-only — only custom subjects can be edited
+    if (subject.isAgoraStandard) {
+      throw new BadRequestException(
+        'Agora standard subjects cannot be edited. Only custom subjects can be modified.'
+      );
+    }
+
     // Validate classLevel if provided
     if (dto.classLevelId) {
       const classLevel = await this.classLevelModel.findUnique({
@@ -1318,10 +1325,50 @@ export class ResourcesService {
       }
     }
 
-    // Get competent teacher IDs
-    const competentTeacherIds = new Set(
-      subject.subjectTeachers?.map((st: any) => st.teacherId) || []
-    );
+    // REQ-1: Validate competency for every teacher in the batch BEFORE writing anything.
+    // Uses SubjectTeacher records plus agora cross-matching via validateTeacherCanTeachSubject.
+    for (const assignment of dto.assignments) {
+      if (!assignment.teacherId) continue; // unassign is always allowed
+
+      // Check SubjectTeacher exists (direct or via agora subject match)
+      const directLink = subject.subjectTeachers?.some(
+        (st: any) => st.teacherId === assignment.teacherId
+      );
+
+      if (!directLink) {
+        // Fall back to agora-subject cross-match: find any subjectTeacher for same agoraSubjectId
+        let crossMatch = false;
+        if ((subject as any).agoraSubjectId) {
+          const linkedSubjects = await this.prisma.subject.findMany({
+            where: { agoraSubjectId: (subject as any).agoraSubjectId },
+            select: { id: true },
+          });
+          const linkedIds = linkedSubjects.map((s: any) => s.id);
+          const match = await this.prisma.subjectTeacher.findFirst({
+            where: {
+              teacherId: assignment.teacherId,
+              subjectId: { in: linkedIds },
+            },
+          });
+          crossMatch = !!match;
+        }
+
+        if (!crossMatch) {
+          // Fetch teacher name for a friendly error
+          const teacher = await this.prisma.teacher.findUnique({
+            where: { id: assignment.teacherId },
+            select: { firstName: true, lastName: true },
+          });
+          const teacherName = teacher
+            ? `${teacher.firstName} ${teacher.lastName}`
+            : assignment.teacherId;
+          throw new BadRequestException(
+            `${teacherName} is not marked as competent to teach "${subject.name}". ` +
+              `Please add this subject to their competencies first.`
+          );
+        }
+      }
+    }
 
     let updated = 0;
     let removed = 0;
@@ -1345,12 +1392,6 @@ export class ResourcesService {
           removed++;
         }
       } else {
-        // Validate teacher is competent to teach this subject
-        if (!competentTeacherIds.has(assignment.teacherId)) {
-          throw new BadRequestException(
-            `Teacher ${assignment.teacherId} is not marked as competent to teach ${subject.name}. Please add them as a subject teacher first.`
-          );
-        }
 
         if (existing) {
           // Update existing assignment
@@ -1653,6 +1694,107 @@ export class ResourcesService {
       warnings,
       unassignedSubjects,
     };
+  }
+
+  /**
+   * REQ-4: Get coverage gaps — ClassTeacher assignments with no TimetablePeriod in the given term
+   * Returns SECONDARY assignments where teacher+subject+classArm has zero periods scheduled
+   */
+  async getCoverageGaps(
+    schoolId: string,
+    termId: string
+  ): Promise<
+    Array<{
+      classArmId: string;
+      classArmName: string;
+      subjectId: string;
+      subjectName: string;
+      teacherId: string;
+      teacherName: string;
+      message: string;
+    }>
+  > {
+    const school = await this.schoolRepository.findById(schoolId);
+    if (!school) {
+      throw new BadRequestException('School not found');
+    }
+
+    const term = await this.prisma.term.findUnique({
+      where: { id: termId },
+      include: { academicSession: true },
+    });
+
+    if (!term || term.academicSession.schoolId !== school.id) {
+      throw new NotFoundException('Term not found');
+    }
+
+    const sessionId = term.academicSessionId;
+
+    // Get all SECONDARY ClassTeacher assignments for this session
+    const classTeacherAssignments = await this.prisma.classTeacher.findMany({
+      where: {
+        sessionId,
+        subjectId: { not: null },
+        classArmId: { not: null },
+      },
+      include: {
+        teacher: { select: { id: true, firstName: true, lastName: true } },
+        subjectRef: { select: { id: true, name: true, schoolType: true } },
+        classArm: {
+          include: { classLevel: { select: { id: true, name: true, type: true } } },
+        },
+      },
+    });
+
+    // Filter to only SECONDARY assignments
+    const secondaryAssignments = classTeacherAssignments.filter(
+      (ct: any) => ct.subjectRef?.schoolType === 'SECONDARY'
+    );
+
+    const gaps: Array<{
+      classArmId: string;
+      classArmName: string;
+      subjectId: string;
+      subjectName: string;
+      teacherId: string;
+      teacherName: string;
+      message: string;
+    }> = [];
+
+    for (const ct of secondaryAssignments) {
+      if (!ct.classArmId || !ct.subjectId || !ct.teacherId) continue;
+
+      // Check if any timetable period exists for this combination in the term
+      const periodCount = await this.prisma.timetablePeriod.count({
+        where: {
+          termId,
+          classArmId: ct.classArmId,
+          subjectId: ct.subjectId,
+          teacherId: ct.teacherId,
+        },
+      });
+
+      if (periodCount === 0) {
+        const classArmName = ct.classArm
+          ? `${ct.classArm.classLevel.name} ${ct.classArm.name}`
+          : ct.classArmId;
+        const teacherName = ct.teacher
+          ? `${ct.teacher.firstName} ${ct.teacher.lastName}`
+          : ct.teacherId;
+
+        gaps.push({
+          classArmId: ct.classArmId,
+          classArmName,
+          subjectId: ct.subjectId,
+          subjectName: ct.subjectRef?.name || ct.subjectId,
+          teacherId: ct.teacherId,
+          teacherName,
+          message: `No timetable periods scheduled for "${ct.subjectRef?.name}" in ${classArmName} (teacher: ${teacherName})`,
+        });
+      }
+    }
+
+    return gaps;
   }
 
   /**

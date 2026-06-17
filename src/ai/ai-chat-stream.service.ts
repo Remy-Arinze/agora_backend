@@ -49,6 +49,39 @@ export class AiChatStreamService {
     const openai = this.llm.getOpenai();
     const model = this.llm.getModel();
 
+    // ── Server-side memory: load stored history when resuming a conversation ──
+    // The frontend only needs to send the new user message; prior turns are
+    // fetched here so LOIS always has full cross-session context.
+    if (conversationId && userId) {
+      try {
+        const history = await this.prisma.chatMessage.findMany({
+          where: { conversationId },
+          orderBy: { createdAt: 'asc' },
+          take: 30, // last ~15 back-and-forth turns
+          select: { role: true, content: true },
+        });
+
+        if (history.length > 0) {
+          // Prepend stored history, avoiding duplicate of the incoming user message
+          const incomingUserContent = messages.find(m => m.role === 'user')?.content;
+          const filteredHistory = incomingUserContent
+            ? history.filter((_, i) =>
+                // Drop the last message if it duplicates the incoming one
+                !(i === history.length - 1 && history[i].role === 'user' && history[i].content === incomingUserContent)
+              )
+            : history;
+
+          messages = [
+            ...filteredHistory.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })),
+            ...messages,
+          ];
+        }
+      } catch (err) {
+        this.logger.warn(`Failed to load conversation history for ${conversationId}: ${err}`);
+        // Non-fatal — proceed without history
+      }
+    }
+
     const { systemPrompt, userRole } = await this.chatPrompt.getChatPrompt(messages, userId, schoolId);
 
     let fullAssistantContent = '';

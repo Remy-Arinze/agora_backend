@@ -80,6 +80,9 @@ export class TimetablePeriodDto {
 
   @ApiProperty({ required: false })
   isFromCourseRegistration?: boolean; // True if this period comes from course registration (carry-over)
+
+  @ApiProperty({ required: false, type: [String] })
+  warnings?: string[]; // REQ-2: Populated when timetable teacher diverges from ClassTeacher designation
 }
 
 export class ConflictInfo {

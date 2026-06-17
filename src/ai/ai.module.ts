@@ -22,6 +22,10 @@ import { AiSchoolInsightsService } from './ai-school-insights.service';
 import { AiAcademicRiskDigestScheduler } from './ai-academic-risk-digest.scheduler';
 import { AiStaffPermissionCheckerService } from './ai-staff-permission-checker.service';
 import { PermissionGuard } from '../common/guards/permission.guard';
+import { LoisConfigService } from './lois-config.service';
+import { LoisConfigAdminController } from './lois-config-admin.controller';
+import { SystemPromptConfigService } from './system-prompt-config.service';
+import { LoisSkillsService } from './lois-skills.service';
 
 @Module({
   imports: [
@@ -31,10 +35,13 @@ import { PermissionGuard } from '../common/guards/permission.guard';
     VectorQueueModule,
     NotificationModule,
   ],
-  controllers: [AiController],
+  controllers: [AiController, LoisConfigAdminController],
   providers: [
     PermissionGuard,
     AiLlmClientService,
+    LoisConfigService,
+    SystemPromptConfigService,
+    LoisSkillsService,
     AiSchoolInsightsService,
     AiStaffPermissionCheckerService,
     AiContextRagService,

@@ -10,6 +10,7 @@ import { SchoolRepository } from '../schools/domain/repositories/school.reposito
 import {
   CreateTimetablePeriodDto,
   CreateMasterScheduleDto,
+  ReplaceTimetableDto,
 } from './dto/create-timetable-period.dto';
 import { TimetablePeriodDto, ConflictInfo } from './dto/timetable.dto';
 import { DayOfWeek, PeriodType } from './dto/create-timetable-period.dto';
@@ -65,13 +66,14 @@ export class TimetableService {
     }
 
     // Validate class arm exists if classArmId is provided
+    let classArmForPeriod: { classLevel: { type: string; schoolId: string } } | null = null;
     if (dto.classArmId) {
-      const classArm = await this.prisma.classArm.findUnique({
+      classArmForPeriod = await this.prisma.classArm.findUnique({
         where: { id: dto.classArmId },
         include: { classLevel: true },
       });
 
-      if (!classArm || classArm.classLevel.schoolId !== school.id) {
+      if (!classArmForPeriod || classArmForPeriod.classLevel.schoolId !== school.id) {
         throw new NotFoundException('Class arm not found');
       }
     }
@@ -91,6 +93,15 @@ export class TimetableService {
       throw new BadRequestException('Start time must be before end time');
     }
 
+    // REQ-P3: For PRIMARY LESSON periods with no explicit teacherId, auto-fill the class teacher
+    let resolvedTeacherId = dto.teacherId || null;
+    if (dto.classArmId && !dto.teacherId && classArmForPeriod) {
+      const periodType = dto.type || PeriodType.LESSON;
+      if (classArmForPeriod.classLevel.type === 'PRIMARY' && periodType === PeriodType.LESSON) {
+        resolvedTeacherId = await this.resolvePrimaryTeacher(dto.classArmId);
+      }
+    }
+
     // Create period
     const period = await this.timetablePeriodModel.create({
       data: {
@@ -100,7 +111,7 @@ export class TimetableService {
         type: dto.type || PeriodType.LESSON,
         subjectId: dto.subjectId || null,
         courseId: dto.courseId || null,
-        teacherId: dto.teacherId || null,
+        teacherId: resolvedTeacherId,
         roomId: dto.roomId || null,
         classId: dto.classId || null,
         classArmId: dto.classArmId || null,
@@ -120,12 +131,118 @@ export class TimetableService {
       },
     });
 
-    return this.mapToPeriodDto(period);
+    const periodDto = this.mapToPeriodDto(period);
+
+    // REQ-2 + REQ-3: For SECONDARY periods with a subject, classArm, and teacher —
+    // sync the ClassTeacher record and warn if it diverges from an existing designation.
+    const warnings: string[] = [];
+    if (
+      period.subjectId &&
+      period.classArmId &&
+      period.teacherId &&
+      period.type === 'LESSON'
+    ) {
+      warnings.push(...(await this.syncClassTeacherFromPeriod(period)));
+    }
+
+    if (warnings.length > 0) {
+      (periodDto as any).warnings = warnings;
+    }
+
+    return periodDto;
   }
 
   /**
-   * Create master schedule (empty slots for specific classes or all class arms)
+   * REQ-2 + REQ-3: Sync a ClassTeacher record from a timetable period.
+   * - If no ClassTeacher exists for (classArmId, subjectId, sessionId), create one.
+   * - If one exists with a DIFFERENT teacher, update it (timetable is source of truth)
+   *   and return a warning message.
+   * - Returns an array of warning strings (empty if no mismatch).
    */
+  private async syncClassTeacherFromPeriod(period: any): Promise<string[]> {
+    const warnings: string[] = [];
+
+    // Only applies to SECONDARY class arms
+    const classArm = await this.prisma.classArm.findUnique({
+      where: { id: period.classArmId },
+      include: { classLevel: true },
+    });
+    if (!classArm || classArm.classLevel.type !== 'SECONDARY') {
+      return warnings;
+    }
+
+    // Find the active session for this term
+    const term = await this.prisma.term.findUnique({
+      where: { id: period.termId },
+      include: { academicSession: true },
+    });
+    if (!term) return warnings;
+
+    const sessionId = term.academicSessionId;
+    const { subjectId, classArmId, teacherId } = period;
+
+    const existing = await this.prisma.classTeacher.findFirst({
+      where: { subjectId, classArmId, sessionId },
+      include: {
+        teacher: { select: { firstName: true, lastName: true } },
+        subjectRef: { select: { name: true } },
+        classArm: { include: { classLevel: { select: { name: true } } } },
+      },
+    });
+
+    if (!existing) {
+      // No assignment yet — create one
+      await this.prisma.classTeacher.upsert({
+        where: {
+          classArmId_subjectId_sessionId: { classArmId, subjectId, sessionId },
+        },
+        create: {
+          classArmId,
+          subjectId,
+          sessionId,
+          teacherId,
+          isPrimary: false,
+          isFormTeacher: false,
+        },
+        update: { teacherId },
+      });
+    } else if (existing.teacherId !== teacherId) {
+      // Mismatch — update to match timetable and warn
+      const oldTeacherName = existing.teacher
+        ? `${existing.teacher.firstName} ${existing.teacher.lastName}`
+        : existing.teacherId;
+      const subjectName = existing.subjectRef?.name || subjectId;
+      const className = existing.classArm
+        ? `${existing.classArm.classLevel.name} ${existing.classArm.name}`
+        : classArmId;
+
+      await this.prisma.classTeacher.update({
+        where: { id: existing.id },
+        data: { teacherId },
+      });
+
+      warnings.push(
+        `Class assignment updated: "${subjectName}" in ${className} was designated to ${oldTeacherName}. ` +
+          `Timetable assignment has been synced to the new teacher.`
+      );
+    }
+    // If existing.teacherId === teacherId, no action needed
+
+    return warnings;
+  }
+
+  /**
+   * REQ-P3: Resolve the primary class teacher for a PRIMARY class arm.
+   * Returns the teacherId of the ClassTeacher with isPrimary=true, or null if none exists.
+   */
+  private async resolvePrimaryTeacher(classArmId: string): Promise<string | null> {
+    const ct = await this.prisma.classTeacher.findFirst({
+      where: { classArmId, isPrimary: true },
+      select: { teacherId: true },
+    });
+    return ct?.teacherId ?? null;
+  }
+
   async createMasterSchedule(
     schoolId: string,
     dto: CreateMasterScheduleDto
@@ -715,6 +832,43 @@ export class TimetableService {
       }
     }
 
+    // Check for same-class time overlaps when start or end time is being changed
+    if (dto.startTime !== undefined || dto.endTime !== undefined) {
+      const effectiveClassArmIdForOverlap = dto.classArmId ?? period.classArmId;
+      const effectiveClassIdForOverlap = dto.classId ?? period.classId;
+      const effectiveDay = dto.dayOfWeek ?? period.dayOfWeek;
+      const effectiveTerm = dto.termId ?? period.termId;
+      const effectiveStart = dto.startTime ?? period.startTime;
+      const effectiveEnd = dto.endTime ?? period.endTime;
+
+      // Build query to find other periods in the same class/arm + day + term
+      const sameClassWhere: any = {
+        id: { not: periodId },
+        dayOfWeek: effectiveDay,
+        termId: effectiveTerm,
+      };
+
+      if (effectiveClassArmIdForOverlap) {
+        sameClassWhere.classArmId = effectiveClassArmIdForOverlap;
+      } else if (effectiveClassIdForOverlap) {
+        sameClassWhere.classId = effectiveClassIdForOverlap;
+      }
+
+      const sameDayPeriods = await this.timetablePeriodModel.findMany({
+        where: sameClassWhere,
+      });
+
+      const overlappingPeriod = sameDayPeriods.find((p: any) =>
+        this.doPeriodsOverlap(effectiveStart, effectiveEnd, p.startTime, p.endTime)
+      );
+
+      if (overlappingPeriod) {
+        throw new ConflictException(
+          `Time slot ${effectiveStart}–${effectiveEnd} on ${effectiveDay} overlaps with an existing period (${overlappingPeriod.startTime}–${overlappingPeriod.endTime})`
+        );
+      }
+    }
+
     // Build update data object, only including fields that are provided
     const updateData: any = {};
     if (dto.dayOfWeek !== undefined) updateData.dayOfWeek = dto.dayOfWeek;
@@ -751,6 +905,24 @@ export class TimetableService {
       }
     }
 
+    // REQ-P3: For PRIMARY LESSON periods with no teacher, auto-fill the class teacher
+    const effectiveClassArmId = updateData.classArmId ?? period.classArmId;
+    const effectiveType = updateData.type ?? period.type;
+    const effectiveTeacherId = updateData.teacherId ?? period.teacherId;
+
+    if (effectiveClassArmId && !effectiveTeacherId && effectiveType === PeriodType.LESSON) {
+      const arm = await this.prisma.classArm.findUnique({
+        where: { id: effectiveClassArmId },
+        include: { classLevel: true },
+      });
+      if (arm?.classLevel.type === 'PRIMARY') {
+        const primaryTeacherId = await this.resolvePrimaryTeacher(effectiveClassArmId);
+        if (primaryTeacherId) {
+          updateData.teacherId = primaryTeacherId;
+        }
+      }
+    }
+
     const updated = await this.timetablePeriodModel.update({
       where: { id: periodId },
       data: updateData,
@@ -768,7 +940,24 @@ export class TimetableService {
       },
     });
 
-    return this.mapToPeriodDto(updated);
+    const updatedDto = this.mapToPeriodDto(updated);
+
+    // REQ-2 + REQ-3: Sync ClassTeacher when teacher is explicitly set on an update
+    const warnings: string[] = [];
+    if (
+      updated.subjectId &&
+      updated.classArmId &&
+      updated.teacherId &&
+      updated.type === 'LESSON'
+    ) {
+      warnings.push(...(await this.syncClassTeacherFromPeriod(updated)));
+    }
+
+    if (warnings.length > 0) {
+      (updatedDto as any).warnings = warnings;
+    }
+
+    return updatedDto;
   }
 
   /**
@@ -862,6 +1051,109 @@ export class TimetableService {
         },
       });
     }
+  }
+
+  /**
+   * Replace the entire timetable for a class/classArm+term atomically.
+   *
+   * Executes in a single Prisma transaction:
+   *   1. Delete all existing periods for this class/arm + term
+   *   2. Insert all new periods from the payload
+   *
+   * This replaces the N-request waterfall from the frontend edit table with
+   * a single round-trip, eliminating partial-save failures and race conditions.
+   *
+   * Teacher/room conflict detection is intentionally NOT re-run here because:
+   *   - The frontend already validates overlaps before calling this endpoint
+   *   - The payload represents the admin's final intended state
+   *   - Re-running per-period conflict detection in a transaction would require
+   *     intermediate state awareness that Prisma doesn't support cleanly
+   */
+  async replaceTimetable(
+    schoolId: string,
+    dto: ReplaceTimetableDto
+  ): Promise<{ replaced: number }> {
+    const school = await this.schoolRepository.findById(schoolId);
+    if (!school) {
+      throw new BadRequestException('School not found');
+    }
+
+    // Validate term
+    const term = await this.prisma.term.findUnique({
+      where: { id: dto.termId },
+      include: { academicSession: true },
+    });
+    if (!term || term.academicSession.schoolId !== school.id) {
+      throw new NotFoundException('Term not found');
+    }
+
+    // Validate class or classArm ownership
+    if (!dto.classId && !dto.classArmId) {
+      throw new BadRequestException('Either classId or classArmId must be provided');
+    }
+    if (dto.classId) {
+      const classData = await this.prisma.class.findUnique({ where: { id: dto.classId } });
+      if (!classData || classData.schoolId !== school.id) {
+        throw new NotFoundException('Class not found');
+      }
+    }
+    if (dto.classArmId) {
+      const classArm = await this.prisma.classArm.findUnique({
+        where: { id: dto.classArmId },
+        include: { classLevel: true },
+      });
+      if (!classArm || classArm.classLevel.schoolId !== school.id) {
+        throw new NotFoundException('Class arm not found');
+      }
+    }
+
+    // Validate all period times upfront (before the transaction)
+    const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+    for (const p of dto.periods) {
+      if (!TIME_RE.test(p.startTime)) {
+        throw new BadRequestException(`Invalid startTime format: ${p.startTime}`);
+      }
+      if (!TIME_RE.test(p.endTime)) {
+        throw new BadRequestException(`Invalid endTime format: ${p.endTime}`);
+      }
+      if (p.startTime >= p.endTime) {
+        throw new BadRequestException(
+          `Period ${p.startTime}–${p.endTime}: start must be before end`
+        );
+      }
+    }
+
+    // Atomic: delete existing + bulk-insert new
+    const periodsToCreate = dto.periods.map((p) => ({
+      dayOfWeek: p.dayOfWeek,
+      startTime: p.startTime,
+      endTime: p.endTime,
+      type: p.type || PeriodType.LESSON,
+      subjectId: p.subjectId || null,
+      courseId: p.courseId || null,
+      teacherId: p.teacherId || null,
+      roomId: p.roomId || null,
+      classId: dto.classId || p.classId || null,
+      classArmId: dto.classArmId || p.classArmId || null,
+      termId: dto.termId,
+    }));
+
+    const whereClause: any = { termId: dto.termId };
+    if (dto.classArmId) {
+      whereClause.classArmId = dto.classArmId;
+    } else {
+      whereClause.classId = dto.classId;
+    }
+
+    const [, createResult] = await this.prisma.$transaction([
+      (this.prisma as any).timetablePeriod.deleteMany({ where: whereClause }),
+      (this.prisma as any).timetablePeriod.createMany({
+        data: periodsToCreate,
+        skipDuplicates: false,
+      }),
+    ]);
+
+    return { replaced: createResult.count };
   }
 
   /**
