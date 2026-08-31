@@ -5,4 +5,4 @@ NODE_OPTIONS = "--max-old-space-size=4096"
 HUSKY = "0"
 
 [start]
-cmd = "node dist/main"
+cmd = "npm run start"

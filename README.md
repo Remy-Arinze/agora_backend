@@ -34,7 +34,7 @@ npm run dev                 # Start dev server on :4000
 docker build -t agora-backend .
 docker run -p 4000:4000 --env-file .env agora-backend
 ```
-The container runs `prisma migrate deploy` on startup automatically.
+The container runs `prisma migrate deploy` on startup. Set `RUN_DB_SEED=true` on first deploy to also run `prisma/seed.ts` and `prisma/seed-agora-subjects.ts`, then turn it off — `seed.ts` resets the super-admin password.
 
 **API + Postgres** (for local dev):
 ```bash
