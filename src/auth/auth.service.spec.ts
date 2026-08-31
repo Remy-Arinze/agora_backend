@@ -11,6 +11,8 @@ import { PrismaService } from '../database/prisma.service';
 import { EmailService } from '../email/email.service';
 import { OtpService } from './otp.service';
 import { CloudinaryService } from '../storage/cloudinary/cloudinary.service';
+import { PasswordOtpService } from './password-otp.service';
+import { MetricsService } from '../common/metrics/metrics.service';
 import { TestUtils } from '../common/test/test-utils';
 
 jest.mock('bcryptjs', () => ({
@@ -27,6 +29,7 @@ describe('AuthService', () => {
   let emailService: jest.Mocked<EmailService>;
   let otpService: jest.Mocked<OtpService>;
   let cloudinaryService: jest.Mocked<CloudinaryService>;
+  let passwordOtpService: { create: jest.Mock };
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -59,6 +62,22 @@ describe('AuthService', () => {
           provide: CloudinaryService,
           useValue: TestUtils.createMockCloudinaryService(),
         },
+        {
+          provide: PasswordOtpService,
+          useValue: {
+            create: jest.fn().mockResolvedValue({ otpCode: '123456' }),
+            verifyChangePassword: jest.fn(),
+            verifyResetPassword: jest.fn(),
+          },
+        },
+        {
+          provide: MetricsService,
+          useValue: {
+            authFailedAttemptsTotal: { inc: jest.fn() },
+            authLoginAttemptsTotal: { inc: jest.fn() },
+            authTokenRefreshTotal: { inc: jest.fn() },
+          },
+        },
       ],
     }).compile();
 
@@ -68,6 +87,7 @@ describe('AuthService', () => {
     emailService = module.get(EmailService);
     otpService = module.get(OtpService);
     cloudinaryService = module.get(CloudinaryService);
+    passwordOtpService = module.get(PasswordOtpService);
   });
 
   it('should be defined', () => {
@@ -215,7 +235,7 @@ describe('AuthService', () => {
         userId: mockUser.id,
         expiresAt: new Date(),
       } as any);
-      emailService.sendPasswordResetEmail.mockResolvedValue(undefined);
+      emailService.sendPasswordResetOtpEmail.mockResolvedValue(undefined);
 
       await service.requestPasswordReset(mockRequestDto);
 
@@ -223,8 +243,8 @@ describe('AuthService', () => {
         where: { email: mockRequestDto.email },
         include: expect.any(Object),
       });
-      expect(prisma.passwordResetToken.create).toHaveBeenCalled();
-      expect(emailService.sendPasswordResetEmail).toHaveBeenCalled();
+      expect(passwordOtpService.create).toHaveBeenCalled();
+      expect(emailService.sendPasswordResetOtpEmail).toHaveBeenCalled();
     });
 
     it('should not reveal if user does not exist', async () => {
@@ -233,7 +253,8 @@ describe('AuthService', () => {
       await service.requestPasswordReset(mockRequestDto);
 
       expect(prisma.passwordResetToken.create).not.toHaveBeenCalled();
-      expect(emailService.sendPasswordResetEmail).not.toHaveBeenCalled();
+      expect(passwordOtpService.create).not.toHaveBeenCalled();
+      expect(emailService.sendPasswordResetOtpEmail).not.toHaveBeenCalled();
     });
   });
 

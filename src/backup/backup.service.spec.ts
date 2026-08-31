@@ -12,6 +12,7 @@
 
 import * as fc from 'fast-check';
 import archiver from 'archiver';
+import { getFcNumRuns } from '../common/test/test-utils';
 
 jest.setTimeout(30_000);
 
@@ -96,7 +97,7 @@ describe('BackupService ZIP Archive Completeness (Property 6)', () => {
           expect(entryCount).toBe(n + n + 2);
         },
       ),
-      { numRuns: 50 },
+      { numRuns: getFcNumRuns() },
     );
   });
 });

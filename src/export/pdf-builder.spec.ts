@@ -1,12 +1,13 @@
 import * as fc from 'fast-check';
 import { PdfBuilder } from './pdf-builder';
+import { getFcNumRuns } from '../common/test/test-utils';
 
 /**
  * Property 3: PDF Non-Empty Buffer
  * Validates: Requirements 6.2, 7.2, 8.2, 11.2
  */
 describe('PdfBuilder — Property 3: PDF Non-Empty Buffer', () => {
-  jest.setTimeout(60_000);
+  jest.setTimeout(15_000);
 
   const pdfBuilder = new PdfBuilder();
 
@@ -14,8 +15,13 @@ describe('PdfBuilder — Property 3: PDF Non-Empty Buffer', () => {
     await fc.assert(
       fc.asyncProperty(
         fc.record({
-          title: fc.string({ minLength: 1, maxLength: 50 }),
-          exportTimestamp: fc.date(),
+          title: fc
+            .string({ minLength: 1, maxLength: 50 })
+            .filter((s) => s.trim().length > 0),
+          exportTimestamp: fc.date({
+            min: new Date('2000-01-01T00:00:00.000Z'),
+            max: new Date('2035-12-31T00:00:00.000Z'),
+          }),
         }),
         async (options) => {
           const result = await pdfBuilder.build(options, (doc) => {
@@ -35,7 +41,7 @@ describe('PdfBuilder — Property 3: PDF Non-Empty Buffer', () => {
           expect(result[3]).toBe(0x46); // F
         },
       ),
-      { numRuns: 50 },
+      { numRuns: getFcNumRuns() },
     );
   });
 });

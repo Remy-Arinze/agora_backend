@@ -3,6 +3,7 @@ import { BadRequestException, NotFoundException, ConflictException } from '@nest
 import { TimetableService } from './timetable.service';
 import { PrismaService } from '../database/prisma.service';
 import { SchoolRepository } from '../schools/domain/repositories/school.repository';
+import { NotificationInboxService } from '../notification/notification-inbox.service';
 import { TestUtils } from '../common/test/test-utils';
 import { CreateTimetablePeriodDto, DayOfWeek, PeriodType } from './dto/create-timetable-period.dto';
 
@@ -24,6 +25,10 @@ describe('TimetableService', () => {
           useValue: {
             findById: jest.fn(),
           },
+        },
+        {
+          provide: NotificationInboxService,
+          useValue: { createAndFanOut: jest.fn() },
         },
       ],
     }).compile();

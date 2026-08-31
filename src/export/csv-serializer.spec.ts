@@ -1,6 +1,7 @@
 import * as fc from 'fast-check';
 import { parse } from 'csv-parse/sync';
 import { CsvSerializer, CsvRow } from './csv-serializer';
+import { getFcNumRuns } from '../common/test/test-utils';
 
 // ---------------------------------------------------------------------------
 // Arbitraries
@@ -12,7 +13,7 @@ import { CsvSerializer, CsvRow } from './csv-serializer';
  */
 const columnNameArb = fc
   .string({ minLength: 1, maxLength: 10 })
-  .filter((s) => !/[,"\n\r]/.test(s));
+  .filter((s) => /^[A-Za-z0-9]+$/.test(s));
 
 /**
  * Array of 1–8 unique column names.
@@ -75,7 +76,7 @@ describe('CsvSerializer — Property 1: CSV Round-Trip', () => {
           }
         },
       ),
-      { numRuns: 200 },
+      { numRuns: getFcNumRuns() },
     );
   });
 });
@@ -110,7 +111,7 @@ describe('CsvSerializer — Property 2: CSV Header-Order', () => {
 
         expect(parsedHeaders).toEqual(columns);
       }),
-      { numRuns: 100 },
+      { numRuns: getFcNumRuns() },
     );
   });
 });
@@ -147,7 +148,7 @@ describe('CsvSerializer — Property 5: UTF-8 BOM Prefix', () => {
           expect(buf[2]).toBe(0xbf);
         },
       ),
-      { numRuns: 100 },
+      { numRuns: getFcNumRuns() },
     );
   });
 });

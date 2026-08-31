@@ -1,5 +1,6 @@
 import * as fc from 'fast-check';
 import { EncryptionService } from './encryption.service';
+import { getFcNumRuns } from '../common/test/test-utils';
 
 /**
  * Property 7: Credential Encryption Round-Trip
@@ -23,7 +24,7 @@ describe('EncryptionService — Property 7: Credential Encryption Round-Trip', (
           expect(svc.decrypt(enc)).toBe(plaintext);
         },
       ),
-      { numRuns: 200 },
+      { numRuns: getFcNumRuns() },
     );
   });
 });

@@ -6,6 +6,9 @@ import { TimetableService } from '../timetable/timetable.service';
 import { GradesService } from '../grades/grades.service';
 import { EventService } from '../events/event.service';
 import { CloudinaryService } from '../storage/cloudinary/cloudinary.service';
+import { ExamTimetableService } from '../exam-timetable/exam-timetable.service';
+import { LiveStatusService } from '../live-status/live-status.service';
+import { NotificationService } from '../notification/notification.service';
 import { TestUtils } from '../common/test/test-utils';
 import { UserWithContext } from '../auth/types/user-with-context.type';
 
@@ -46,6 +49,20 @@ describe('StudentsService', () => {
         {
           provide: CloudinaryService,
           useValue: TestUtils.createMockCloudinaryService(),
+        },
+        {
+          provide: ExamTimetableService,
+          useValue: {},
+        },
+        {
+          provide: LiveStatusService,
+          useValue: {
+            getCurrentActivities: jest.fn().mockResolvedValue([]),
+          },
+        },
+        {
+          provide: NotificationService,
+          useValue: {},
         },
       ],
     }).compile();

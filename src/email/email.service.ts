@@ -110,7 +110,7 @@ export class EmailService {
     if (!this.transporter) {
       throw new Error('Gmail SMTP transporter is not initialized');
     }
-    const result = await this.dispatchMail(mailOptions);
+    const result = await this.transporter.sendMail(mailOptions);
     return { messageId: result.messageId || `gmail-${Date.now()}` };
   }
 

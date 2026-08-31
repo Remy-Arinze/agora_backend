@@ -9,6 +9,9 @@ import { StaffValidatorService } from '../../shared/staff-validator.service';
 import { PrismaService } from '../../../database/prisma.service';
 import { AuthService } from '../../../auth/auth.service';
 import { CloudinaryService } from '../../../storage/cloudinary/cloudinary.service';
+import { ClassService } from '../../classes/class.service';
+import { SubscriptionsService } from '../../../subscriptions/subscriptions.service';
+import { NotificationService } from '../../../notification/notification.service';
 import { TestUtils } from '../../../common/test/test-utils';
 
 describe('TeacherService', () => {
@@ -80,6 +83,22 @@ describe('TeacherService', () => {
         {
           provide: CloudinaryService,
           useValue: TestUtils.createMockCloudinaryService(),
+        },
+        {
+          provide: ClassService,
+          useValue: {},
+        },
+        {
+          provide: SubscriptionsService,
+          useValue: {
+            checkTeacherLimit: jest.fn().mockResolvedValue({ canAdd: true }),
+          },
+        },
+        {
+          provide: NotificationService,
+          useValue: {
+            notifySchoolAdmins: jest.fn(),
+          },
         },
       ],
     }).compile();
@@ -189,8 +208,12 @@ describe('TeacherService', () => {
       schoolRepository.findById.mockResolvedValue(mockSchool as any);
       staffRepository.findTeacherById.mockResolvedValue(mockTeacher as any);
       staffRepository.deleteTeacher.mockResolvedValue(mockTeacher as any);
+      (prisma.schoolAdmin.findFirst as jest.Mock).mockResolvedValue({
+        id: 'admin-1',
+        role: 'school_owner',
+      } as any);
 
-      await service.deleteTeacher('school-1', 'teacher-1');
+      await service.deleteTeacher('school-1', 'teacher-1', { id: 'user-1' } as any);
 
       expect(staffRepository.deleteTeacher).toHaveBeenCalledWith('teacher-1');
     });

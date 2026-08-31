@@ -4,6 +4,8 @@ import { EventService } from './event.service';
 import { PrismaService } from '../database/prisma.service';
 import { SchoolRepository } from '../schools/domain/repositories/school.repository';
 import { GoogleCalendarService } from '../integrations/google-calendar/google-calendar.service';
+import { NotificationService } from '../notification/notification.service';
+import { NotificationInboxService } from '../notification/notification-inbox.service';
 import { TestUtils } from '../common/test/test-utils';
 import { CreateEventDto } from './dto/create-event.dto';
 
@@ -31,6 +33,17 @@ describe('EventService', () => {
           provide: GoogleCalendarService,
           useValue: {
             createEvent: jest.fn(),
+          },
+        },
+        {
+          provide: NotificationService,
+          useValue: {},
+        },
+        {
+          provide: NotificationInboxService,
+          useValue: {
+            createAndFanOut: jest.fn(),
+            getAllSchoolMemberUserIds: jest.fn().mockResolvedValue(null),
           },
         },
       ],

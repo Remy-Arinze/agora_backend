@@ -2,7 +2,11 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ForbiddenException } from '@nestjs/common';
 import * as fc from 'fast-check';
 import { SchoolExportController } from './school-export.controller';
+import { getFcNumRuns } from '../common/test/test-utils';
 import { ExportService } from './export.service';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { SchoolDataAccessGuard } from '../common/guards/school-data-access.guard';
+import { PermissionGuard } from '../common/guards/permission.guard';
 
 /**
  * Property 4: Authorization Rejection
@@ -39,7 +43,14 @@ describe('SchoolExportController — Authorization Rejection (Property 4)', () =
           },
         },
       ],
-    }).compile();
+    })
+      .overrideGuard(JwtAuthGuard)
+      .useValue({ canActivate: () => true })
+      .overrideGuard(SchoolDataAccessGuard)
+      .useValue({ canActivate: () => true })
+      .overrideGuard(PermissionGuard)
+      .useValue({ canActivate: () => true })
+      .compile();
 
     controller = module.get<SchoolExportController>(SchoolExportController);
   });
@@ -56,7 +67,7 @@ describe('SchoolExportController — Authorization Rejection (Property 4)', () =
           ).rejects.toThrow(ForbiddenException);
         },
       ),
-      { numRuns: 50 },
+      { numRuns: getFcNumRuns() },
     );
   });
 
@@ -79,7 +90,7 @@ describe('SchoolExportController — Authorization Rejection (Property 4)', () =
           ).rejects.toThrow(ForbiddenException);
         },
       ),
-      { numRuns: 50 },
+      { numRuns: getFcNumRuns() },
     );
   });
 
@@ -101,7 +112,7 @@ describe('SchoolExportController — Authorization Rejection (Property 4)', () =
           ).rejects.toThrow(ForbiddenException);
         },
       ),
-      { numRuns: 50 },
+      { numRuns: getFcNumRuns() },
     );
   });
 
@@ -117,7 +128,7 @@ describe('SchoolExportController — Authorization Rejection (Property 4)', () =
           ).rejects.toThrow(ForbiddenException);
         },
       ),
-      { numRuns: 50 },
+      { numRuns: getFcNumRuns() },
     );
   });
 });

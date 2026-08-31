@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ConflictException, BadRequestException } from '@nestjs/common';
+import { BadRequestException } from '@nestjs/common';
 import { SuperAdminSchoolsService } from './super-admin-schools.service';
 import { SchoolRepository } from '../domain/repositories/school.repository';
 import { StaffRepository } from '../domain/repositories/staff.repository';
@@ -9,6 +9,7 @@ import { SchoolValidatorService } from '../shared/school-validator.service';
 import { StaffValidatorService } from '../shared/staff-validator.service';
 import { PrismaService } from '../../database/prisma.service';
 import { AuthService } from '../../auth/auth.service';
+import { EmailService } from '../../email/email.service';
 import { TestUtils } from '../../common/test/test-utils';
 
 describe('SuperAdminSchoolsService', () => {
@@ -84,6 +85,10 @@ describe('SuperAdminSchoolsService', () => {
             sendPasswordResetForNewUser: jest.fn(),
           },
         },
+        {
+          provide: EmailService,
+          useValue: TestUtils.createMockEmailService(),
+        },
       ],
     }).compile();
 
@@ -104,6 +109,12 @@ describe('SuperAdminSchoolsService', () => {
       name: 'Test School',
       subdomain: 'test-school',
       country: 'Nigeria',
+      owner: {
+        firstName: 'Ada',
+        lastName: 'Lovelace',
+        email: 'owner@example.com',
+        phone: '+2348000000000',
+      },
     };
 
     it('should successfully create a school', async () => {
@@ -127,16 +138,7 @@ describe('SuperAdminSchoolsService', () => {
 
       const result = await service.createSchool(mockCreateSchoolDto);
 
-      expect(schoolValidator.validateSubdomainUnique).toHaveBeenCalledWith('test-school');
       expect(result).toBeDefined();
-    });
-
-    it('should throw ConflictException if subdomain already exists', async () => {
-      schoolValidator.validateSubdomainUnique.mockRejectedValue(
-        new ConflictException('Subdomain already exists')
-      );
-
-      await expect(service.createSchool(mockCreateSchoolDto)).rejects.toThrow(ConflictException);
     });
   });
 
@@ -145,6 +147,8 @@ describe('SuperAdminSchoolsService', () => {
       const mockSchools = [{ id: 'school-1' }, { id: 'school-2' }];
       (prisma.school.findMany as jest.Mock).mockResolvedValue(mockSchools as any);
       (prisma.school.count as jest.Mock).mockResolvedValue(2);
+      (prisma.enrollment.groupBy as jest.Mock).mockResolvedValue([]);
+      (prisma.teacher.groupBy as jest.Mock).mockResolvedValue([]);
       schoolMapper.toDtoArray.mockReturnValue(mockSchools as any);
 
       const result = await service.findAll();

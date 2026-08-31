@@ -48,6 +48,7 @@ export class TestUtils {
         create: jest.fn() as jest.Mock,
         update: jest.fn() as jest.Mock,
         delete: jest.fn() as jest.Mock,
+        groupBy: jest.fn() as jest.Mock,
       },
       student: {
         findUnique: jest.fn() as jest.Mock,
@@ -89,6 +90,8 @@ export class TestUtils {
         create: jest.fn() as jest.Mock,
         update: jest.fn() as jest.Mock,
         delete: jest.fn() as jest.Mock,
+        groupBy: jest.fn() as jest.Mock,
+        count: jest.fn() as jest.Mock,
       },
       academicSession: {
         findUnique: jest.fn() as jest.Mock,
@@ -164,6 +167,12 @@ export class TestUtils {
         count: jest.fn() as jest.Mock,
         groupBy: jest.fn() as jest.Mock,
       },
+      permission: {
+        findUnique: jest.fn() as jest.Mock,
+        findFirst: jest.fn() as jest.Mock,
+        findMany: jest.fn().mockResolvedValue([]) as jest.Mock,
+      upsert: jest.fn() as jest.Mock,
+      },
       passwordResetToken: {
         findUnique: jest.fn() as jest.Mock,
         findFirst: jest.fn() as jest.Mock,
@@ -225,6 +234,7 @@ export class TestUtils {
   static createMockEmailService(): jest.Mocked<EmailService> {
     return {
       sendPasswordResetEmail: jest.fn(),
+      sendPasswordResetOtpEmail: jest.fn(),
       sendPasswordResetConfirmationEmail: jest.fn(),
       sendLoginOtpEmail: jest.fn(),
       sendSchoolProfileEditVerificationEmail: jest.fn(),
@@ -281,4 +291,13 @@ export class TestUtils {
       ...overrides,
     };
   }
+}
+
+/** fast-check iterations: 10 locally, 50 on CI, override with FC_NUM_RUNS. */
+export function getFcNumRuns(local = 10, ci = 50): number {
+  const fromEnv = Number(process.env.FC_NUM_RUNS);
+  if (Number.isFinite(fromEnv) && fromEnv > 0) {
+    return fromEnv;
+  }
+  return process.env.CI ? ci : local;
 }

@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException, ConflictException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { AdminService } from './admin.service';
 import { SchoolRepository } from '../../domain/repositories/school.repository';
 import { StaffRepository } from '../../domain/repositories/staff.repository';
@@ -10,6 +10,7 @@ import { PrismaService } from '../../../database/prisma.service';
 import { AuthService } from '../../../auth/auth.service';
 import { CloudinaryService } from '../../../storage/cloudinary/cloudinary.service';
 import { SubscriptionsService } from '../../../subscriptions/subscriptions.service';
+import { NotificationService } from '../../../notification/notification.service';
 import { TestUtils } from '../../../common/test/test-utils';
 
 describe('AdminService', () => {
@@ -90,6 +91,12 @@ describe('AdminService', () => {
           provide: SubscriptionsService,
           useValue: {
             checkAdminLimit: jest.fn().mockResolvedValue({ canAdd: true }),
+          },
+        },
+        {
+          provide: NotificationService,
+          useValue: {
+            notifySchoolAdmins: jest.fn(),
           },
         },
       ],
@@ -237,7 +244,9 @@ describe('AdminService', () => {
       (prisma.schoolAdmin.findFirst as jest.Mock).mockResolvedValue(principalAdmin as any);
 
       const mockUser = { id: 'user-1' } as any;
-      await expect(service.deleteAdmin('school-1', 'admin-1', mockUser)).rejects.toThrow(BadRequestException);
+      await expect(service.deleteAdmin('school-1', 'admin-1', mockUser)).rejects.toThrow(
+        ForbiddenException,
+      );
     });
   });
 });

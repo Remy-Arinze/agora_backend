@@ -8,6 +8,9 @@ import { GradesService } from './grades.service';
 import { PrismaService } from '../database/prisma.service';
 import { SchoolRepository } from '../schools/domain/repositories/school.repository';
 import { StaffRepository } from '../schools/domain/repositories/staff.repository';
+import { KnowledgeIndexingService } from '../ai/knowledge-indexing.service';
+import { NotificationService } from '../notification/notification.service';
+import { SchoolSettingsService } from '../school-settings/school-settings.service';
 import { TestUtils } from '../common/test/test-utils';
 import { UserWithContext } from '../auth/types/user-with-context.type';
 import { CreateGradeDto, GradeType } from './dto/grade.dto';
@@ -35,7 +38,26 @@ describe('GradesService', () => {
         {
           provide: StaffRepository,
           useValue: {
+            findTeacherById: jest.fn(),
             findTeacherByTeacherId: jest.fn(),
+          },
+        },
+        {
+          provide: KnowledgeIndexingService,
+          useValue: {
+            triggerEntitySync: jest.fn().mockResolvedValue(undefined),
+          },
+        },
+        {
+          provide: NotificationService,
+          useValue: {
+            emitGradePublished: jest.fn(),
+          },
+        },
+        {
+          provide: SchoolSettingsService,
+          useValue: {
+            getGradingPolicy: jest.fn(),
           },
         },
       ],
@@ -118,6 +140,7 @@ describe('GradesService', () => {
       };
 
       schoolRepository.findById.mockResolvedValue(mockSchool as any);
+      staffRepository.findTeacherById.mockResolvedValue(mockTeacher as any);
       staffRepository.findTeacherByTeacherId.mockResolvedValue(mockTeacher as any);
       (prisma.enrollment.findUnique as jest.Mock).mockResolvedValue(mockEnrollment as any);
       (prisma.subject.findUnique as jest.Mock).mockResolvedValue({ id: 'subject-1', name: 'Math' } as any);
@@ -162,6 +185,7 @@ describe('GradesService', () => {
       };
 
       schoolRepository.findById.mockResolvedValue(mockSchool as any);
+      staffRepository.findTeacherById.mockResolvedValue(mockTeacher as any);
       staffRepository.findTeacherByTeacherId.mockResolvedValue(mockTeacher as any);
       (prisma.enrollment.findUnique as jest.Mock).mockResolvedValue(mockEnrollment as any);
 
