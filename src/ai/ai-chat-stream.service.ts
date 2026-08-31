@@ -127,7 +127,7 @@ export class AiChatStreamService {
       abortSignal && !this.llm.chatClientRejectsAbortSignal() ? { signal: abortSignal } : {};
 
     try {
-      let currentMessages: any[] = [{ role: 'system', content: systemPrompt }, ...messages];
+      const currentMessages: any[] = [{ role: 'system', content: systemPrompt }, ...messages];
 
       let turn = 0;
       const MAX_TURNS = 3;

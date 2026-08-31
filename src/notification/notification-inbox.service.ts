@@ -1,0 +1,362 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { PrismaService } from '../database/prisma.service';
+import * as webpush from 'web-push';
+
+export type NotificationRole = 'SCHOOL_ADMIN' | 'TEACHER' | 'STUDENT' | 'SUPER_ADMIN';
+
+export interface CreateNotificationInput {
+  userId: string;
+  schoolId?: string | null;
+  role?: NotificationRole | string | null;
+  type: string;
+  title: string;
+  body: string;
+  link?: string | null;
+  metadata?: Record<string, unknown> | null;
+}
+
+export interface InboxCreatedPayload {
+  notification: {
+    id: string;
+    userId: string;
+    schoolId: string | null;
+    role: string | null;
+    type: string;
+    title: string;
+    body: string;
+    link: string | null;
+    metadata: unknown;
+    readAt: string | null;
+    createdAt: string;
+  };
+}
+
+@Injectable()
+export class NotificationInboxService {
+  private readonly logger = new Logger(NotificationInboxService.name);
+  private vapidConfigured = false;
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly config: ConfigService,
+    private readonly eventEmitter: EventEmitter2,
+  ) {
+    this.configureVapid();
+  }
+
+  private get db() {
+    return this.prisma as any;
+  }
+
+  private configureVapid() {
+    const publicKey = this.config.get<string>('VAPID_PUBLIC_KEY');
+    const privateKey = this.config.get<string>('VAPID_PRIVATE_KEY');
+    const subject = this.config.get<string>('VAPID_SUBJECT') || 'mailto:support@agora-schools.com';
+    if (publicKey && privateKey) {
+      try {
+        webpush.setVapidDetails(subject, publicKey, privateKey);
+        this.vapidConfigured = true;
+      } catch (err: any) {
+        this.logger.warn(`Failed to configure VAPID: ${err?.message || err}`);
+      }
+    } else {
+      this.logger.warn('VAPID keys not set — web push disabled until VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY are configured');
+    }
+  }
+
+  getVapidPublicKey(): string | null {
+    return this.config.get<string>('VAPID_PUBLIC_KEY') || null;
+  }
+
+  /**
+   * Persist inbox rows, emit SSE inbox.created, and send web push.
+   */
+  async createAndFanOut(inputs: CreateNotificationInput | CreateNotificationInput[]) {
+    const list = Array.isArray(inputs) ? inputs : [inputs];
+    if (list.length === 0) return [];
+
+    const created: any[] = [];
+    for (const input of list) {
+      if (!input.userId) continue;
+      try {
+        const row = await this.db.inAppNotification.create({
+          data: {
+            userId: input.userId,
+            schoolId: input.schoolId ?? null,
+            role: input.role ?? null,
+            type: input.type,
+            title: input.title,
+            body: input.body,
+            link: input.link ?? null,
+            metadata: input.metadata ?? undefined,
+          },
+        });
+        created.push(row);
+
+        const payload: InboxCreatedPayload = {
+          notification: {
+            id: row.id,
+            userId: row.userId,
+            schoolId: row.schoolId,
+            role: row.role,
+            type: row.type,
+            title: row.title,
+            body: row.body,
+            link: row.link,
+            metadata: row.metadata,
+            readAt: row.readAt ? row.readAt.toISOString() : null,
+            createdAt: row.createdAt.toISOString(),
+          },
+        };
+        this.eventEmitter.emit('inbox.created', payload);
+        void this.sendPushToUser(row.userId, {
+          title: row.title,
+          body: row.body,
+          link: row.link,
+          type: row.type,
+          notificationId: row.id,
+        });
+      } catch (err: any) {
+        this.logger.error(`Failed to create notification for ${input.userId}: ${err?.message || err}`);
+      }
+    }
+    return created;
+  }
+
+  async listForUser(
+    userId: string,
+    opts: { unreadOnly?: boolean; cursor?: string; limit?: number; schoolId?: string } = {},
+  ) {
+    const limit = Math.min(opts.limit ?? 30, 100);
+    const where: any = { userId };
+    if (opts.unreadOnly) where.readAt = null;
+    if (opts.schoolId) where.schoolId = opts.schoolId;
+    if (opts.cursor) {
+      where.createdAt = { lt: new Date(opts.cursor) };
+    }
+
+    const items = await this.db.inAppNotification.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      take: limit + 1,
+    });
+
+    const hasMore = items.length > limit;
+    const page = hasMore ? items.slice(0, limit) : items;
+    const nextCursor = hasMore ? page[page.length - 1].createdAt.toISOString() : null;
+
+    return {
+      items: page.map((n: any) => ({
+        id: n.id,
+        userId: n.userId,
+        schoolId: n.schoolId,
+        role: n.role,
+        type: n.type,
+        title: n.title,
+        body: n.body,
+        link: n.link,
+        metadata: n.metadata,
+        readAt: n.readAt ? n.readAt.toISOString() : null,
+        createdAt: n.createdAt.toISOString(),
+      })),
+      nextCursor,
+      hasMore,
+    };
+  }
+
+  async unreadCount(userId: string, schoolId?: string) {
+    const where: any = { userId, readAt: null };
+    if (schoolId) where.schoolId = schoolId;
+    return this.db.inAppNotification.count({ where });
+  }
+
+  async markRead(userId: string, id: string) {
+    const existing = await this.db.inAppNotification.findFirst({
+      where: { id, userId },
+    });
+    if (!existing) return null;
+    if (existing.readAt) return existing;
+    return this.db.inAppNotification.update({
+      where: { id },
+      data: { readAt: new Date() },
+    });
+  }
+
+  async markAllRead(userId: string, schoolId?: string) {
+    const where: any = { userId, readAt: null };
+    if (schoolId) where.schoolId = schoolId;
+    const result = await this.db.inAppNotification.updateMany({
+      where,
+      data: { readAt: new Date() },
+    });
+    return { updated: result.count };
+  }
+
+  async savePushSubscription(
+    userId: string,
+    sub: { endpoint: string; keys: { p256dh: string; auth: string }; userAgent?: string },
+  ) {
+    return this.db.webPushSubscription.upsert({
+      where: { endpoint: sub.endpoint },
+      create: {
+        userId,
+        endpoint: sub.endpoint,
+        p256dh: sub.keys.p256dh,
+        auth: sub.keys.auth,
+        userAgent: sub.userAgent ?? null,
+      },
+      update: {
+        userId,
+        p256dh: sub.keys.p256dh,
+        auth: sub.keys.auth,
+        userAgent: sub.userAgent ?? null,
+      },
+    });
+  }
+
+  async removePushSubscription(userId: string, endpoint: string) {
+    await this.db.webPushSubscription.deleteMany({
+      where: { userId, endpoint },
+    });
+    return { removed: true };
+  }
+
+  private async sendPushToUser(
+    userId: string,
+    payload: { title: string; body: string; link?: string | null; type: string; notificationId: string },
+  ) {
+    if (!this.vapidConfigured) return;
+
+    const subs = await this.db.webPushSubscription.findMany({ where: { userId } });
+    if (!subs.length) return;
+
+    const body = JSON.stringify({
+      title: payload.title,
+      body: payload.body,
+      link: payload.link || '/dashboard',
+      type: payload.type,
+      notificationId: payload.notificationId,
+    });
+
+    for (const sub of subs) {
+      try {
+        await webpush.sendNotification(
+          {
+            endpoint: sub.endpoint,
+            keys: { p256dh: sub.p256dh, auth: sub.auth },
+          },
+          body,
+        );
+      } catch (err: any) {
+        const status = err?.statusCode;
+        if (status === 404 || status === 410) {
+          await this.db.webPushSubscription.delete({ where: { id: sub.id } }).catch(() => null);
+          this.logger.log(`Removed stale push subscription ${sub.id}`);
+        } else {
+          this.logger.warn(`Push failed for ${sub.id}: ${err?.message || err}`);
+        }
+      }
+    }
+  }
+
+  // ─── Recipient resolvers ─────────────────────────────────
+
+  async getSchoolAdminUserIds(schoolId: string): Promise<string[]> {
+    const admins = await this.prisma.schoolAdmin.findMany({
+      where: { schoolId },
+      select: { userId: true },
+    });
+    return [...new Set(admins.map((a) => a.userId).filter(Boolean))];
+  }
+
+  async getTeacherUserId(teacherProfileId: string): Promise<string | null> {
+    const t = await this.prisma.teacher.findUnique({
+      where: { id: teacherProfileId },
+      select: { userId: true },
+    });
+    return t?.userId ?? null;
+  }
+
+  async getStudentUserId(studentProfileId: string): Promise<string | null> {
+    const s = await this.prisma.student.findUnique({
+      where: { id: studentProfileId },
+      select: { userId: true },
+    });
+    return s?.userId ?? null;
+  }
+
+  async getStudentUserIdsInClass(opts: {
+    schoolId: string;
+    classId?: string;
+    classArmId?: string;
+  }): Promise<string[]> {
+    const enrollments = await this.prisma.enrollment.findMany({
+      where: {
+        schoolId: opts.schoolId,
+        isActive: true,
+        OR: [
+          ...(opts.classId ? [{ classId: opts.classId }] : []),
+          ...(opts.classArmId ? [{ classArmId: opts.classArmId }] : []),
+        ],
+      },
+      select: { student: { select: { userId: true } } },
+    });
+    return [
+      ...new Set(
+        enrollments
+          .map((e) => e.student?.userId)
+          .filter((id): id is string => !!id),
+      ),
+    ];
+  }
+
+  async getTeacherUserIdsForClass(opts: {
+    schoolId: string;
+    classId?: string;
+    classArmId?: string;
+  }): Promise<string[]> {
+    const where: any = {};
+    if (opts.classArmId) where.classArmId = opts.classArmId;
+    if (opts.classId) where.classId = opts.classId;
+    if (!opts.classArmId && !opts.classId) return [];
+
+    const assignments = await (this.prisma as any).classTeacher.findMany({
+      where,
+      select: { teacher: { select: { userId: true, schoolId: true } } },
+    });
+    return [
+      ...new Set(
+        assignments
+          .filter((a: any) => a.teacher?.schoolId === opts.schoolId)
+          .map((a: any) => a.teacher?.userId)
+          .filter((id: unknown): id is string => typeof id === 'string' && id.length > 0),
+      ),
+    ] as string[];
+  }
+
+  async getAllSchoolMemberUserIds(schoolId: string): Promise<{
+    admins: string[];
+    teachers: string[];
+    students: string[];
+  }> {
+    const [admins, teachers, enrollments] = await Promise.all([
+      this.prisma.schoolAdmin.findMany({ where: { schoolId }, select: { userId: true } }),
+      this.prisma.teacher.findMany({ where: { schoolId }, select: { userId: true } }),
+      this.prisma.enrollment.findMany({
+        where: { schoolId, isActive: true },
+        select: { student: { select: { userId: true } } },
+      }),
+    ]);
+    return {
+      admins: [...new Set(admins.map((a) => a.userId))],
+      teachers: [...new Set(teachers.map((t) => t.userId))],
+      students: [
+        ...new Set(
+          enrollments.map((e) => e.student?.userId).filter((id): id is string => !!id),
+        ),
+      ],
+    };
+  }
+}

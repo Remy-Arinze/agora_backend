@@ -11,11 +11,13 @@ import { AuthModule } from '../auth/auth.module';
 import { OnboardingModule } from '../onboarding/onboarding.module';
 import { LiveStatusModule } from '../live-status/live-status.module';
 import { TimetableModule } from '../timetable/timetable.module';
+import { ExamTimetableModule } from '../exam-timetable/exam-timetable.module';
 import { GradesModule } from '../grades/grades.module';
 import { EventsModule } from '../events/events.module';
 import { CloudinaryModule } from '../storage/cloudinary/cloudinary.module';
 import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
 import { NotificationModule } from '../notification/notification.module';
+import { SchoolSettingsModule } from '../school-settings/school-settings.module';
 
 @Module({
   imports: [
@@ -24,12 +26,14 @@ import { NotificationModule } from '../notification/notification.module';
     forwardRef(() => AuthModule),
     forwardRef(() => OnboardingModule),
     TimetableModule,
+    ExamTimetableModule,
     LiveStatusModule,
     forwardRef(() => GradesModule),
     forwardRef(() => EventsModule),
     CloudinaryModule,
     SubscriptionsModule,
     NotificationModule,
+    SchoolSettingsModule,
   ],
   controllers: [
     StudentMeController,

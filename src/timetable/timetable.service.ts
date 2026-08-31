@@ -3,6 +3,7 @@ import {
   BadRequestException,
   NotFoundException,
   ConflictException,
+  Logger,
 } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../database/prisma.service';
@@ -14,15 +15,19 @@ import {
 } from './dto/create-timetable-period.dto';
 import { TimetablePeriodDto, ConflictInfo } from './dto/timetable.dto';
 import { DayOfWeek, PeriodType } from './dto/create-timetable-period.dto';
+import { NotificationInboxService } from '../notification/notification-inbox.service';
 
 /**
  * Service for managing timetables with conflict detection
  */
 @Injectable()
 export class TimetableService {
+  private readonly logger = new Logger(TimetableService.name);
+
   constructor(
     private readonly prisma: PrismaService,
-    private readonly schoolRepository: SchoolRepository
+    private readonly schoolRepository: SchoolRepository,
+    private readonly notificationInbox: NotificationInboxService,
   ) { }
 
   // Access Prisma models using bracket notation for reserved keywords
@@ -132,6 +137,12 @@ export class TimetableService {
     });
 
     const periodDto = this.mapToPeriodDto(period);
+
+    void this.notifyTimetableChange(schoolId, {
+      classId: dto.classId,
+      classArmId: dto.classArmId,
+      teacherId: resolvedTeacherId || undefined,
+    });
 
     // REQ-2 + REQ-3: For SECONDARY periods with a subject, classArm, and teacher —
     // sync the ClassTeacher record and warn if it diverges from an existing designation.
@@ -1343,5 +1354,54 @@ export class TimetableService {
     }
 
     return dto;
+  }
+
+  private async notifyTimetableChange(
+    schoolId: string,
+    opts: { classId?: string | null; classArmId?: string | null; teacherId?: string | null },
+  ) {
+    try {
+      const studentIds = await this.notificationInbox.getStudentUserIdsInClass({
+        schoolId,
+        classId: opts.classId || undefined,
+        classArmId: opts.classArmId || undefined,
+      });
+      const teacherUserIds = new Set<string>(
+        await this.notificationInbox.getTeacherUserIdsForClass({
+          schoolId,
+          classId: opts.classId || undefined,
+          classArmId: opts.classArmId || undefined,
+        }),
+      );
+      if (opts.teacherId) {
+        const uid = await this.notificationInbox.getTeacherUserId(opts.teacherId);
+        if (uid) teacherUserIds.add(uid);
+      }
+
+      const title = 'Timetable updated';
+      const body = 'A lesson was added or changed on the timetable';
+      await this.notificationInbox.createAndFanOut([
+        ...[...teacherUserIds].map((userId) => ({
+          userId,
+          schoolId,
+          role: 'TEACHER',
+          type: 'TIMETABLE_UPDATED',
+          title,
+          body,
+          link: '/dashboard/teacher/timetables',
+        })),
+        ...studentIds.map((userId) => ({
+          userId,
+          schoolId,
+          role: 'STUDENT',
+          type: 'TIMETABLE_UPDATED',
+          title,
+          body,
+          link: '/dashboard/student/timetables',
+        })),
+      ]);
+    } catch (err: any) {
+      this.logger.warn(`Timetable notify failed: ${err?.message || err}`);
+    }
   }
 }

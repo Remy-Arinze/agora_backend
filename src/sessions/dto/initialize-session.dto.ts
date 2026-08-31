@@ -10,6 +10,7 @@ import {
   Max,
   IsArray,
   ValidateNested,
+  IsBoolean,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -93,6 +94,14 @@ export class InitializeSessionDto {
   @Type(() => TermDateDto)
   @IsOptional()
   termDates?: TermDateDto[];
+
+  @ApiProperty({
+    description:
+      'For NEW_SESSION: true = carry students to same class/level, false = promote. Ignored for NEW_TERM.',
+    required: false,
+  })
+  @IsOptional()
+  carryOver?: boolean;
 }
 
 export class CreateTermDto {
@@ -125,6 +134,26 @@ export class CreateTermDto {
   @IsDateString()
   @IsOptional()
   halfTermEnd?: string;
+
+  @ApiProperty({ description: 'Midterm assessment window start', required: false })
+  @IsDateString()
+  @IsOptional()
+  midtermStart?: string;
+
+  @ApiProperty({ description: 'Midterm assessment window end', required: false })
+  @IsDateString()
+  @IsOptional()
+  midtermEnd?: string;
+
+  @ApiProperty({ description: 'End-of-term exam window start', required: false })
+  @IsDateString()
+  @IsOptional()
+  examStart?: string;
+
+  @ApiProperty({ description: 'End-of-term exam window end', required: false })
+  @IsDateString()
+  @IsOptional()
+  examEnd?: string;
 }
 
 export class MigrateStudentsDto {
@@ -163,4 +192,54 @@ export class UpdateTermDatesDto {
   @IsDateString()
   @IsOptional()
   halfTermEnd?: string;
+
+  @ApiProperty({ description: 'Midterm assessment window start', required: false })
+  @IsDateString()
+  @IsOptional()
+  midtermStart?: string;
+
+  @ApiProperty({ description: 'Midterm assessment window end', required: false })
+  @IsDateString()
+  @IsOptional()
+  midtermEnd?: string;
+
+  @ApiProperty({ description: 'End-of-term exam window start', required: false })
+  @IsDateString()
+  @IsOptional()
+  examStart?: string;
+
+  @ApiProperty({ description: 'End-of-term exam window end', required: false })
+  @IsDateString()
+  @IsOptional()
+  examEnd?: string;
+}
+
+export enum RecalibrateTermsMode {
+  NONE = 'none',
+  DRAFT_ONLY = 'draft_only',
+}
+
+/**
+ * DTO for updating session dates after creation.
+ * Supports a grace window for start-date corrections (mirrors term date rules).
+ */
+export class UpdateSessionDatesDto {
+  @ApiProperty({ description: 'New session start date', required: false })
+  @IsDateString()
+  @IsOptional()
+  startDate?: string;
+
+  @ApiProperty({ description: 'New session end date', required: false })
+  @IsDateString()
+  @IsOptional()
+  endDate?: string;
+
+  @ApiProperty({
+    description: 'Recalculate DRAFT term date ranges to fit the new session envelope',
+    enum: RecalibrateTermsMode,
+    required: false,
+  })
+  @IsEnum(RecalibrateTermsMode)
+  @IsOptional()
+  recalibrateTerms?: RecalibrateTermsMode;
 }

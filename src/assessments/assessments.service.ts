@@ -8,6 +8,13 @@ import { UserWithContext } from '../auth/types/user-with-context.type';
 import { UserRole } from '@prisma/client';
 import { MetricsService } from '../common/metrics/metrics.service';
 import { SubscriptionBillingService } from '../subscriptions/subscription-billing.service';
+import {
+    evaluateStartDeadline,
+    evaluateSubmitDeadline,
+    getTimerExpiry,
+    isPastDueDate,
+} from './assessment-deadline.util';
+import { ExamTimetableService } from '../exam-timetable/exam-timetable.service';
 
 @Injectable()
 export class AssessmentsService {
@@ -19,6 +26,7 @@ export class AssessmentsService {
         private readonly notificationService: NotificationService,
         private readonly metricsService: MetricsService,
         private readonly subscriptionBilling: SubscriptionBillingService,
+        private readonly examTimetableService: ExamTimetableService,
     ) { }
 
     async createAssessment(schoolId: string, dto: CreateAssessmentDto, user: UserWithContext) {
@@ -70,6 +78,27 @@ export class AssessmentsService {
             if (!termExists) throw new NotFoundException(`Academic Term with ID ${dto.termId} not found`);
         }
 
+        const publishStatus = dto.status || 'DRAFT';
+        if (dto.type === 'EXAM' && publishStatus === 'PUBLISHED') {
+            if (!dto.termId || !dto.subjectId) {
+                throw new BadRequestException(
+                    'EXAM assessments require termId and subjectId to publish.',
+                );
+            }
+            const gate = await this.examTimetableService.assertCanPublishExamAssessment({
+                schoolId,
+                termId: dto.termId,
+                subjectId: dto.subjectId,
+                classId: finalClassId,
+                classArmId: finalClassArmId,
+            });
+            if (gate.ok === false) {
+                throw new BadRequestException(
+                    `Cannot publish exam assessment: ${gate.blockers.join(' ')}`,
+                );
+            }
+        }
+
         // Logic to create assessment and its questions
         const assessment = await this.prisma.assessment.create({
             data: {
@@ -87,6 +116,10 @@ export class AssessmentsService {
                 maxScore: dto.maxScore,
                 isTimed: dto.isTimed || false,
                 duration: dto.duration || null,
+                allowLateSubmissionAfterDue: dto.allowLateSubmissionAfterDue ?? false,
+                allowLateSubmissionAfterTimer: dto.allowLateSubmissionAfterTimer ?? false,
+                lateDuePenaltyPoints: dto.lateDuePenaltyPoints ?? 0,
+                lateTimerPenaltyPoints: dto.lateTimerPenaltyPoints ?? 0,
                 hasIntegrity: dto.hasIntegrity || false,
                 autoSubmitOnTimeout: dto.autoSubmitOnTimeout !== undefined ? dto.autoSubmitOnTimeout : true,
                 violationThreshold: dto.violationThreshold !== undefined ? dto.violationThreshold : 1,
@@ -173,11 +206,24 @@ export class AssessmentsService {
         });
 
         if (effectiveStudentId) {
-            return assessments.map(a => ({
-                ...a,
-                isSubmitted: a.submissions.length > 0,
-                submission: a.submissions[0] || null
-            }));
+            return assessments.map(a => {
+                const submission = a.submissions[0] || null;
+                const isSubmitted =
+                    submission?.status === 'SUBMITTED' || submission?.status === 'GRADED';
+                const pastDue = isPastDueDate(a.dueDate);
+                const isMissed =
+                    !isSubmitted &&
+                    pastDue &&
+                    !a.allowLateSubmissionAfterDue &&
+                    submission?.status !== 'STARTED';
+                return {
+                    ...a,
+                    isSubmitted,
+                    isPastDue: pastDue,
+                    isMissed,
+                    submission,
+                };
+            });
         }
 
         return assessments;
@@ -257,6 +303,30 @@ export class AssessmentsService {
             throw new ForbiddenException('Assessment is not available');
         }
 
+        const existingSubmission = await this.prisma.assessmentSubmission.findUnique({
+            where: {
+                assessmentId_studentId: {
+                    assessmentId,
+                    studentId: student.id,
+                },
+            },
+        });
+
+        const startCheck = evaluateStartDeadline(
+            {
+                dueDate: assessment.dueDate,
+                allowLateSubmissionAfterDue: assessment.allowLateSubmissionAfterDue,
+                isTimed: assessment.isTimed,
+                duration: assessment.duration,
+                allowLateSubmissionAfterTimer: assessment.allowLateSubmissionAfterTimer,
+            },
+            existingSubmission,
+        );
+
+        if (!startCheck.allowed) {
+            throw new ForbiddenException(startCheck.reason);
+        }
+
         // Single session enforcement: Generate a new token
         const newSessionToken = uuidv4();
 
@@ -270,15 +340,13 @@ export class AssessmentsService {
             },
             update: {
                 examSessionToken: newSessionToken,
-                // Restarting the timer if it's the FIRST time
-                startedAt: { set: undefined } // Don't overwrite startedAt if already set
             },
             create: {
                 assessmentId,
                 studentId: student.id,
                 examSessionToken: newSessionToken,
                 startedAt: new Date(),
-                status: 'SUBMITTED' // It starts as submitted to signal it's in progress but technically it is "IN_PROGRESS"
+                status: 'STARTED',
             }
         });
 
@@ -295,7 +363,14 @@ export class AssessmentsService {
         return {
             examSessionToken: newSessionToken,
             startedAt: startedAt?.toISOString(),
-            duration: assessment.isTimed ? assessment.duration : null
+            duration: assessment.isTimed ? assessment.duration : null,
+            expiresAt:
+                assessment.isTimed && startedAt && assessment.duration
+                    ? getTimerExpiry(startedAt, assessment.duration).toISOString()
+                    : null,
+            isPastDue: isPastDueDate(assessment.dueDate),
+            allowLateSubmissionAfterDue: assessment.allowLateSubmissionAfterDue,
+            allowLateSubmissionAfterTimer: assessment.allowLateSubmissionAfterTimer,
         };
     }
 
@@ -387,24 +462,45 @@ export class AssessmentsService {
                 throw new ConflictException('Multiple sessions detected. This attempt is no longer valid.');
             }
 
-            if (existingSubmission.status === 'GRADED') {
+            if (existingSubmission.status === 'GRADED' || existingSubmission.status === 'SUBMITTED') {
                 throw new ForbiddenException('You have already submitted this assessment.');
             }
-
-            // TIMER VALIDATION
-            if (assessment.isTimed && assessment.duration && existingSubmission.startedAt) {
-                const now = new Date();
-                const diffMinutes = (now.getTime() - existingSubmission.startedAt.getTime()) / (1000 * 60);
-                
-                // Allow a small grace period (e.g., 2 minutes) for network latency
-                if (diffMinutes > assessment.duration + 2) {
-                    // Logic for auto-submit already handled by frontend, 
-                    // but server should technically block any LATE submissions
-                    this.logger.warn(`Late submission attempt by student ${student.id} for assessment ${assessmentId}`);
-                    // We might still allow it but mark as auto-submitted/late
-                }
-            }
         }
+
+        if (assessment.isTimed && !existingSubmission?.startedAt) {
+            throw new BadRequestException('You must launch the assessment before submitting.');
+        }
+
+        const submitCheck = evaluateSubmitDeadline(
+            {
+                dueDate: assessment.dueDate,
+                allowLateSubmissionAfterDue: assessment.allowLateSubmissionAfterDue,
+                isTimed: assessment.isTimed,
+                duration: assessment.duration,
+                allowLateSubmissionAfterTimer: assessment.allowLateSubmissionAfterTimer,
+            },
+            existingSubmission ?? { status: 'STARTED' },
+            new Date(),
+            { isAutoSubmitRequest: dto.isAutoSubmit === true },
+        );
+
+        if (!submitCheck.allowed) {
+            throw new ForbiddenException(submitCheck.reason);
+        }
+
+        const submissionFlags = {
+            isLateDue: submitCheck.isLateDue,
+            isLateTimer: submitCheck.isLateTimer,
+            isAutoSubmitted: submitCheck.isAutoSubmitted,
+            lateDueDeduction:
+                submitCheck.isLateDue && Number(assessment.lateDuePenaltyPoints) > 0
+                    ? Number(assessment.lateDuePenaltyPoints)
+                    : 0,
+            lateTimerDeduction:
+                submitCheck.isLateTimer && Number(assessment.lateTimerPenaltyPoints) > 0
+                    ? Number(assessment.lateTimerPenaltyPoints)
+                    : 0,
+        };
 
         // 1. Separate MCQs for instant grading and Short Answers for AI grading
         const mcqs = assessment.questions.filter(q => q.type === 'MULTIPLE_CHOICE');
@@ -489,22 +585,43 @@ export class AssessmentsService {
 
         // Use transaction to ensure assessment submission
         const submission = await this.prisma.$transaction(async (tx) => {
-            const sub = await tx.assessmentSubmission.create({
+            if (existingSubmission) {
+                await tx.assessmentAnswer.deleteMany({
+                    where: { submissionId: existingSubmission.id },
+                });
+
+                return tx.assessmentSubmission.update({
+                    where: { id: existingSubmission.id },
+                    data: {
+                        totalScore,
+                        status: 'SUBMITTED',
+                        submittedAt: new Date(),
+                        ...submissionFlags,
+                        answers: {
+                            create: answers,
+                        },
+                    },
+                    include: {
+                        answers: true,
+                    },
+                });
+            }
+
+            return tx.assessmentSubmission.create({
                 data: {
                     assessmentId,
                     studentId: student.id,
                     totalScore,
                     status: 'SUBMITTED',
+                    ...submissionFlags,
                     answers: {
-                        create: answers
-                    }
+                        create: answers,
+                    },
                 },
                 include: {
-                    answers: true
-                }
+                    answers: true,
+                },
             });
-
-            return sub;
         });
 
         // --- Emit real-time notification to the teacher ---
@@ -604,7 +721,30 @@ export class AssessmentsService {
             await this.subscriptionBilling.assertSchoolAdminNotBillingSuspended(schoolId, user.currentProfileId);
         }
 
-        const currentTotalScore = dto.totalScore !== undefined ? dto.totalScore : Number(submission.totalScore);
+        const rawScore = dto.questionScores
+            ? Object.values(dto.questionScores).reduce((sum, score) => sum + (Number(score) || 0), 0)
+            : submission.answers.reduce((sum, ans) => sum + Number(ans.score || 0), 0);
+
+        const integrityDeduction = Number(submission.pointDeductions || 0);
+        const lateDueDeduction =
+            dto.lateDueDeduction !== undefined
+                ? Math.max(0, dto.lateDueDeduction)
+                : Number(submission.lateDueDeduction || 0);
+        const lateTimerDeduction =
+            dto.lateTimerDeduction !== undefined
+                ? Math.max(0, dto.lateTimerDeduction)
+                : Number(submission.lateTimerDeduction || 0);
+
+        const computedFinal = Math.max(
+            0,
+            Math.min(
+                Number(submission.assessment.maxScore),
+                rawScore - integrityDeduction - lateDueDeduction - lateTimerDeduction,
+            ),
+        );
+
+        const currentTotalScore =
+            dto.totalScore !== undefined ? dto.totalScore : computedFinal;
 
         // Finalize submission grading
         return this.prisma.$transaction(async (tx) => {
@@ -615,7 +755,8 @@ export class AssessmentsService {
                     totalScore: currentTotalScore,
                     teacherFeedback: dto.teacherFeedback,
                     gradedAt: new Date(),
-                    // Update individual answers if feedback/scores provided
+                    lateDueDeduction,
+                    lateTimerDeduction,
                     answers: {
                         update: Object.entries(dto.questionScores || {}).map(([qId, score]) => ({
                             where: { submissionId_questionId: { submissionId, questionId: qId } },

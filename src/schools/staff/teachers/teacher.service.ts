@@ -20,6 +20,7 @@ import { SubscriptionsService } from '../../../subscriptions/subscriptions.servi
 import { isPrincipalRole } from '../../dto/permission.dto';
 import { UserWithContext } from '../../../auth/types/user-with-context.type';
 import { generateSecurePasswordHash } from '../../../common/utils/password.utils';
+import { NotificationService } from '../../../notification/notification.service';
 
 /**
  * Service for managing teachers
@@ -37,7 +38,8 @@ export class TeacherService {
     private readonly staffValidator: StaffValidatorService,
     private readonly cloudinaryService: CloudinaryService,
     private readonly classService: ClassService,
-    private readonly subscriptionsService: SubscriptionsService
+    private readonly subscriptionsService: SubscriptionsService,
+    private readonly notificationService: NotificationService,
   ) { }
 
   /**
@@ -232,6 +234,18 @@ export class TeacherService {
         );
         // Don't fail teacher creation — the assignment can be done manually later
       }
+    }
+
+    try {
+      void this.notificationService.notifySchoolAdmins(school.id, {
+        type: 'STAFF_INVITED',
+        title: 'Teacher invited',
+        body: `${teacherData.firstName} ${teacherData.lastName} was added as a teacher.`,
+        link: '/dashboard/school/staff',
+        metadata: { teacherId: result.teacher.id, userId: result.user.id },
+      });
+    } catch {
+      // Staff creation must not depend on notification delivery.
     }
 
     const teacherDto = this.staffMapper.toTeacherDto(result.teacher);

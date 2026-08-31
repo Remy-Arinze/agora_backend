@@ -1,0 +1,35 @@
+model InAppNotification {
+  id        String    @id @default(cuid())
+  userId    String
+  schoolId  String?
+  role      String? // SCHOOL_ADMIN | TEACHER | STUDENT (audience hint)
+  type      String
+  title     String
+  body      String
+  link      String?
+  metadata  Json?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt, createdAt])
+  @@index([userId, createdAt])
+  @@index([schoolId, createdAt])
+  @@index([type])
+}
+
+model WebPushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  userAgent String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}

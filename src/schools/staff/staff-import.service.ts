@@ -43,7 +43,7 @@ export class StaffImportService {
     }
 
     // Parse file
-    let rows: StaffBulkImportRowDto[] = [];
+    const rows: StaffBulkImportRowDto[] = [];
     try {
       const workbook = new Workbook();
       if (fileExtension === 'csv') {

@@ -49,6 +49,7 @@ export class SchoolMapper {
       hasPrimary: school.hasPrimary,
       hasSecondary: school.hasSecondary,
       hasTertiary: school.hasTertiary,
+      workingDays: school.workingDays,
       registrationStatus: school.registrationStatus,
       rejectionReason: school.rejectionReason,
       registrationNote: school.registrationNote,

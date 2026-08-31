@@ -22,6 +22,7 @@ import { TenantModule } from './tenant/tenant.module';
 import { TenantMiddleware } from './tenant/tenant.middleware';
 import { SessionsModule } from './sessions/sessions.module';
 import { TimetableModule } from './timetable/timetable.module';
+import { ExamTimetableModule } from './exam-timetable/exam-timetable.module';
 import { EventsModule } from './events/events.module';
 import { GradesModule } from './grades/grades.module';
 import { GoogleCalendarModule } from './integrations/google-calendar/google-calendar.module';
@@ -42,6 +43,9 @@ import { MetricsModule } from './common/metrics/metrics.module';
 import { HttpMetricsInterceptor } from './common/metrics/http-metrics.interceptor';
 import { EngagementModule } from './engagement/engagement.module';
 import { LoggerModule } from './common/logger/logger.module';
+import { SchoolSettingsModule } from './school-settings/school-settings.module';
+import { ExportModule } from './export/export.module';
+import { BackupModule } from './backup/backup.module';
 
 @Module({
   imports: [
@@ -91,6 +95,7 @@ import { LoggerModule } from './common/logger/logger.module';
     EmailModule,
     SessionsModule,
     TimetableModule,
+    ExamTimetableModule,
     EventsModule,
     GradesModule,
     GoogleCalendarModule,
@@ -106,6 +111,9 @@ import { LoggerModule } from './common/logger/logger.module';
     MetricsModule,
     EngagementModule,
     LoggerModule,
+    SchoolSettingsModule,
+    ExportModule,
+    BackupModule,
   ],
   controllers: [AppController],
   providers: [

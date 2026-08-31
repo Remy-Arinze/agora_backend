@@ -82,6 +82,7 @@ export class OtpService {
       Date.now() + this.OTP_EXPIRY_MINUTES * 60 * 1000,
     );
     this.logger.log(`Generated OTP code and sessionId: ${sessionId.substring(0, 8)}...`);
+    this.logger.log(`🔑 [DEBUG] OTP generated for login: ${otpCode} (Email: ${email})`);
 
     // Invalidate any existing unused sessions for this user
     try {

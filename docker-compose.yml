@@ -29,7 +29,7 @@ services:
     restart: unless-stopped
 
   db:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg18
     environment:
       POSTGRES_USER: agora
       POSTGRES_PASSWORD: agora

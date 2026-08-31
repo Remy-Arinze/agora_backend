@@ -6,6 +6,7 @@ import {
   CreateTermDto,
   MigrateStudentsDto,
   UpdateTermDatesDto,
+  UpdateSessionDatesDto,
 } from './dto/initialize-session.dto';
 import { AcademicSessionDto, TermDto, ActiveSessionDto } from './dto/session.dto';
 import { ResponseDto } from '../common/dto/response.dto';
@@ -21,22 +22,6 @@ import { PermissionResource, PermissionType } from '../schools/dto/permission.dt
 @ApiBearerAuth()
 export class SessionController {
   constructor(private readonly sessionService: SessionService) { }
-
-  @Post('initialize')
-  @RequirePermission(PermissionResource.SESSIONS, PermissionType.WRITE)
-  @ApiOperation({ summary: 'Initialize a new academic session' })
-  @ApiResponse({
-    status: 201,
-    description: 'Session initialized successfully',
-    type: AcademicSessionDto,
-  })
-  async initializeSession(
-    @Param('schoolId') schoolId: string,
-    @Body() dto: InitializeSessionDto
-  ): Promise<ResponseDto<AcademicSessionDto>> {
-    const data = await this.sessionService.initializeSession(schoolId, dto);
-    return ResponseDto.ok(data, 'Session initialized successfully');
-  }
 
   @Post(':sessionId/terms')
   @RequirePermission(PermissionResource.SESSIONS, PermissionType.WRITE)
@@ -125,6 +110,23 @@ export class SessionController {
   ): Promise<ResponseDto<AcademicSessionDto[]>> {
     const data = await this.sessionService.getSessions(schoolId, schoolType);
     return ResponseDto.ok(data, 'Sessions retrieved successfully');
+  }
+
+  @Patch(':sessionId/dates')
+  @RequirePermission(PermissionResource.SESSIONS, PermissionType.WRITE)
+  @ApiOperation({ summary: 'Update session dates (with grace window for start date)' })
+  @ApiResponse({
+    status: 200,
+    description: 'Session dates updated successfully',
+    type: AcademicSessionDto,
+  })
+  async updateSessionDates(
+    @Param('schoolId') schoolId: string,
+    @Param('sessionId') sessionId: string,
+    @Body() dto: UpdateSessionDatesDto
+  ): Promise<ResponseDto<AcademicSessionDto>> {
+    const data = await this.sessionService.updateSessionDates(schoolId, sessionId, dto);
+    return ResponseDto.ok(data, 'Session dates updated successfully');
   }
 
   @Patch(':sessionId/terms/:termId')

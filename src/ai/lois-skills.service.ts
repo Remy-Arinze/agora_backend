@@ -15,7 +15,7 @@ export interface CreateSkillDto {
   internalNotes?: string | null;
 }
 
-export interface UpdateSkillDto extends Partial<CreateSkillDto> {}
+export type UpdateSkillDto = Partial<CreateSkillDto>;
 
 const VALID_ROLES: SkillTargetRole[] = ['TEACHER', 'SCHOOL_ADMIN', 'STUDENT', 'ALL'];
 const VALID_CATEGORIES: SkillCategory[] = ['behavior', 'knowledge', 'tone', 'workflow'];

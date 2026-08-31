@@ -1,8 +1,6 @@
 enum SessionStatus {
-  DRAFT
   ACTIVE
   COMPLETED
-  ARCHIVED
 }
 
 enum TermStatus {
@@ -36,6 +34,7 @@ model Class {
   curricula          Curriculum[]
   curriculumProgress CurriculumItemProgress[]
   assessments        Assessment[]
+  examTimetableSlots ExamTimetableSlot[]
 
   @@index([schoolId])
   @@index([type])
@@ -49,7 +48,7 @@ model AcademicSession {
   name       String // e.g., "2025/2026"
   startDate  DateTime
   endDate    DateTime
-  status     SessionStatus @default(DRAFT)
+  status     SessionStatus @default(ACTIVE)
   schoolId   String
   schoolType String? // "PRIMARY", "SECONDARY", "TERTIARY" - allows independent sessions per school type
   createdAt  DateTime      @default(now())
@@ -60,13 +59,11 @@ model AcademicSession {
   enrollments   Enrollment[]
   classTeachers ClassTeacher[] // NEW: Teacher assignments scoped to this session
 
-  // Note: Uniqueness for active sessions is enforced at the application level
-  // This allows reusing session names after a session is COMPLETED (e.g., fixing mistakes)
+  @@unique([schoolId, name, schoolType])
   @@index([schoolId])
   @@index([status])
   @@index([startDate])
   @@index([schoolType])
-  @@index([schoolId, name, schoolType]) // For efficient lookups
   @@index([schoolId, status])
 }
 
@@ -76,8 +73,14 @@ model Term {
   number            Int // 1, 2, or 3
   startDate         DateTime
   endDate           DateTime
-  halfTermStart     DateTime? // Optional half-term break start
-  halfTermEnd       DateTime? // Optional half-term break end
+  halfTermStart     DateTime? // Optional half-term / mid-term break start
+  halfTermEnd       DateTime? // Optional half-term / mid-term break end
+  midtermStart      DateTime? // Midterm assessment window start
+  midtermEnd        DateTime? // Midterm assessment window end
+  examStart         DateTime? // End-of-term exam window start
+  examEnd           DateTime? // End-of-term exam window end
+  examTimetablePublishedAt DateTime? // Admin published per-subject exam schedule
+  examTimetablePublishedBy String?
   status            TermStatus @default(DRAFT)
   academicSessionId String
   createdAt         DateTime   @default(now())
@@ -90,6 +93,8 @@ model Term {
   curricula           Curriculum[]
   courseRegistrations CourseRegistration[] // For TERTIARY: Course registrations for this term
   assessments         Assessment[]
+  examTimetableSlots  ExamTimetableSlot[]
+  feeSchedules        FeeSchedule[]
 
   @@unique([academicSessionId, number])
   @@index([academicSessionId])
@@ -141,6 +146,7 @@ model ClassLevel {
   nextLevelId    String?
   previousLevels ClassLevel[]   @relation("ClassLevelProgression")
   schemesOfWork  SchemeOfWork[]
+  feeSchedules   FeeSchedule[]
 
   @@unique([schoolId, code])
   @@index([schoolId])
@@ -168,6 +174,7 @@ model ClassArm {
   resources          ClassResource[]          @relation("ClassArmResources")
   curriculumProgress CurriculumItemProgress[]
   assessments        Assessment[]
+  examTimetableSlots ExamTimetableSlot[]
 
   @@unique([classLevelId, name, academicYear])
   @@index([classLevelId])
@@ -189,6 +196,7 @@ model Room {
 
   school           School            @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   timetablePeriods TimetablePeriod[]
+  examTimetableSlots ExamTimetableSlot[]
   events           Event[]
 
   @@unique([schoolId, code])

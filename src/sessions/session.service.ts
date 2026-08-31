@@ -13,13 +13,33 @@ import {
   CreateTermDto,
   MigrateStudentsDto,
   UpdateTermDatesDto,
+  UpdateSessionDatesDto,
+  RecalibrateTermsMode,
   SessionType,
   TermDateDto,
 } from './dto/initialize-session.dto';
 import { SchoolValidatorService } from '../schools/shared/school-validator.service';
 import { AcademicSessionDto, TermDto, ActiveSessionDto } from './dto/session.dto';
 import { SessionStatus, TermStatus } from '@prisma/client';
+import { Cron, CronExpression } from '@nestjs/schedule';
+import { NotificationService } from '../notification/notification.service';
+import { NotificationInboxService } from '../notification/notification-inbox.service';
+import {
+  buildHalfTermRange,
+  getTeachingWeekInfo,
+  DEFAULT_WORKING_DAYS,
+  type WorkingDay,
+} from '../common/utils/instructional-day.util';
+import {
+  getTermPhase,
+  isExamScheduleActive,
+  isLessonScheduleActive,
+} from '../common/utils/term-phase.util';
+import { buildNigerianHolidayEvents } from '../common/utils/nigerian-holidays.util';
+import { EventType } from '@prisma/client';
 
+const DEFAULT_WORKING_DAYS_FOR_TERM = DEFAULT_WORKING_DAYS as WorkingDay[];
+const SESSION_START_GRACE_DAYS = 7;
 /**
  * Service for managing academic sessions and terms
  * Handles the "Start Term" wizard and student migration logic
@@ -32,94 +52,67 @@ export class SessionService {
     private readonly prisma: PrismaService,
     private readonly schoolRepository: SchoolRepository,
     private readonly emailService: EmailService,
-    private readonly schoolValidator: SchoolValidatorService
+    private readonly schoolValidator: SchoolValidatorService,
+    private readonly notificationService: NotificationService,
+    private readonly notificationInbox: NotificationInboxService,
   ) { }
 
   /**
-   * Initialize a new academic session
+   * Find the active session for a school type, including legacy sessions with null schoolType.
    */
-  async initializeSession(
+  private async findActiveSessionForSchoolType(
     schoolId: string,
-    dto: InitializeSessionDto
-  ): Promise<AcademicSessionDto> {
-    const school = await this.schoolRepository.findById(schoolId);
-    if (!school) {
-      throw new BadRequestException('School not found');
-    }
-    await this.schoolValidator.validateSchoolActive(school.id);
+    schoolType?: string | null,
+  ) {
+    const normalizedType = schoolType ?? null;
 
-    // Check if there's an active session for this school type
-    const activeSession = await this.prisma.academicSession.findFirst({
+    const session = await this.prisma.academicSession.findFirst({
       where: {
-        schoolId: school.id,
+        schoolId,
         status: SessionStatus.ACTIVE,
-        schoolType: dto.schoolType || null,
+        schoolType: normalizedType,
       },
     });
 
-    if (activeSession) {
-      throw new ConflictException(
-        `Cannot create a new session while ${activeSession.name} is active for ${dto.schoolType || 'this school'}. Please end the current session first.`
-      );
+    if (session) {
+      return session;
     }
 
-    // Validate dates
-    const startDate = new Date(dto.startDate);
-    const endDate = new Date(dto.endDate);
-
-    if (startDate >= endDate) {
-      throw new BadRequestException('Start date must be before end date');
+    if (!normalizedType) {
+      return null;
     }
 
-    // Validate session duration (must be at least 10 months, approximately a year)
-    const monthsDiff =
-      (endDate.getFullYear() - startDate.getFullYear()) * 12 +
-      (endDate.getMonth() - startDate.getMonth());
-    const daysDiff = Math.floor((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
-
-    if (monthsDiff < 10 || daysDiff < 300) {
-      throw new BadRequestException(
-        'An academic session must span at least 10 months (approximately one year). Please select appropriate start and end dates.'
-      );
-    }
-
-    if (monthsDiff > 12 || daysDiff > 370) {
-      throw new BadRequestException(
-        'An academic session cannot exceed 12 months.'
-      );
-    }
-
-    // Check if session name already exists for this school type
-    const existingSession = await this.prisma.academicSession.findFirst({
+    // Legacy: sessions created before per-type scoping used null schoolType
+    return this.prisma.academicSession.findFirst({
       where: {
-        schoolId: school.id,
-        name: dto.name,
-        schoolType: dto.schoolType || null,
+        schoolId,
+        status: SessionStatus.ACTIVE,
+        schoolType: null,
+      },
+    });
+  }
+
+  /**
+   * Mark a session COMPLETED when no terms remain ACTIVE (e.g. admin ended the last term).
+   */
+  private async completeSessionIfNoActiveTerms(sessionId: string): Promise<boolean> {
+    const activeTermCount = await this.prisma.term.count({
+      where: {
+        academicSessionId: sessionId,
+        status: TermStatus.ACTIVE,
       },
     });
 
-    if (existingSession) {
-      throw new ConflictException(
-        `Session ${dto.name} already exists for ${dto.schoolType || 'this school'}`
-      );
+    if (activeTermCount > 0) {
+      return false;
     }
 
-    // Create session
-    const session = await this.prisma.academicSession.create({
-      data: {
-        name: dto.name,
-        startDate: startDate,
-        endDate: endDate,
-        status: SessionStatus.DRAFT,
-        schoolId: school.id,
-        schoolType: dto.schoolType || null,
-      },
-      include: {
-        terms: true,
-      },
+    await this.prisma.academicSession.update({
+      where: { id: sessionId },
+      data: { status: SessionStatus.COMPLETED },
     });
 
-    return this.mapToSessionDto(session);
+    return true;
   }
 
   /**
@@ -176,9 +169,13 @@ export class SessionService {
         endDate: endDate,
         halfTermStart: dto.halfTermStart ? new Date(dto.halfTermStart) : null,
         halfTermEnd: dto.halfTermEnd ? new Date(dto.halfTermEnd) : null,
+        midtermStart: dto.midtermStart ? new Date(dto.midtermStart) : null,
+        midtermEnd: dto.midtermEnd ? new Date(dto.midtermEnd) : null,
+        examStart: dto.examStart ? new Date(dto.examStart) : null,
+        examEnd: dto.examEnd ? new Date(dto.examEnd) : null,
         status: TermStatus.DRAFT,
         academicSessionId: sessionId,
-      },
+      } as any,
     });
 
     return this.mapToTermDto(term);
@@ -193,33 +190,35 @@ export class SessionService {
       throw new BadRequestException('School not found');
     }
 
-    // Find active session for the specified school type
-    const session = await this.prisma.academicSession.findFirst({
-      where: {
-        schoolId: school.id,
-        status: SessionStatus.ACTIVE,
-        schoolType: schoolType || null,
-      },
-      include: {
-        terms: {
-          where: {
-            status: TermStatus.ACTIVE,
-          },
-          orderBy: {
-            number: 'desc',
-          },
-          take: 1,
-        },
-      },
-    });
+    const session = await this.findActiveSessionForSchoolType(school.id, schoolType);
 
-    if (!session) {
+    const sessionWithTerms = session
+      ? await this.prisma.academicSession.findUnique({
+          where: { id: session.id },
+          include: {
+            terms: {
+              where: {
+                status: TermStatus.ACTIVE,
+              },
+              orderBy: {
+                number: 'desc',
+              },
+              take: 1,
+            },
+          },
+        })
+      : null;
+
+    if (!sessionWithTerms) {
       return { session: undefined, term: undefined };
     }
 
     return {
-      session: this.mapToSessionDto(session),
-      term: session.terms.length > 0 ? this.mapToTermDto(session.terms[0]) : undefined,
+      session: this.mapToSessionDto(sessionWithTerms),
+      term:
+        sessionWithTerms.terms.length > 0
+          ? this.mapToTermDto(sessionWithTerms.terms[0])
+          : undefined,
     };
   }
 
@@ -247,19 +246,21 @@ export class SessionService {
     const isTertiary = schoolType === 'TERTIARY';
 
     if (dto.type === SessionType.NEW_SESSION) {
-      // Check if there's an active session for this school type
-      const activeSession = await this.prisma.academicSession.findFirst({
-        where: {
-          schoolId: school.id,
-          status: SessionStatus.ACTIVE,
-          schoolType: schoolType,
-        },
-      });
+      const activeSession = await this.findActiveSessionForSchoolType(
+        school.id,
+        schoolType,
+      );
 
       if (activeSession) {
-        throw new ConflictException(
-          `Cannot start a new session while ${activeSession.name} is active for ${schoolType || 'this school'}. Please end the current session first.`
+        const completedStaleSession = await this.completeSessionIfNoActiveTerms(
+          activeSession.id,
         );
+
+        if (!completedStaleSession) {
+          throw new ConflictException(
+            `Cannot start a new session while ${activeSession.name} is active for ${schoolType || 'this school'}. Please end the current session first.`
+          );
+        }
       }
 
       // Validate session duration (must be at least 10 months)
@@ -284,21 +285,18 @@ export class SessionService {
         );
       }
 
-      // Check if an ACTIVE or DRAFT session with this name already exists for this school type
-      // COMPLETED sessions don't block creating a new session with the same name
-      // (allows users to fix mistakes - end a wrong session and create a new one with same name)
-      const existingActiveSession = await this.prisma.academicSession.findFirst({
+      // Session names are unique per school type — use a new year label for each session
+      const existingSession = await this.prisma.academicSession.findFirst({
         where: {
           schoolId: school.id,
           name: dto.name,
           schoolType: schoolType,
-          status: { in: [SessionStatus.ACTIVE, SessionStatus.DRAFT] },
         },
       });
 
-      if (existingActiveSession) {
+      if (existingSession) {
         throw new ConflictException(
-          `An active session named "${dto.name}" already exists for ${schoolType || 'this school'}. Please end the existing session first or use a different name.`
+          `A session named "${dto.name}" already exists for ${schoolType || 'this school'}. Each academic year needs a unique session name (e.g. 2026/2027). Use session date editing to fix mistakes in the current session.`
         );
       }
 
@@ -373,6 +371,9 @@ export class SessionService {
         }
       }
 
+      // Seed Nigerian public holidays onto the school calendar for this session window
+      await this.seedNigerianHolidaysForSession(school.id, startDate, endDate, schoolType);
+
       // Deactivate previous terms for the same school type
       await this.prisma.term.updateMany({
         where: {
@@ -388,9 +389,43 @@ export class SessionService {
         },
       });
 
-      // Trigger promotion logic (filtered by school type)
-      const { promotedCount: migratedCount, promotedStudents } =
-        await this.promoteStudentsWithTracking(school.id, term.id, schoolType);
+      // Student migration for new session: promote or carry over based on admin choice
+      let migratedCount = 0;
+      let promotedStudents: Array<{
+        email: string;
+        name: string;
+        previousClass: string;
+        newClass: string;
+      }> = [];
+
+      if (dto.carryOver) {
+        const previousTerm = await this.prisma.term.findFirst({
+          where: {
+            academicSession: {
+              schoolId: school.id,
+              schoolType: schoolType,
+            },
+            id: { not: term.id },
+            status: { in: [TermStatus.ACTIVE, TermStatus.COMPLETED] },
+          },
+          orderBy: [{ academicSession: { startDate: 'desc' } }, { number: 'desc' }],
+        });
+
+        migratedCount = await this.carryOverStudents(
+          school.id,
+          term.id,
+          previousTerm?.id,
+          schoolType,
+        );
+      } else {
+        const promotionResult = await this.promoteStudentsWithTracking(
+          school.id,
+          term.id,
+          schoolType,
+        );
+        migratedCount = promotionResult.promotedCount;
+        promotedStudents = promotionResult.promotedStudents;
+      }
 
       // Send session start notifications to all school members (in background)
       this.sendSessionTermNotifications(
@@ -1099,6 +1134,9 @@ export class SessionService {
       data: { status: TermStatus.COMPLETED },
     });
 
+    // When the last active term ends, close the session so a new one can start
+    await this.completeSessionIfNoActiveTerms(activeTerm.academicSessionId);
+
     return {
       term: this.mapToTermDto(updatedTerm),
     };
@@ -1117,19 +1155,23 @@ export class SessionService {
       throw new BadRequestException('School not found');
     }
 
-    // Find active session for the specified school type
-    const activeSession = await this.prisma.academicSession.findFirst({
-      where: {
-        schoolId: school.id,
-        status: SessionStatus.ACTIVE,
-        schoolType: schoolType || null,
-      },
-      include: {
-        terms: true,
-      },
-    });
+    const activeSession = await this.findActiveSessionForSchoolType(
+      school.id,
+      schoolType,
+    );
 
     if (!activeSession) {
+      throw new NotFoundException(
+        `No active session found${schoolType ? ` for ${schoolType}` : ''}`
+      );
+    }
+
+    const sessionWithTerms = await this.prisma.academicSession.findUnique({
+      where: { id: activeSession.id },
+      include: { terms: true },
+    });
+
+    if (!sessionWithTerms) {
       throw new NotFoundException(
         `No active session found${schoolType ? ` for ${schoolType}` : ''}`
       );
@@ -1138,7 +1180,7 @@ export class SessionService {
     // Mark all terms in this session as COMPLETED
     await this.prisma.term.updateMany({
       where: {
-        academicSessionId: activeSession.id,
+        academicSessionId: sessionWithTerms.id,
       },
       data: {
         status: TermStatus.COMPLETED,
@@ -1147,7 +1189,7 @@ export class SessionService {
 
     // Mark session as COMPLETED
     const updatedSession = await this.prisma.academicSession.update({
-      where: { id: activeSession.id },
+      where: { id: sessionWithTerms.id },
       data: { status: SessionStatus.COMPLETED },
       include: {
         terms: {
@@ -1288,16 +1330,56 @@ export class SessionService {
     const termStart = new Date(term.startDate);
     const termEnd = new Date(term.endDate);
 
-    // Compute currentWeek only for ACTIVE terms
-    let currentWeek: number | undefined;
-    if (term.status === TermStatus.ACTIVE && termStart <= now) {
-      const msPerWeek = 7 * 24 * 60 * 60 * 1000;
-      currentWeek = Math.max(1, Math.floor((now.getTime() - termStart.getTime()) / msPerWeek) + 1);
-    }
-
-    // Compute total weeks from start to end
     const msPerWeek = 7 * 24 * 60 * 60 * 1000;
     const totalWeeks = Math.max(1, Math.ceil((termEnd.getTime() - termStart.getTime()) / msPerWeek));
+
+    const halfTerm = buildHalfTermRange(term.halfTermStart, term.halfTermEnd);
+    const teaching = getTeachingWeekInfo(termStart, termEnd, now, {
+      workingDays: DEFAULT_WORKING_DAYS_FOR_TERM,
+      nonInstructionalRanges: halfTerm ? [halfTerm] : [],
+    });
+
+    const startOfToday = new Date(now);
+    startOfToday.setHours(0, 0, 0, 0);
+    const startOfTermEnd = new Date(termEnd);
+    startOfTermEnd.setHours(0, 0, 0, 0);
+    const daysRemaining = Math.ceil(
+      (startOfTermEnd.getTime() - startOfToday.getTime()) / (1000 * 60 * 60 * 24),
+    );
+    const isPastEndDate = daysRemaining < 0;
+    const startOfTermStart = new Date(termStart);
+    startOfTermStart.setHours(0, 0, 0, 0);
+    const isInSession =
+      startOfToday.getTime() >= startOfTermStart.getTime() &&
+      startOfToday.getTime() <= startOfTermEnd.getTime();
+    const isOperationallyActive = term.status === TermStatus.ACTIVE && isInSession;
+    const phaseInput = {
+      startDate: termStart,
+      endDate: termEnd,
+      status: term.status,
+      examStart: term.examStart,
+      examEnd: term.examEnd,
+      examTimetablePublishedAt: term.examTimetablePublishedAt,
+    };
+    const termPhase = getTermPhase(phaseInput, now);
+    const isInExamPeriod = isExamScheduleActive(phaseInput, now);
+    const isLessonScheduleActiveNow = isLessonScheduleActive(phaseInput, now);
+
+    // Calendar weeks (legacy) — freeze at term end when still ACTIVE but overdue
+    let currentWeek: number | undefined;
+    if (term.status === TermStatus.ACTIVE && termStart <= now && isInSession) {
+      currentWeek = Math.max(1, Math.floor((now.getTime() - termStart.getTime()) / msPerWeek) + 1);
+      currentWeek = Math.min(currentWeek, totalWeeks);
+    } else if (term.status === TermStatus.ACTIVE && isPastEndDate) {
+      currentWeek = totalWeeks;
+    }
+
+    let currentTeachingWeek: number | undefined;
+    if (term.status === TermStatus.ACTIVE && termStart <= now && isInSession) {
+      currentTeachingWeek = teaching.currentTeachingWeek;
+    } else if (term.status === TermStatus.ACTIVE && isPastEndDate) {
+      currentTeachingWeek = teaching.totalTeachingWeeks;
+    }
 
     return {
       id: term.id,
@@ -1307,12 +1389,76 @@ export class SessionService {
       endDate: term.endDate,
       halfTermStart: term.halfTermStart,
       halfTermEnd: term.halfTermEnd,
+      midtermStart: term.midtermStart,
+      midtermEnd: term.midtermEnd,
+      examStart: term.examStart,
+      examEnd: term.examEnd,
+      examTimetablePublishedAt: term.examTimetablePublishedAt,
       status: term.status,
       academicSessionId: term.academicSessionId,
       currentWeek,
       totalWeeks,
+      currentTeachingWeek,
+      totalTeachingWeeks: teaching.totalTeachingWeeks,
+      daysRemaining,
+      isPastEndDate,
+      isOperationallyActive,
+      isInExamPeriod,
+      isLessonScheduleActive: isLessonScheduleActiveNow,
+      termPhase,
       createdAt: term.createdAt,
     };
+  }
+
+  /**
+   * Idempotent seed of Nigerian public holidays as HOLIDAY events for a session window.
+   */
+  private async seedNigerianHolidaysForSession(
+    schoolId: string,
+    startDate: Date,
+    endDate: Date,
+    schoolType?: string | null,
+  ): Promise<void> {
+    try {
+      const seeds = buildNigerianHolidayEvents(startDate, endDate);
+      const existing = await (this.prisma as any).event.findMany({
+        where: {
+          schoolId,
+          type: EventType.HOLIDAY,
+          startDate: { gte: startDate, lte: endDate },
+        },
+        select: { title: true, startDate: true },
+      });
+      const keys = new Set(
+        existing.map(
+          (e: { title: string; startDate: Date }) =>
+            `${e.title}|${e.startDate.toISOString().slice(0, 10)}`,
+        ),
+      );
+
+      for (const seed of seeds) {
+        const key = `${seed.title}|${seed.startDate.toISOString().slice(0, 10)}`;
+        if (keys.has(key)) continue;
+        await (this.prisma as any).event.create({
+          data: {
+            title: seed.title,
+            description: seed.description,
+            startDate: seed.startDate,
+            endDate: seed.endDate,
+            type: EventType.HOLIDAY,
+            schoolType: schoolType || null,
+            schoolId,
+            isAllDay: true,
+            syncStatus: 'PENDING',
+          },
+        });
+        keys.add(key);
+      }
+    } catch (err) {
+      this.logger.warn(
+        `Failed to seed Nigerian holidays for school ${schoolId}: ${err instanceof Error ? err.message : err}`,
+      );
+    }
   }
 
   /**
@@ -1380,6 +1526,153 @@ export class SessionService {
   }
 
   /**
+   * Update session dates after creation.
+   * Start date changes allowed before session start or within SESSION_START_GRACE_DAYS.
+   */
+  async updateSessionDates(
+    schoolId: string,
+    sessionId: string,
+    dto: UpdateSessionDatesDto,
+  ): Promise<AcademicSessionDto> {
+    const school = await this.schoolRepository.findById(schoolId);
+    if (!school) {
+      throw new BadRequestException('School not found');
+    }
+    await this.schoolValidator.validateSchoolActive(school.id);
+
+    const session = await this.prisma.academicSession.findFirst({
+      where: { id: sessionId, schoolId: school.id },
+      include: { terms: { orderBy: { number: 'asc' } } },
+    });
+
+    if (!session) {
+      throw new NotFoundException('Academic session not found');
+    }
+
+    if (session.status !== SessionStatus.ACTIVE) {
+      throw new BadRequestException('Only active sessions can have their dates adjusted');
+    }
+
+    const now = new Date();
+    const originalStart = new Date(session.startDate);
+    const newStart = dto.startDate ? new Date(dto.startDate) : session.startDate;
+    const newEnd = dto.endDate ? new Date(dto.endDate) : session.endDate;
+
+    if (newStart >= newEnd) {
+      throw new BadRequestException('Start date must be before end date');
+    }
+
+    const monthsDiff =
+      (newEnd.getFullYear() - newStart.getFullYear()) * 12 +
+      (newEnd.getMonth() - newStart.getMonth());
+    const daysDiff = Math.floor((newEnd.getTime() - newStart.getTime()) / (1000 * 60 * 60 * 24));
+
+    if (monthsDiff < 10 || daysDiff < 300) {
+      throw new BadRequestException(
+        'An academic session must span at least 10 months (approximately one year).'
+      );
+    }
+    if (monthsDiff > 12 || daysDiff > 370) {
+      throw new BadRequestException('An academic session cannot exceed 12 months.');
+    }
+
+    if (dto.startDate && newStart.getTime() !== originalStart.getTime()) {
+      const gracePeriodEnd = new Date(originalStart);
+      gracePeriodEnd.setDate(gracePeriodEnd.getDate() + SESSION_START_GRACE_DAYS);
+      if (now > gracePeriodEnd) {
+        throw new BadRequestException(
+          'Session start date can only be adjusted before the session starts or within the first week of the session.'
+        );
+      }
+    }
+
+    for (const term of session.terms) {
+      if (term.status === TermStatus.COMPLETED || term.status === TermStatus.ARCHIVED) {
+        if (new Date(term.startDate) < newStart || new Date(term.endDate) > newEnd) {
+          throw new BadRequestException(
+            `Cannot change session dates: ${term.name} is completed and would fall outside the new session period.`
+          );
+        }
+      }
+    }
+
+    for (const term of session.terms) {
+      if (term.status === TermStatus.ACTIVE) {
+        if (new Date(term.startDate) < newStart || new Date(term.endDate) > newEnd) {
+          throw new BadRequestException(
+            `Cannot change session dates: ${term.name} would fall outside the new session period. Adjust term dates first.`
+          );
+        }
+      }
+    }
+
+    const recalibrate = dto.recalibrateTerms === RecalibrateTermsMode.DRAFT_ONLY;
+
+    if (!recalibrate) {
+      for (const term of session.terms) {
+        if (term.status === TermStatus.DRAFT) {
+          if (new Date(term.startDate) < newStart || new Date(term.endDate) > newEnd) {
+            throw new BadRequestException(
+              `Cannot change session dates: ${term.name} would fall outside the new session period. Enable recalibrate draft terms or adjust manually.`
+            );
+          }
+        }
+      }
+    }
+
+    await this.prisma.academicSession.update({
+      where: { id: sessionId },
+      data: {
+        ...(dto.startDate && { startDate: newStart }),
+        ...(dto.endDate && { endDate: newEnd }),
+      },
+    });
+
+    if (recalibrate) {
+      const isTertiary = session.schoolType === 'TERTIARY';
+      const termCount = isTertiary ? 2 : 3;
+      const ranges = this.buildTermDateRanges(newStart, newEnd, termCount);
+
+      for (const range of ranges) {
+        const term = session.terms.find((t) => t.number === range.number);
+        if (!term || term.status !== TermStatus.DRAFT) continue;
+
+        await this.prisma.term.update({
+          where: { id: term.id },
+          data: {
+            startDate: range.startDate,
+            endDate: range.endDate,
+            halfTermStart: null,
+            halfTermEnd: null,
+            midtermStart: null,
+            midtermEnd: null,
+            examStart: null,
+            examEnd: null,
+            examTimetablePublishedAt: null,
+            examTimetablePublishedBy: null,
+          } as any,
+        });
+      }
+    }
+
+    if (dto.startDate || dto.endDate) {
+      await this.seedNigerianHolidaysForSession(
+        school.id,
+        newStart,
+        newEnd,
+        session.schoolType,
+      );
+    }
+
+    const updated = await this.prisma.academicSession.findUnique({
+      where: { id: sessionId },
+      include: { terms: { orderBy: { number: 'asc' } } },
+    });
+
+    return this.mapToSessionDto(updated!);
+  }
+
+  /**
    * Update term dates after creation.
    * Validates new dates are within the parent session's date range.
    */
@@ -1444,6 +1737,10 @@ export class SessionService {
       }
     }
 
+    const unpublishExamTimetable =
+      term.examTimetablePublishedAt &&
+      (dto.examStart !== undefined || dto.examEnd !== undefined);
+
     const updated = await this.prisma.term.update({
       where: { id: termId },
       data: {
@@ -1451,7 +1748,15 @@ export class SessionService {
         ...(dto.endDate && { endDate: newEnd }),
         ...(dto.halfTermStart !== undefined && { halfTermStart: dto.halfTermStart ? new Date(dto.halfTermStart) : null }),
         ...(dto.halfTermEnd !== undefined && { halfTermEnd: dto.halfTermEnd ? new Date(dto.halfTermEnd) : null }),
-      },
+        ...(dto.midtermStart !== undefined && { midtermStart: dto.midtermStart ? new Date(dto.midtermStart) : null }),
+        ...(dto.midtermEnd !== undefined && { midtermEnd: dto.midtermEnd ? new Date(dto.midtermEnd) : null }),
+        ...(dto.examStart !== undefined && { examStart: dto.examStart ? new Date(dto.examStart) : null }),
+        ...(dto.examEnd !== undefined && { examEnd: dto.examEnd ? new Date(dto.examEnd) : null }),
+        ...(unpublishExamTimetable && {
+          examTimetablePublishedAt: null,
+          examTimetablePublishedBy: null,
+        }),
+      } as any,
     });
 
     return this.mapToTermDto(updated);
@@ -1613,8 +1918,130 @@ export class SessionService {
         .catch((error) => {
           this.logger.error('Failed to send session/term notifications:', error);
         });
+
+      // In-app + push for all school members
+      void this.fanOutSessionTermInbox(
+        schoolId,
+        schoolName,
+        sessionName,
+        termName,
+        isNewSession,
+      );
     } catch (error) {
       this.logger.error('Error preparing session/term notifications:', error);
+    }
+  }
+
+  private async fanOutSessionTermInbox(
+    schoolId: string,
+    schoolName: string,
+    sessionName: string,
+    termName: string,
+    isNewSession: boolean,
+  ) {
+    try {
+      const members = await this.notificationInbox.getAllSchoolMemberUserIds(schoolId);
+      const type = isNewSession ? 'SESSION_STARTED' : 'TERM_STARTED';
+      const title = isNewSession ? 'New session started' : 'New term started';
+      const body = isNewSession
+        ? `${sessionName} has started at ${schoolName} (${termName})`
+        : `${termName} of ${sessionName} has started at ${schoolName}`;
+
+      const inputs = [
+        ...members.admins.map((userId) => ({
+          userId,
+          schoolId,
+          role: 'SCHOOL_ADMIN' as const,
+          type,
+          title,
+          body,
+          link: '/dashboard/school/settings/session',
+        })),
+        ...members.teachers.map((userId) => ({
+          userId,
+          schoolId,
+          role: 'TEACHER' as const,
+          type,
+          title,
+          body,
+          link: '/dashboard/teacher/calendar',
+        })),
+        ...members.students.map((userId) => ({
+          userId,
+          schoolId,
+          role: 'STUDENT' as const,
+          type,
+          title,
+          body,
+          link: '/dashboard/student/overview',
+        })),
+      ];
+      await this.notificationInbox.createAndFanOut(inputs);
+    } catch (err: any) {
+      this.logger.warn(`In-app session/term notify failed: ${err?.message || err}`);
+    }
+  }
+
+  /** Daily: remind when an active term ends within 7 days */
+  @Cron(CronExpression.EVERY_DAY_AT_8AM)
+  async checkTermEndingReminders() {
+    const now = new Date();
+    const in7 = new Date(now);
+    in7.setDate(in7.getDate() + 7);
+
+    const terms = await this.prisma.term.findMany({
+      where: {
+        status: TermStatus.ACTIVE,
+        endDate: { gte: now, lte: in7 },
+      },
+      include: { academicSession: true },
+    });
+
+    for (const term of terms) {
+      const schoolId = term.academicSession.schoolId;
+      const daysLeft = Math.ceil(
+        (term.endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
+      );
+      const members = await this.notificationInbox.getAllSchoolMemberUserIds(schoolId);
+      const title = 'Term ending soon';
+      const body = `${term.name} ends in ${daysLeft} day${daysLeft === 1 ? '' : 's'}`;
+      const type = 'TERM_ENDING_SOON';
+      try {
+        await this.notificationInbox.createAndFanOut([
+          ...members.admins.map((userId) => ({
+            userId,
+            schoolId,
+            role: 'SCHOOL_ADMIN',
+            type,
+            title,
+            body,
+            link: '/dashboard/school/settings/session',
+            metadata: { termId: term.id, daysLeft },
+          })),
+          ...members.teachers.map((userId) => ({
+            userId,
+            schoolId,
+            role: 'TEACHER',
+            type,
+            title,
+            body,
+            link: '/dashboard/teacher/calendar',
+            metadata: { termId: term.id, daysLeft },
+          })),
+          ...members.students.map((userId) => ({
+            userId,
+            schoolId,
+            role: 'STUDENT',
+            type,
+            title,
+            body,
+            link: '/dashboard/student/overview',
+            metadata: { termId: term.id, daysLeft },
+          })),
+        ]);
+      } catch (err: any) {
+        this.logger.warn(`Term ending reminder failed for ${term.id}: ${err?.message || err}`);
+      }
     }
   }
 

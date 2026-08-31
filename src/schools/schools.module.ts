@@ -59,6 +59,7 @@ import { IdGeneratorService } from './shared/id-generator.service';
 import { SchoolValidatorService } from './shared/school-validator.service';
 import { StaffValidatorService } from './shared/staff-validator.service';
 import { CloudinaryModule } from '../storage/cloudinary/cloudinary.module';
+import { NotificationModule } from '../notification/notification.module';
 
 @Module({
   imports: [
@@ -66,9 +67,11 @@ import { CloudinaryModule } from '../storage/cloudinary/cloudinary.module';
     forwardRef(() => AuthModule),
     EmailModule,
     CurriculumModule,
+    SchemeOfWorkModule,
     CloudinaryModule,
     SubscriptionsModule,
     LiveStatusModule,
+    NotificationModule,
   ],
   controllers: [
     // New architecture controllers

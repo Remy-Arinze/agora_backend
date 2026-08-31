@@ -75,7 +75,7 @@ export class GradesController {
   }
 
   @Delete(':gradeId')
-  @RequirePermission(PermissionResource.GRADES, PermissionType.ADMIN)
+  @RequirePermission(PermissionResource.GRADES, PermissionType.WRITE)
   @ApiOperation({ summary: 'Delete a grade' })
   @ApiResponse({
     status: 200,

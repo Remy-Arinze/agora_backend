@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsOptional, IsEnum } from 'class-validator';
+import { IsOptional, IsEnum, IsString } from 'class-validator';
 import { PaginationDto } from '../../common/dto/pagination.dto';
 import { ClassType } from '../../schools/dto/create-class.dto';
 
@@ -12,4 +12,12 @@ export class GetStudentsDto extends PaginationDto {
   @IsOptional()
   @IsEnum(ClassType)
   schoolType?: ClassType;
+
+  @ApiProperty({
+    description: 'Search by student name, UID, or public ID',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  search?: string = undefined;
 }

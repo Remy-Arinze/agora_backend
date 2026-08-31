@@ -851,7 +851,7 @@ export class SuperAdminSchoolsService {
     }
 
     // Remove all whitespace and special characters except + and digits
-    let sanitized = phone.replace(/[^\d+]/g, '');
+    const sanitized = phone.replace(/[^\d+]/g, '');
 
     // Validate phone format
     const phoneRegex = /^\+?[1-9]\d{1,14}$/;

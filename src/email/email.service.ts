@@ -1,21 +1,55 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import * as fs from 'fs';
+import * as path from 'path';
 import * as nodemailer from 'nodemailer';
+
+export type EmailDriver = 'gmail' | 'resend' | 'log';
+
+type MailPayload = nodemailer.SendMailOptions;
 
 @Injectable()
 export class EmailService {
   private readonly logger = new Logger(EmailService.name);
-  private transporter: nodemailer.Transporter;
+  private readonly driver: EmailDriver;
+  private transporter: nodemailer.Transporter | null = null;
 
-  /** Agora logo URL for email headers (Cloudinary) */
+  /** School Bud logo URL for email headers (Cloudinary) */
   private static readonly AGORA_LOGO_URL =
     'https://res.cloudinary.com/dstm3asg5/image/upload/v1771924083/agora_main_htekwx.png';
 
   constructor(private configService: ConfigService) {
+    const rawDriver = (this.configService.get<string>('EMAIL_DRIVER') || 'gmail')
+      .trim()
+      .toLowerCase();
+    const normalized = rawDriver === 'smtp' ? 'gmail' : rawDriver;
+    if (normalized === 'gmail' || normalized === 'resend' || normalized === 'log') {
+      this.driver = normalized;
+    } else {
+      this.logger.warn(
+        `Unknown EMAIL_DRIVER="${rawDriver}". Falling back to gmail. Allowed: gmail | resend | log`,
+      );
+      this.driver = 'gmail';
+    }
+
+    this.logger.log(`Email driver: ${this.driver}`);
+
+    if (this.driver === 'gmail') {
+      this.initGmailTransporter();
+    } else if (this.driver === 'resend') {
+      const apiKey = this.configService.get<string>('RESEND_API_KEY');
+      if (!apiKey) {
+        this.logger.warn(
+          'EMAIL_DRIVER=resend but RESEND_API_KEY is missing. Sends will fail until it is set.',
+        );
+      }
+    }
+  }
+
+  private initGmailTransporter(): void {
     // Support both MAIL_* and SMTP_* environment variable names
     const host =
       this.configService.get<string>('MAIL_HOST') || this.configService.get<string>('SMTP_HOST');
-    // Parse port as number, default to 587 for standard SMTP, but Mailtrap uses 2525
     const portRaw =
       this.configService.get<string>('MAIL_PORT') || this.configService.get<string>('SMTP_PORT');
     const port = portRaw ? parseInt(portRaw, 10) : 587;
@@ -24,38 +58,167 @@ export class EmailService {
     const password =
       this.configService.get<string>('MAIL_PASSWORD') ||
       this.configService.get<string>('SMTP_PASSWORD');
-    // Mailtrap uses secure: false, so default to false if not specified
     const secureRaw =
       this.configService.get<string>('MAIL_SECURE') ||
       this.configService.get<string>('SMTP_SECURE');
     const secure = secureRaw === 'true';
 
-    // Log configuration (without sensitive data)
-    this.logger.log(`Initializing email service with host: ${host}, port: ${port}`);
+    this.logger.log(`Initializing Gmail SMTP with host: ${host}, port: ${port}`);
 
     if (!host || !user || !password) {
       this.logger.warn(
-        'Email service configuration incomplete. Some environment variables may be missing.'
+        'Email service configuration incomplete. Some environment variables may be missing.',
       );
       this.logger.warn(
-        `Host: ${host ? '✓' : '✗'}, User: ${user ? '✓' : '✗'}, Password: ${password ? '✓' : '✗'}`
+        `Host: ${host ? 'âœ“' : 'âœ—'}, User: ${user ? 'âœ“' : 'âœ—'}, Password: ${password ? 'âœ“' : 'âœ—'}`,
       );
     }
 
     this.transporter = nodemailer.createTransport({
       host,
       port,
-      secure: secure, // true for 465, false for other ports (Mailtrap uses false)
+      secure,
       auth: {
         user,
         pass: password,
       },
     });
 
-    // Verify connection on startup
     this.verifyConnection().catch((error) => {
       this.logger.error('Initial SMTP connection verification failed:', error);
     });
+  }
+
+  /**
+   * Route outbound mail through the configured driver (gmail | resend | log).
+   */
+  private async dispatchMail(
+    mailOptions: MailPayload,
+  ): Promise<{ messageId: string }> {
+    switch (this.driver) {
+      case 'log':
+        return this.sendViaLog(mailOptions);
+      case 'resend':
+        return this.sendViaResend(mailOptions);
+      case 'gmail':
+      default:
+        return this.sendViaGmail(mailOptions);
+    }
+  }
+
+  private async sendViaGmail(mailOptions: MailPayload): Promise<{ messageId: string }> {
+    if (!this.transporter) {
+      throw new Error('Gmail SMTP transporter is not initialized');
+    }
+    const result = await this.dispatchMail(mailOptions);
+    return { messageId: result.messageId || `gmail-${Date.now()}` };
+  }
+
+  private async sendViaResend(mailOptions: MailPayload): Promise<{ messageId: string }> {
+    const apiKey = this.configService.get<string>('RESEND_API_KEY');
+    if (!apiKey) {
+      throw new Error('RESEND_API_KEY is required when EMAIL_DRIVER=resend');
+    }
+
+    const to = this.normalizeAddressList(mailOptions.to);
+    if (!to.length) {
+      throw new Error('Resend send requires at least one recipient');
+    }
+
+    const from =
+      typeof mailOptions.from === 'string'
+        ? mailOptions.from
+        : this.getFormattedFrom();
+
+    const payload: Record<string, unknown> = {
+      from,
+      to,
+      subject: mailOptions.subject || '(no subject)',
+    };
+    if (mailOptions.html) payload.html = mailOptions.html;
+    if (mailOptions.text) payload.text = mailOptions.text;
+    if (mailOptions.replyTo) {
+      payload.reply_to = this.normalizeAddressList(mailOptions.replyTo)[0];
+    }
+
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const bodyText = await response.text();
+    let parsed: { id?: string; message?: string } = {};
+    try {
+      parsed = JSON.parse(bodyText);
+    } catch {
+      parsed = { message: bodyText };
+    }
+
+    if (!response.ok) {
+      throw new Error(
+        `Resend API error (${response.status}): ${parsed.message || bodyText.slice(0, 300)}`,
+      );
+    }
+
+    return { messageId: parsed.id || `resend-${Date.now()}` };
+  }
+
+  private async sendViaLog(mailOptions: MailPayload): Promise<{ messageId: string }> {
+    const to = this.normalizeAddressList(mailOptions.to).join(', ') || '(none)';
+    const subject = mailOptions.subject || '(no subject)';
+    const text =
+      typeof mailOptions.text === 'string'
+        ? mailOptions.text
+        : typeof mailOptions.html === 'string'
+          ? mailOptions.html.replace(/<[^>]+>/g, ' ')
+          : '';
+    const otpMatch = text.match(/\b(\d{6})\b/);
+    const otp = otpMatch?.[1];
+
+    this.logger.log(`[EMAIL:log] to=${to} subject="${subject}"`);
+    if (otp) {
+      this.logger.log(`[EMAIL:log] OTP for ${to}: ${otp}`);
+      this.writeOtpFile(otp);
+    } else if (text) {
+      this.logger.log(`[EMAIL:log] body (truncated): ${text.replace(/\s+/g, ' ').slice(0, 240)}`);
+    }
+
+    return { messageId: `log-${Date.now()}` };
+  }
+
+  /** Optional: write OTP digits for E2E (EMAIL_OTP_FILE). */
+  private writeOtpFile(otp: string): void {
+    const otpFile = this.configService.get<string>('EMAIL_OTP_FILE')?.trim();
+    if (!otpFile) return;
+
+    try {
+      const resolved = path.isAbsolute(otpFile)
+        ? otpFile
+        : path.resolve(process.cwd(), otpFile);
+      fs.mkdirSync(path.dirname(resolved), { recursive: true });
+      fs.writeFileSync(resolved, `${otp}\n`, 'utf8');
+      this.logger.log(`[EMAIL:log] Wrote OTP to ${resolved}`);
+    } catch (error) {
+      this.logger.warn(
+        `[EMAIL:log] Failed to write EMAIL_OTP_FILE: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
+  private normalizeAddressList(
+    value: MailPayload['to'] | MailPayload['replyTo'],
+  ): string[] {
+    if (!value) return [];
+    const list = Array.isArray(value) ? value : [value];
+    return list
+      .map((item) => (typeof item === 'string' ? item : item.address))
+      .filter((addr): addr is string => Boolean(addr));
   }
 
   /**
@@ -79,15 +242,15 @@ export class EmailService {
   }
 
   /**
-   * Returns the shared email header HTML with Agora logo and optional title.
+   * Returns the shared email header HTML with School Bud logo and optional title.
    * Logo and title are on one line; logo sized to match header text (~24px).
    */
-  private getEmailHeaderHtml(title: string = 'Agora Open Schools'): string {
+  private getEmailHeaderHtml(title: string = 'School Bud'): string {
     const logoUrl = EmailService.AGORA_LOGO_URL;
     return `<div style="background-color: #f9fafb; padding: 16px 20px; text-align: center; border-radius: 8px 8px 0 0; border-bottom: 2px solid #e5e7eb;">
 <table cellpadding="0" cellspacing="0" border="0" style="margin: 0 auto;">
 <tr>
-<td style="vertical-align: middle; padding-right: 12px;"><img src="${logoUrl}" alt="Agora" width="36" height="36" style="display: block; width: 36px; height: 36px; object-fit: contain; border: 0; outline: none; text-decoration: none;" /></td>
+<td style="vertical-align: middle; padding-right: 12px;"><img src="${logoUrl}" alt="School Bud" width="36" height="36" style="display: block; width: 36px; height: 36px; object-fit: contain; border: 0; outline: none; text-decoration: none;" /></td>
 <td style="vertical-align: middle;"><h1 style="color: #1f2937; margin: 0; font-size: 24px;">${title}</h1></td>
 </tr>
 </table>
@@ -195,8 +358,8 @@ export class EmailService {
       replyTo: this.getReplyTo(),
       to: email,
       subject: isPasswordReset
-        ? 'Reset Your Password - Agora Open Schools'
-        : 'Set Your Password - Agora Open Schools',
+        ? 'Reset Your Password - School Bud'
+        : 'Set Your Password - School Bud',
       headers: this.getEmailHeaders(),
       html: `
         <!DOCTYPE html>
@@ -212,13 +375,13 @@ export class EmailService {
             ${isPasswordReset
           ? `
             <h2 style="color: #1f2937; margin-top: 0;">Password Reset Request</h2>
-            <p>Hello ${name},</p>
-            <p>We received a request to reset your password for your <strong>${role}</strong> account on the Agora Open Schools.</p>
+            <p>Hi ${name},</p>
+            <p>We received a request to reset your password for your <strong>${role}</strong> account on School Bud.</p>
             <p>If you didn't make this request, you can safely ignore this email. Your password will remain unchanged.</p>
             `
           : `
             <h2 style="color: #1f2937; margin-top: 0;">Welcome, ${name}!</h2>
-            <p>Your account has been created${schoolName ? ` at <strong>${schoolName}</strong>` : ''} on the Agora Open Schools as a <strong>${role}</strong>.</p>
+            <p>Your account has been created${schoolName ? ` at <strong>${schoolName}</strong>` : ''} on School Bud as a <strong>${role}</strong>.</p>
             <p>To get started, please set your password using the link below.</p>
             `
         }
@@ -236,7 +399,7 @@ export class EmailService {
             <p style="color: #6b7280; font-size: 12px; word-break: break-all; background-color: #f3f4f6; padding: 10px; border-radius: 4px; font-family: monospace;">${resetUrl}</p>
             <div style="background-color: #fef3c7; border-left: 4px solid #f59e0b; padding: 12px; margin: 25px 0; border-radius: 4px;">
               <p style="margin: 0; color: #92400e; font-size: 13px;">
-                <strong>⏱️ Important:</strong> This link will expire in ${isPasswordReset ? '1 hour' : '24 hours'}. ${isPasswordReset ? 'For security reasons, password reset links expire quickly.' : 'Please set your password as soon as possible.'}
+                <strong>â±ï¸ Important:</strong> This link will expire in ${isPasswordReset ? '1 hour' : '24 hours'}. ${isPasswordReset ? 'For security reasons, password reset links expire quickly.' : 'Please set your password as soon as possible.'}
               </p>
             </div>
             ${isPasswordReset
@@ -249,7 +412,7 @@ export class EmailService {
         }
             <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
             <p style="color: #9ca3af; font-size: 12px; text-align: center; margin: 0;">
-              © ${new Date().getFullYear()} Agora Open Schools. All rights reserved.
+              © ${new Date().getFullYear()} School Bud. All rights reserved.<br><span style="color: #9ca3af;">— Bud, your school bud</span>
             </p>
           </div>
         </body>
@@ -259,7 +422,7 @@ export class EmailService {
 
     try {
       this.logger.log(`Attempting to send password reset email to ${email} from ${fromEmail}`);
-      const result = await this.transporter.sendMail(mailOptions);
+      const result = await this.dispatchMail(mailOptions);
       this.logger.log(
         `Password reset email sent successfully to ${email}. MessageId: ${result.messageId}`
       );
@@ -302,7 +465,7 @@ export class EmailService {
       from: this.getFormattedFrom(),
       replyTo: this.getReplyTo(),
       to: email,
-      subject: 'Password Successfully Changed - Agora Open Schools',
+      subject: 'Password Successfully Changed - School Bud',
       headers: this.getEmailHeaders(),
       html: `
         <!DOCTYPE html>
@@ -316,7 +479,7 @@ export class EmailService {
           ${this.getEmailHeaderHtml()}
           <div style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px;">
             <h2 style="color: #1f2937; margin-top: 0;">Password Successfully Changed</h2>
-            <p>Hello ${name},</p>
+            <p>Hi ${name},</p>
             <p>Your password has been successfully changed${schoolName ? ` for your account at <strong>${schoolName}</strong>` : ''} on <strong>${new Date().toLocaleString()}</strong>.</p>
             ${publicId
           ? `
@@ -336,7 +499,7 @@ export class EmailService {
             </p>
             <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
             <p style="color: #9ca3af; font-size: 12px; text-align: center; margin: 0;">
-              © ${new Date().getFullYear()} Agora Open Schools. All rights reserved.
+              © ${new Date().getFullYear()} School Bud. All rights reserved.<br><span style="color: #9ca3af;">— Bud, your school bud</span>
             </p>
           </div>
         </body>
@@ -348,7 +511,7 @@ export class EmailService {
       this.logger.log(
         `Attempting to send password reset confirmation email to ${email} from ${fromEmail}`
       );
-      const result = await this.transporter.sendMail(mailOptions);
+      const result = await this.dispatchMail(mailOptions);
       this.logger.log(
         `Password reset confirmation email sent successfully to ${email}. MessageId: ${result.messageId}`
       );
@@ -393,7 +556,7 @@ export class EmailService {
       from: this.getFormattedFrom(),
       replyTo: this.getReplyTo(),
       to: email,
-      subject: `Role Change Notification - ${newRole} - Agora Open Schools`,
+      subject: `Role Change Notification - ${newRole} - School Bud`,
       headers: this.getEmailHeaders(),
       html: `
         <!DOCTYPE html>
@@ -407,7 +570,7 @@ export class EmailService {
           ${this.getEmailHeaderHtml()}
           <div style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px;">
             <h2 style="color: #1f2937; margin-top: 0;">Role Change Notification</h2>
-            <p>Hello ${name},</p>
+            <p>Hi ${name},</p>
             ${schoolName ? `<p>Your role at <strong>${schoolName}</strong> has been updated.</p>` : '<p>Your role has been updated.</p>'}
             <div style="background-color: #fef3c7; border-left: 4px solid #f59e0b; padding: 15px; margin: 20px 0; border-radius: 4px;">
               <p style="margin: 0; color: #92400e; font-weight: bold;">Previous Role: ${oldRole}</p>
@@ -431,7 +594,7 @@ export class EmailService {
             </p>
             <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
             <p style="color: #9ca3af; font-size: 12px; text-align: center; margin: 0;">
-              © ${new Date().getFullYear()} Agora Open Schools. All rights reserved.
+              © ${new Date().getFullYear()} School Bud. All rights reserved.<br><span style="color: #9ca3af;">— Bud, your school bud</span>
             </p>
           </div>
         </body>
@@ -441,7 +604,7 @@ export class EmailService {
 
     try {
       this.logger.log(`Attempting to send role change email to ${email} from ${fromEmail}`);
-      const result = await this.transporter.sendMail(mailOptions);
+      const result = await this.dispatchMail(mailOptions);
       this.logger.log(
         `Role change email sent successfully to ${email}. MessageId: ${result.messageId}`
       );
@@ -497,7 +660,7 @@ export class EmailService {
           ${this.getEmailHeaderHtml()}
           <div style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px;">
             <h2 style="color: #1f2937; margin-top: 0;">Transfer Access Code Generated</h2>
-            <p>Hello ${studentName},</p>
+            <p>Hi ${studentName},</p>
             <p>A Transfer Access Code (TAC) has been generated for your transfer from <strong>${schoolName}</strong>.</p>
             <div style="background-color: #eff6ff; border-left: 4px solid #3b82f6; padding: 15px; margin: 20px 0; border-radius: 4px;">
               <p style="margin: 0; color: #1e40af; font-weight: bold; font-size: 14px;">Transfer Access Code (TAC):</p>
@@ -528,7 +691,7 @@ export class EmailService {
             </p>
             <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
             <p style="color: #9ca3af; font-size: 12px; text-align: center; margin: 0;">
-              © ${new Date().getFullYear()} Agora Open Schools. All rights reserved.
+              © ${new Date().getFullYear()} School Bud. All rights reserved.<br><span style="color: #9ca3af;">— Bud, your school bud</span>
             </p>
           </div>
         </body>
@@ -538,7 +701,7 @@ export class EmailService {
 
     try {
       this.logger.log(`Attempting to send transfer initiation email to ${email} from ${fromEmail}`);
-      const result = await this.transporter.sendMail(mailOptions);
+      const result = await this.dispatchMail(mailOptions);
       this.logger.log(
         `Transfer initiation email sent successfully to ${email}. MessageId: ${result.messageId}`
       );
@@ -591,7 +754,7 @@ export class EmailService {
           ${this.getEmailHeaderHtml()}
           <div style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px;">
             <h2 style="color: #1f2937; margin-top: 0;">Transfer Access Code Revoked</h2>
-            <p>Hello ${studentName},</p>
+            <p>Hi ${studentName},</p>
             <p>The Transfer Access Code (TAC) that was previously generated for your transfer from <strong>${schoolName}</strong> has been revoked.</p>
             <div style="background-color: #fee2e2; border-left: 4px solid #ef4444; padding: 15px; margin: 20px 0; border-radius: 4px;">
               <p style="margin: 0; color: #991b1b; font-weight: bold;">What this means:</p>
@@ -609,7 +772,7 @@ export class EmailService {
             </p>
             <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
             <p style="color: #9ca3af; font-size: 12px; text-align: center; margin: 0;">
-              © ${new Date().getFullYear()} Agora Open Schools. All rights reserved.
+              © ${new Date().getFullYear()} School Bud. All rights reserved.<br><span style="color: #9ca3af;">— Bud, your school bud</span>
             </p>
           </div>
         </body>
@@ -619,7 +782,7 @@ export class EmailService {
 
     try {
       this.logger.log(`Attempting to send transfer revocation email to ${email} from ${fromEmail}`);
-      const result = await this.transporter.sendMail(mailOptions);
+      const result = await this.dispatchMail(mailOptions);
       this.logger.log(
         `Transfer revocation email sent successfully to ${email}. MessageId: ${result.messageId}`
       );
@@ -691,7 +854,7 @@ export class EmailService {
           ${this.getEmailHeaderHtml()}
           <div style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px;">
             <h2 style="color: #1f2937; margin-top: 0;">Class Assignment Notification</h2>
-            <p>Hello ${teacherName},</p>
+            <p>Hi ${teacherName},</p>
             <p>You have been assigned to a class at <strong>${schoolName}</strong>.</p>
             <div style="background-color: #eff6ff; border-left: 4px solid #3b82f6; padding: 15px; margin: 20px 0; border-radius: 4px;">
               <p style="margin: 0; color: #1e40af; font-weight: bold; font-size: 14px;">Class Details:</p>
@@ -714,7 +877,7 @@ export class EmailService {
             </p>
             <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
             <p style="color: #9ca3af; font-size: 12px; text-align: center; margin: 0;">
-              © ${new Date().getFullYear()} Agora Open Schools. All rights reserved.
+              © ${new Date().getFullYear()} School Bud. All rights reserved.<br><span style="color: #9ca3af;">— Bud, your school bud</span>
             </p>
           </div>
         </body>
@@ -726,7 +889,7 @@ export class EmailService {
       this.logger.log(
         `Attempting to send teacher class assignment email to ${email} from ${fromEmail}`
       );
-      const result = await this.transporter.sendMail(mailOptions);
+      const result = await this.dispatchMail(mailOptions);
       this.logger.log(
         `Teacher class assignment email sent successfully to ${email}. MessageId: ${result.messageId}`
       );
@@ -782,7 +945,7 @@ export class EmailService {
           ${this.getEmailHeaderHtml()}
           <div style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px;">
             <h2 style="color: #1f2937; margin-top: 0;">Class Assignment Removed</h2>
-            <p>Hello ${teacherName},</p>
+            <p>Hi ${teacherName},</p>
             <p>Your assignment to a class at <strong>${schoolName}</strong> has been removed.</p>
             <div style="background-color: #fee2e2; border-left: 4px solid #ef4444; padding: 15px; margin: 20px 0; border-radius: 4px;">
               <p style="margin: 0; color: #991b1b; font-weight: bold; font-size: 14px;">Removed Assignment:</p>
@@ -800,7 +963,7 @@ export class EmailService {
             </p>
             <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
             <p style="color: #9ca3af; font-size: 12px; text-align: center; margin: 0;">
-              © ${new Date().getFullYear()} Agora Open Schools. All rights reserved.
+              © ${new Date().getFullYear()} School Bud. All rights reserved.<br><span style="color: #9ca3af;">— Bud, your school bud</span>
             </p>
           </div>
         </body>
@@ -812,7 +975,7 @@ export class EmailService {
       this.logger.log(
         `Attempting to send teacher class removal email to ${email} from ${fromEmail}`
       );
-      const result = await this.transporter.sendMail(mailOptions);
+      const result = await this.dispatchMail(mailOptions);
       this.logger.log(
         `Teacher class removal email sent successfully to ${email}. MessageId: ${result.messageId}`
       );
@@ -885,7 +1048,7 @@ export class EmailService {
           ${this.getEmailHeaderHtml()}
           <div style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px;">
             <h2 style="color: #1f2937; margin-top: 0;">Permissions Updated</h2>
-            <p>Hello ${adminName},</p>
+            <p>Hi ${adminName},</p>
             <p>Your permissions have been updated at <strong>${schoolName}</strong>.</p>
             <div style="background-color: #f3e8ff; border-left: 4px solid #8b5cf6; padding: 15px; margin: 20px 0; border-radius: 4px;">
               <p style="margin: 0; color: #6b21a8; font-weight: bold; font-size: 14px;">Your Updated Permissions:</p>
@@ -904,7 +1067,7 @@ export class EmailService {
             </p>
             <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
             <p style="color: #9ca3af; font-size: 12px; text-align: center; margin: 0;">
-              © ${new Date().getFullYear()} Agora Open Schools. All rights reserved.
+              © ${new Date().getFullYear()} School Bud. All rights reserved.<br><span style="color: #9ca3af;">— Bud, your school bud</span>
             </p>
           </div>
         </body>
@@ -916,7 +1079,7 @@ export class EmailService {
       this.logger.log(
         `Attempting to send permission assignment email to ${email} from ${fromEmail}`
       );
-      const result = await this.transporter.sendMail(mailOptions);
+      const result = await this.dispatchMail(mailOptions);
       this.logger.log(
         `Permission assignment email sent successfully to ${email}. MessageId: ${result.messageId}`
       );
@@ -947,7 +1110,7 @@ export class EmailService {
 
     return {
       'Message-ID': messageId,
-      'X-Mailer': 'Agora Open Schools',
+      'X-Mailer': 'School Bud',
       'List-Unsubscribe': `<mailto:${replyToEmail}?subject=unsubscribe>`,
       'Precedence': 'bulk',
       'X-Auto-Response-Suppress': 'All', // Prevents auto-replies
@@ -963,7 +1126,7 @@ export class EmailService {
       this.configService.get<string>('SMTP_FROM') ||
       this.configService.get<string>('MAIL_USER') ||
       this.configService.get<string>('SMTP_USER');
-    const fromName = this.configService.get<string>('MAIL_FROM_NAME') || 'Agora Open Schools';
+    const fromName = this.configService.get<string>('MAIL_FROM_NAME') || 'Bud';
     return `"${fromName}" <${fromEmail}>`;
   }
 
@@ -980,6 +1143,10 @@ export class EmailService {
   }
 
   async verifyConnection(): Promise<boolean> {
+    if (this.driver !== 'gmail' || !this.transporter) {
+      this.logger.log(`Skipping SMTP verify (driver=${this.driver})`);
+      return true;
+    }
     try {
       await this.transporter.verify();
       this.logger.log('SMTP connection verified');
@@ -1032,13 +1199,13 @@ export class EmailService {
           <title>New Academic Session Started</title>
         </head>
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-          ${this.getEmailHeaderHtml('🎓 New Session Started!')}
+          ${this.getEmailHeaderHtml('ðŸŽ“ New Session Started!')}
           <div style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px;">
             <h2 style="color: #1f2937; margin-top: 0;">Welcome to ${sessionName}</h2>
-            <p>Hello ${recipientName},</p>
+            <p>Hi ${recipientName},</p>
             <p>A new academic session has begun at <strong>${schoolName}</strong>. We're excited to have you as part of this journey!</p>
             <div style="background-color: #d1fae5; border-left: 4px solid #10b981; padding: 15px; margin: 20px 0; border-radius: 4px;">
-              <p style="margin: 0; color: #065f46; font-weight: bold; font-size: 16px;">📅 Session Details</p>
+              <p style="margin: 0; color: #065f46; font-weight: bold; font-size: 16px;">ðŸ“… Session Details</p>
               <table style="margin-top: 10px; color: #065f46;">
                 <tr><td style="padding: 5px 15px 5px 0;"><strong>Session:</strong></td><td>${sessionName}</td></tr>
                 <tr><td style="padding: 5px 15px 5px 0;"><strong>Current Term:</strong></td><td>${termName}</td></tr>
@@ -1055,7 +1222,7 @@ export class EmailService {
             </p>
             <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
             <p style="color: #9ca3af; font-size: 12px; text-align: center; margin: 0;">
-              © ${new Date().getFullYear()} Agora Open Schools. All rights reserved.
+              © ${new Date().getFullYear()} School Bud. All rights reserved.<br><span style="color: #9ca3af;">— Bud, your school bud</span>
             </p>
           </div>
         </body>
@@ -1064,7 +1231,7 @@ export class EmailService {
     };
 
     try {
-      await this.transporter.sendMail(mailOptions);
+      await this.dispatchMail(mailOptions);
       this.logger.log(`Session start email sent successfully to ${email}`);
     } catch (error: any) {
       this.logger.error(`Failed to send session start email to ${email}:`, error.message);
@@ -1114,13 +1281,13 @@ export class EmailService {
           <title>New Term Started</title>
         </head>
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-          ${this.getEmailHeaderHtml(`📚 ${termName} Has Started!`)}
+          ${this.getEmailHeaderHtml(`ðŸ“š ${termName} Has Started!`)}
           <div style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px;">
             <h2 style="color: #1f2937; margin-top: 0;">Welcome Back!</h2>
-            <p>Hello ${recipientName},</p>
+            <p>Hi ${recipientName},</p>
             <p>A new term has begun at <strong>${schoolName}</strong>. Get ready for an exciting period of learning and growth!</p>
             <div style="background-color: #dbeafe; border-left: 4px solid #3b82f6; padding: 15px; margin: 20px 0; border-radius: 4px;">
-              <p style="margin: 0; color: #1e40af; font-weight: bold; font-size: 16px;">📅 Term Details</p>
+              <p style="margin: 0; color: #1e40af; font-weight: bold; font-size: 16px;">ðŸ“… Term Details</p>
               <table style="margin-top: 10px; color: #1e40af;">
                 <tr><td style="padding: 5px 15px 5px 0;"><strong>Session:</strong></td><td>${sessionName}</td></tr>
                 <tr><td style="padding: 5px 15px 5px 0;"><strong>Term:</strong></td><td>${termName}</td></tr>
@@ -1137,7 +1304,7 @@ export class EmailService {
             </p>
             <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
             <p style="color: #9ca3af; font-size: 12px; text-align: center; margin: 0;">
-              © ${new Date().getFullYear()} Agora Open Schools. All rights reserved.
+              © ${new Date().getFullYear()} School Bud. All rights reserved.<br><span style="color: #9ca3af;">— Bud, your school bud</span>
             </p>
           </div>
         </body>
@@ -1146,7 +1313,7 @@ export class EmailService {
     };
 
     try {
-      await this.transporter.sendMail(mailOptions);
+      await this.dispatchMail(mailOptions);
       this.logger.log(`Term start email sent successfully to ${email}`);
     } catch (error: any) {
       this.logger.error(`Failed to send term start email to ${email}:`, error.message);
@@ -1183,7 +1350,7 @@ export class EmailService {
       from: this.getFormattedFrom(),
       replyTo: this.getReplyTo(),
       to: email,
-      subject: `🎉 Congratulations! You've Been Promoted - ${schoolName}`,
+      subject: `ðŸŽ‰ Congratulations! You've Been Promoted - ${schoolName}`,
       headers: this.getEmailHeaders(),
       html: `
         <!DOCTYPE html>
@@ -1194,13 +1361,13 @@ export class EmailService {
           <title>Class Promotion</title>
         </head>
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-          ${this.getEmailHeaderHtml('🎉 Congratulations!')}
+          ${this.getEmailHeaderHtml('ðŸŽ‰ Congratulations!')}
           <div style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px;">
             <h2 style="color: #1f2937; margin-top: 0;">You've Been Promoted!</h2>
             <p>Dear ${studentName},</p>
             <p>We are thrilled to inform you that you have been successfully promoted to the next class level at <strong>${schoolName}</strong>!</p>
             <div style="background-color: #f3e8ff; border-left: 4px solid #8b5cf6; padding: 15px; margin: 20px 0; border-radius: 4px;">
-              <p style="margin: 0; color: #6b21a8; font-weight: bold; font-size: 16px;">🏆 Your Promotion Details</p>
+              <p style="margin: 0; color: #6b21a8; font-weight: bold; font-size: 16px;">ðŸ† Your Promotion Details</p>
               <table style="margin-top: 10px; color: #6b21a8;">
                 <tr><td style="padding: 5px 15px 5px 0;"><strong>Previous Class:</strong></td><td>${previousClass}</td></tr>
                 <tr><td style="padding: 5px 15px 5px 0;"><strong>New Class:</strong></td><td style="font-weight: bold; color: #059669;">${newClass}</td></tr>
@@ -1209,7 +1376,7 @@ export class EmailService {
             </div>
             <div style="background-color: #fef3c7; border-left: 4px solid #f59e0b; padding: 15px; margin: 20px 0; border-radius: 4px;">
               <p style="margin: 0; color: #92400e;">
-                🌟 This achievement reflects your hard work and dedication. Keep up the excellent effort in your new class!
+                ðŸŒŸ This achievement reflects your hard work and dedication. Keep up the excellent effort in your new class!
               </p>
             </div>
             <div style="text-align: center; margin: 30px 0;">
@@ -1220,7 +1387,7 @@ export class EmailService {
             </p>
             <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
             <p style="color: #9ca3af; font-size: 12px; text-align: center; margin: 0;">
-              © ${new Date().getFullYear()} Agora Open Schools. All rights reserved.
+              © ${new Date().getFullYear()} School Bud. All rights reserved.<br><span style="color: #9ca3af;">— Bud, your school bud</span>
             </p>
           </div>
         </body>
@@ -1229,7 +1396,7 @@ export class EmailService {
     };
 
     try {
-      await this.transporter.sendMail(mailOptions);
+      await this.dispatchMail(mailOptions);
       this.logger.log(`Promotion email sent successfully to ${email}`);
     } catch (error: any) {
       this.logger.error(`Failed to send promotion email to ${email}:`, error.message);
@@ -1368,7 +1535,7 @@ export class EmailService {
           ${this.getEmailHeaderHtml()}
           <div style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px;">
             <h2 style="color: #1f2937; margin-top: 0;">Verify School Profile Changes</h2>
-            <p>Hello ${name},</p>
+            <p>Hi ${name},</p>
             <p>A request has been made to update the profile information for <strong>${schoolName}</strong>.</p>
             
             <div style="background-color: #eff6ff; border-left: 4px solid #3b82f6; padding: 15px; margin: 20px 0; border-radius: 4px;">
@@ -1399,7 +1566,7 @@ export class EmailService {
             
             <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
             <p style="color: #9ca3af; font-size: 12px; text-align: center; margin: 0;">
-              © ${new Date().getFullYear()} Agora Open Schools. All rights reserved.
+              © ${new Date().getFullYear()} School Bud. All rights reserved.<br><span style="color: #9ca3af;">— Bud, your school bud</span>
             </p>
           </div>
         </body>
@@ -1409,7 +1576,7 @@ export class EmailService {
 
     try {
       this.logger.log(`Attempting to send school profile edit verification email to ${email}`);
-      const result = await this.transporter.sendMail(mailOptions);
+      const result = await this.dispatchMail(mailOptions);
       this.logger.log(
         `School profile edit verification email sent successfully to ${email}. MessageId: ${result.messageId}`
       );
@@ -1441,16 +1608,16 @@ export class EmailService {
     }
 
     // Get display name and reply-to from environment
-    const fromName = this.configService.get<string>('MAIL_FROM_NAME') || 'Agora Open Schools';
+    const fromName = this.configService.get<string>('MAIL_FROM_NAME') || 'Bud';
     const replyTo = this.configService.get<string>('MAIL_REPLY_TO') || fromEmail;
 
     // Generate unique Message-ID
     const messageId = `<${Date.now()}-${Math.random().toString(36).substring(2, 15)}@agora-schools.com>`;
 
     // Plain text version for better deliverability
-    const textVersion = `Hello ${name},
+    const textVersion = `Hi ${name},
 
-You've requested to log in to your Agora account. Use the verification code below to complete your login:
+You've requested to log in to your School Bud account. Use the verification code below to complete your login:
 
 ${otpCode}
 
@@ -1458,13 +1625,15 @@ This code will expire in 10 minutes. Do not share this code with anyone.
 
 If you didn't request this code, please ignore this email or contact support immediately.
 
-© ${new Date().getFullYear()} Agora Open Schools. All rights reserved.`;
+© ${new Date().getFullYear()} School Bud. All rights reserved.
+
+— Bud, your school bud`;
 
     const mailOptions = {
       from: this.getFormattedFrom(),
       replyTo: this.getReplyTo(),
       to: email,
-      subject: 'Your Agora Login Verification Code',
+      subject: 'Your School Bud Login Verification Code',
       headers: {
         ...this.getEmailHeaders(),
         'X-Priority': '1', // High priority for OTP emails
@@ -1481,8 +1650,8 @@ If you didn't request this code, please ignore this email or contact support imm
           ${this.getEmailHeaderHtml()}
           <div style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px;">
             <h2 style="color: #1f2937; margin-top: 0;">Login Verification Code</h2>
-            <p>Hello ${name},</p>
-            <p>You've requested to log in to your Agora account. Use the verification code below to complete your login:</p>
+            <p>Hi ${name},</p>
+            <p>You've requested to log in to your School Bud account. Use the verification code below to complete your login:</p>
             
             <div style="background-color: #eff6ff; border: 2px solid #3b82f6; padding: 20px; margin: 30px 0; border-radius: 8px; text-align: center;">
               <p style="margin: 0; color: #1e40af; font-size: 32px; font-weight: 600; letter-spacing: 4px; font-family: 'Courier New', monospace;">
@@ -1502,7 +1671,7 @@ If you didn't request this code, please ignore this email or contact support imm
             
             <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
             <p style="color: #9ca3af; font-size: 12px; text-align: center; margin: 0;">
-              © ${new Date().getFullYear()} Agora Open Schools. All rights reserved.
+              © ${new Date().getFullYear()} School Bud. All rights reserved.<br><span style="color: #9ca3af;">— Bud, your school bud</span>
             </p>
           </div>
         </body>
@@ -1513,7 +1682,7 @@ If you didn't request this code, please ignore this email or contact support imm
 
     try {
       this.logger.log(`Attempting to send login OTP email to ${email}`);
-      const result = await this.transporter.sendMail(mailOptions);
+      const result = await this.dispatchMail(mailOptions);
       this.logger.log(
         `Login OTP email sent successfully to ${email}. MessageId: ${result.messageId}`,
       );
@@ -1552,7 +1721,7 @@ If you didn't request this code, please ignore this email or contact support imm
         ${this.getEmailHeaderHtml()}
         <div style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px;">
           <h2 style="color: #1f2937; margin-top: 0;">Verify Your Password Change</h2>
-          <p>Hello ${name},</p>
+          <p>Hi ${name},</p>
           <p>You requested to change your password. Use the verification code below to complete the change:</p>
           <div style="background-color: #eff6ff; border: 2px solid #3b82f6; padding: 20px; margin: 30px 0; border-radius: 8px; text-align: center;">
             <p style="margin: 0; color: #1e40af; font-size: 32px; font-weight: 600; letter-spacing: 4px; font-family: 'Courier New', monospace;">${otpCode}</p>
@@ -1562,17 +1731,17 @@ If you didn't request this code, please ignore this email or contact support imm
             <p style="margin: 0; color: #92400e; font-size: 14px;">If you didn't request this change, please secure your account and contact support.</p>
           </div>
           <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
-          <p style="color: #9ca3af; font-size: 12px; text-align: center;">© ${new Date().getFullYear()} Agora Open Schools.</p>
+          <p style="color: #9ca3af; font-size: 12px; text-align: center;">© ${new Date().getFullYear()} School Bud.<br>— Bud, your school bud</p>
         </div>
       </body>
       </html>
     `;
 
-    await this.transporter.sendMail({
+    await this.dispatchMail({
       from: this.getFormattedFrom(),
       replyTo: this.getReplyTo(),
       to: email,
-      subject: 'Verify Password Change - Agora Open Schools',
+      subject: 'Verify Password Change - School Bud',
       headers: { ...this.getEmailHeaders(), 'X-Priority': '1' },
       html,
     });
@@ -1608,7 +1777,7 @@ If you didn't request this code, please ignore this email or contact support imm
         ${this.getEmailHeaderHtml()}
         <div style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px;">
           <h2 style="color: #1f2937; margin-top: 0;">Reset Your Password</h2>
-          <p>Hello ${name},</p>
+          <p>Hi ${name},</p>
           <p>We received a request to reset your password. Use the verification code below to set a new password:</p>
           <div style="background-color: #eff6ff; border: 2px solid #3b82f6; padding: 20px; margin: 30px 0; border-radius: 8px; text-align: center;">
             <p style="margin: 0; color: #1e40af; font-size: 32px; font-weight: 600; letter-spacing: 4px; font-family: 'Courier New', monospace;">${otpCode}</p>
@@ -1616,17 +1785,17 @@ If you didn't request this code, please ignore this email or contact support imm
           <p style="color: #6b7280; font-size: 14px;">This code expires in 10 minutes. Do not share it with anyone.</p>
           <p style="color: #6b7280; font-size: 14px;">If you didn't request a password reset, you can safely ignore this email.</p>
           <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
-          <p style="color: #9ca3af; font-size: 12px; text-align: center;">© ${new Date().getFullYear()} Agora Open Schools.</p>
+          <p style="color: #9ca3af; font-size: 12px; text-align: center;">© ${new Date().getFullYear()} School Bud.<br>— Bud, your school bud</p>
         </div>
       </body>
       </html>
     `;
 
-    await this.transporter.sendMail({
+    await this.dispatchMail({
       from: this.getFormattedFrom(),
       replyTo: this.getReplyTo(),
       to: email,
-      subject: 'Reset Your Password - Agora Open Schools',
+      subject: 'Reset Your Password - School Bud',
       headers: { ...this.getEmailHeaders(), 'X-Priority': '1' },
       html,
     });
@@ -1662,8 +1831,8 @@ If you didn't request this code, please ignore this email or contact support imm
         ${this.getEmailHeaderHtml('Registration Received')}
         <div style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px;">
           <h2 style="color: #1f2937; margin-top: 0;">We've Received Your Registration</h2>
-          <p>Hello ${principalName},</p>
-          <p>Thank you for registering <strong>${schoolName}</strong> on Agora.</p>
+          <p>Hi ${principalName},</p>
+          <p>Thank you for registering <strong>${schoolName}</strong> on School Bud.</p>
           <p>Your application has been received and is currently under review by our team. To ensure the quality of our platform, all new school accounts must be verified before they become fully active.</p>
           <div style="background-color: #eff6ff; border-left: 4px solid #3b82f6; padding: 15px; margin: 20px 0; border-radius: 4px;">
             <p style="margin: 0; color: #1e40af;"><strong>What's next?</strong></p>
@@ -1673,17 +1842,17 @@ If you didn't request this code, please ignore this email or contact support imm
             If you have any questions in the meantime, feel free to reply to this email.
           </p>
           <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
-          <p style="color: #9ca3af; font-size: 12px; text-align: center;">© ${new Date().getFullYear()} Agora Open Schools.</p>
+          <p style="color: #9ca3af; font-size: 12px; text-align: center;">© ${new Date().getFullYear()} School Bud.<br>— Bud, your school bud</p>
         </div>
       </body>
       </html>
     `;
 
-    await this.transporter.sendMail({
+    await this.dispatchMail({
       from: this.getFormattedFrom(),
       replyTo: this.getReplyTo(),
       to: email,
-      subject: 'Your Agora School Registration - Under Review',
+      subject: 'Your School Bud Registration - Under Review',
       headers: this.getEmailHeaders(),
       html,
     });
@@ -1726,8 +1895,8 @@ If you didn't request this code, please ignore this email or contact support imm
         ${this.getEmailHeaderHtml('Registration Update')}
         <div style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px;">
           <h2 style="color: #1f2937; margin-top: 0;">Your School Registration Was Not Approved</h2>
-          <p>Hello ${escapedPrincipal},</p>
-          <p>After review, we are unable to approve the registration for <strong>${escapedSchool}</strong> on Agora at this time.</p>
+          <p>Hi ${escapedPrincipal},</p>
+          <p>After review, we are unable to approve the registration for <strong>${escapedSchool}</strong> on School Bud at this time.</p>
           <div style="background-color: #fee2e2; border-left: 4px solid #ef4444; padding: 15px; margin: 20px 0; border-radius: 4px;">
             <p style="margin: 0; color: #991b1b; font-weight: bold;">Reason provided by our team:</p>
             <p style="margin: 10px 0 0; color: #7f1d1d;">${escapedReason}</p>
@@ -1736,17 +1905,17 @@ If you didn't request this code, please ignore this email or contact support imm
             If you believe this was a mistake or you would like to discuss next steps, please reply to this email or contact support.
           </p>
           <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
-          <p style="color: #9ca3af; font-size: 12px; text-align: center;">© ${new Date().getFullYear()} Agora Open Schools.</p>
+          <p style="color: #9ca3af; font-size: 12px; text-align: center;">© ${new Date().getFullYear()} School Bud.<br>— Bud, your school bud</p>
         </div>
       </body>
       </html>
     `;
 
-    await this.transporter.sendMail({
+    await this.dispatchMail({
       from: this.getFormattedFrom(),
       replyTo: this.getReplyTo(),
       to: email,
-      subject: `Your Agora registration for ${schoolName} was not approved`,
+      subject: `Your School Bud registration for ${schoolName} was not approved`,
       headers: this.getEmailHeaders(),
       html,
     });
@@ -1790,7 +1959,7 @@ If you didn't request this code, please ignore this email or contact support imm
         ${this.getEmailHeaderHtml('New Registration')}
         <div style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px;">
           <h2 style="color: #1f2937; margin-top: 0;">New School Registration</h2>
-          <p>Hello ${adminName},</p>
+          <p>Hi ${adminName},</p>
           <p>A new school has registered on the platform and is pending verification.</p>
           <table style="width: 100%; border-collapse: collapse; margin: 20px 0; border: 1px solid #e5e7eb;">
             <tr style="border-bottom: 1px solid #e5e7eb;">
@@ -1818,13 +1987,13 @@ If you didn't request this code, please ignore this email or contact support imm
           </p>
         </div>
         <div style="background-color: #f9fafb; padding: 20px; text-align: center; border-radius: 0 0 8px 8px; border-top: 2px solid #e5e7eb;">
-          <p style="color: #6b7280; font-size: 12px; margin: 0;">© ${new Date().getFullYear()} Agora Open Schools. All rights reserved.</p>
+          <p style="color: #6b7280; font-size: 12px; margin: 0;">© ${new Date().getFullYear()} School Bud. All rights reserved.<br><span style="color: #9ca3af;">— Bud, your school bud</span></p>
         </div>
       </body>
       </html>
     `;
 
-    await this.transporter.sendMail({
+    await this.dispatchMail({
       from: this.getFormattedFrom(),
       replyTo: this.getReplyTo(),
       to: adminEmail,

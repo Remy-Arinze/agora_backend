@@ -40,6 +40,14 @@ export class GrowthTrendDataDto {
   courses: number;
 }
 
+export class StudentDistributionDataDto {
+  @ApiProperty({ description: 'Class level or category label' })
+  name: string;
+
+  @ApiProperty({ description: 'Number of students in this level' })
+  students: number;
+}
+
 export class WeeklyActivityDataDto {
   @ApiProperty({ description: 'Day name' })
   name: string;
@@ -80,6 +88,9 @@ export class SchoolDashboardDto {
 
   @ApiProperty({ description: 'Growth trends data', type: [GrowthTrendDataDto] })
   growthTrends: GrowthTrendDataDto[];
+
+  @ApiProperty({ description: 'Active students by class level', type: [StudentDistributionDataDto] })
+  studentDistribution: StudentDistributionDataDto[];
 
   @ApiProperty({ description: 'Weekly activity data', type: [WeeklyActivityDataDto] })
   weeklyActivity: WeeklyActivityDataDto[];

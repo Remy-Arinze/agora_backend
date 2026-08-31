@@ -12,6 +12,7 @@ import { CreateClassDto, ClassType } from '../dto/create-class.dto';
 import { AssignTeacherToClassDto } from '../dto/assign-teacher-to-class.dto';
 import { ClassDto } from '../dto/class.dto';
 import { SchoolValidatorService } from '../shared/school-validator.service';
+import { NotificationService } from '../../notification/notification.service';
 
 /**
  * Service for managing classes/courses and teacher assignments
@@ -23,7 +24,8 @@ export class ClassService {
     private readonly schoolRepository: SchoolRepository,
     private readonly staffRepository: StaffRepository,
     private readonly emailService: EmailService,
-    private readonly schoolValidator: SchoolValidatorService
+    private readonly schoolValidator: SchoolValidatorService,
+    private readonly notificationService: NotificationService,
   ) { }
 
   // Access Prisma models using bracket notation for reserved keywords
@@ -88,10 +90,17 @@ export class ClassService {
     }
     await this.schoolValidator.validateSchoolActive(school.id);
 
+    // PRIMARY/SECONDARY must use ClassArms — do not create legacy Class rows
+    if (classData.type === 'PRIMARY' || classData.type === 'SECONDARY') {
+      throw new BadRequestException(
+        'Primary and secondary classes must be created as class arms (level + section). Use POST /timetable/class-arms or Generate Default Classes.',
+      );
+    }
+
     // Validate school type matches class type
     this.validateSchoolTypeForClass(school, classData.type);
 
-    // Create class
+    // Create class (TERTIARY courses)
     const newClass = await this.classModel.create({
       data: {
         name: classData.name,
@@ -852,6 +861,23 @@ export class ClassService {
       );
     }
 
+    try {
+      const userId = (teacher as any).userId;
+      if (userId) {
+        void this.notificationService.notifyUsers([userId], {
+          schoolId,
+          role: 'TEACHER',
+          type: 'CLASS_ASSIGNED',
+          title: 'Class assigned',
+          body: `You have been assigned to ${classData.name}.`,
+          link: '/dashboard/teacher/classes',
+          metadata: { classId, teacherId: teacher.id, subject: assignmentData.subject || null },
+        });
+      }
+    } catch {
+      // Assignment must not be blocked by notification delivery.
+    }
+
     // Return updated class
     return this.getClassById(schoolId, classId);
   }
@@ -927,6 +953,7 @@ export class ClassService {
           include: {
             user: {
               select: {
+                id: true,
                 email: true,
               },
             },
@@ -963,6 +990,23 @@ export class ClassService {
         // Log error but don't fail the request
         console.error('Failed to send teacher class removal email:', error);
       }
+    }
+
+    try {
+      const userId = assignment.teacher?.user?.id;
+      if (userId) {
+        void this.notificationService.notifyUsers([userId], {
+          schoolId,
+          role: 'TEACHER',
+          type: 'CLASS_REMOVED',
+          title: 'Class assignment removed',
+          body: `You have been removed from ${classData.name}.`,
+          link: '/dashboard/teacher/classes',
+          metadata: { classId, teacherId: assignment.teacher.id, subject: assignment.subject || null },
+        });
+      }
+    } catch {
+      // Removal must not be blocked by notification delivery.
     }
   }
 
@@ -1338,14 +1382,42 @@ export class ClassService {
           },
         },
       },
-      orderBy: {
-        student: {
-          lastName: 'asc',
+      orderBy: [
+        { createdAt: 'desc' },
+        {
+          student: {
+            lastName: 'asc',
+          },
         },
-      },
+      ],
     });
 
-    return enrollments.map((enrollment) => ({
+    // Students may have multiple active enrollments for the same arm (per-term rows +
+    // legacy termId=null). Class roster must be unique by student.
+    const byStudent = new Map<string, (typeof enrollments)[number]>();
+    for (const enrollment of enrollments) {
+      const studentId = enrollment.student?.id;
+      if (!studentId) continue;
+      const existing = byStudent.get(studentId);
+      if (!existing) {
+        byStudent.set(studentId, enrollment);
+        continue;
+      }
+      // Prefer an enrollment that is tied to a term over legacy null-term rows
+      if (!existing.termId && enrollment.termId) {
+        byStudent.set(studentId, enrollment);
+        continue;
+      }
+      // Otherwise keep the newest (list is ordered by createdAt desc)
+    }
+
+    const uniqueEnrollments = Array.from(byStudent.values()).sort((a, b) => {
+      const last = (a.student.lastName || '').localeCompare(b.student.lastName || '');
+      if (last !== 0) return last;
+      return (a.student.firstName || '').localeCompare(b.student.firstName || '');
+    });
+
+    return uniqueEnrollments.map((enrollment) => ({
       id: enrollment.student.id,
       uid: enrollment.student.uid,
       publicId: enrollment.student.publicId,

@@ -20,6 +20,7 @@ import { CloudinaryService } from '../../../storage/cloudinary/cloudinary.servic
 import { PermissionResource, PermissionType, isPrincipalRole } from '../../dto/permission.dto';
 import { UserWithContext } from '../../../auth/types/user-with-context.type';
 import { generateSecurePasswordHash } from '../../../common/utils/password.utils';
+import { NotificationService } from '../../../notification/notification.service';
 
 /**
  * Service for managing school administrators
@@ -38,7 +39,8 @@ export class AdminService {
     private readonly idGenerator: IdGeneratorService,
     private readonly staffValidator: StaffValidatorService,
     private readonly cloudinaryService: CloudinaryService,
-    private readonly subscriptionsService: SubscriptionsService
+    private readonly subscriptionsService: SubscriptionsService,
+    private readonly notificationService: NotificationService,
   ) { }
 
   /**
@@ -230,6 +232,18 @@ export class AdminService {
       }
     } else {
       this.logger.log(`[addAdmin] Skipping permission assignment for Principal role`);
+    }
+
+    try {
+      void this.notificationService.notifySchoolAdmins(school.id, {
+        type: 'STAFF_INVITED',
+        title: 'Administrator invited',
+        body: `${adminData.firstName} ${adminData.lastName} was added as an administrator.`,
+        link: '/dashboard/school/staff',
+        metadata: { adminId: result.admin.id, userId: result.user.id },
+      });
+    } catch {
+      // Staff creation must not depend on notification delivery.
     }
 
     const adminDto = this.staffMapper.toAdminDto(result.admin);

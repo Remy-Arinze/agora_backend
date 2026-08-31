@@ -17,6 +17,7 @@ import {
   WeeklyActivityDataDto,
   RecentStudentDto,
 } from '../dto/dashboard.dto';
+import { SchoolSetupProgressDto } from '../dto/setup-progress.dto';
 import {
   StaffListResponseDto,
   StaffListItemDto,
@@ -30,6 +31,7 @@ import { EmailService } from '../../email/email.service';
 import { randomBytes } from 'crypto';
 import { isPrincipalRole } from '../dto/permission.dto';
 import { LiveStatusService } from '../../live-status/live-status.service';
+import { SessionStatus, TermStatus, SchemeOfWorkStatus } from '@prisma/client';
 
 /** Max staff records fetched per type (admins + teachers) to avoid unbounded memory; full server-side pagination would require a union query. */
 const STAFF_FETCH_CAP = 500;
@@ -362,11 +364,251 @@ export class SchoolAdminSchoolsService {
       createdAt: enrollment.createdAt.toISOString().split('T')[0],
     }));
 
+    // Active student counts by class level (for distribution chart)
+    const distributionRows = await this.prisma.enrollment.groupBy({
+      by: ['classLevel'],
+      where: enrollmentWhereActive,
+      _count: { id: true },
+      orderBy: { classLevel: 'asc' },
+    });
+
+    const studentDistribution = distributionRows.map((row) => ({
+      name: row.classLevel?.trim() || 'Unassigned',
+      students: row._count.id,
+    }));
+
     return {
       stats,
       growthTrends,
+      studentDistribution,
       weeklyActivity,
       recentStudents,
+    };
+  }
+
+  /**
+   * Lightweight checklist flags for school-admin onboarding guidance.
+   * Sequential counts to avoid exhausting small Postgres pools.
+   */
+  async getSetupProgress(
+    user: UserWithContext,
+    schoolType?: string
+  ): Promise<SchoolSetupProgressDto> {
+    const schoolId = user.currentSchoolId;
+    if (!schoolId) {
+      throw new BadRequestException('You are not associated with any school');
+    }
+
+    const session = await this.prisma.academicSession.findFirst({
+      where: {
+        schoolId,
+        status: SessionStatus.ACTIVE,
+        schoolType: schoolType || null,
+      },
+      include: {
+        terms: {
+          where: { status: TermStatus.ACTIVE },
+          take: 1,
+        },
+      },
+    });
+
+    const hasActiveSession = !!session && session.terms.length > 0;
+    const activeTerm = session?.terms[0] as
+      | {
+          id: string;
+          midtermStart?: Date | null;
+          midtermEnd?: Date | null;
+          examStart?: Date | null;
+          examEnd?: Date | null;
+        }
+      | undefined;
+    const termId = activeTerm?.id;
+
+    const hasMidtermDates = !!(activeTerm?.midtermStart && activeTerm?.midtermEnd);
+    const hasExamDates = !!(activeTerm?.examStart && activeTerm?.examEnd);
+
+    const holidayCount = await (this.prisma as any).event.count({
+      where: {
+        schoolId,
+        type: 'HOLIDAY',
+        ...(schoolType
+          ? {
+              OR: [{ schoolType }, { schoolType: null }],
+            }
+          : {}),
+      },
+    });
+    const hasHolidays = holidayCount > 0;
+
+    const subjectCount = await this.prisma.subject.count({
+      where: {
+        schoolId,
+        isActive: true,
+        ...(schoolType
+          ? { OR: [{ schoolType }, { schoolType: null }] }
+          : {}),
+      },
+    });
+
+    // PRIMARY/SECONDARY list ClassArms as "classes"; TERTIARY uses Class rows.
+    let classCount = 0;
+    let suggestedClassId: string | null = null;
+
+    if (schoolType === 'TERTIARY') {
+      classCount = await this.prisma.class.count({
+        where: { schoolId, isActive: true, type: 'TERTIARY' },
+      });
+      if (classCount > 0) {
+        const first = await this.prisma.class.findFirst({
+          where: { schoolId, isActive: true, type: 'TERTIARY' },
+          select: { id: true },
+          orderBy: { name: 'asc' },
+        });
+        suggestedClassId = first?.id ?? null;
+      }
+    } else if (schoolType === 'PRIMARY' || schoolType === 'SECONDARY') {
+      const armWhere = {
+        isActive: true,
+        classLevel: {
+          schoolId,
+          type: schoolType,
+          isActive: true,
+        },
+      };
+      classCount = await this.prisma.classArm.count({ where: armWhere });
+      if (classCount > 0) {
+        const firstArm = await this.prisma.classArm.findFirst({
+          where: armWhere,
+          select: { id: true },
+          orderBy: [{ classLevel: { level: 'asc' } }, { name: 'asc' }],
+        });
+        suggestedClassId = firstArm?.id ?? null;
+      }
+    } else {
+      // No school-type filter: prefer ClassArms when present (PRIMARY/SECONDARY), else Class rows
+      const armCount = await this.prisma.classArm.count({
+        where: {
+          isActive: true,
+          classLevel: { schoolId, isActive: true },
+        },
+      });
+      if (armCount > 0) {
+        classCount = armCount;
+        const firstArm = await this.prisma.classArm.findFirst({
+          where: {
+            isActive: true,
+            classLevel: { schoolId, isActive: true },
+          },
+          select: { id: true },
+          orderBy: [{ classLevel: { level: 'asc' } }, { name: 'asc' }],
+        });
+        suggestedClassId = firstArm?.id ?? null;
+      } else {
+        classCount = await this.prisma.class.count({
+          where: { schoolId, isActive: true },
+        });
+        const firstClass = await this.prisma.class.findFirst({
+          where: { schoolId, isActive: true },
+          select: { id: true },
+          orderBy: { name: 'asc' },
+        });
+        suggestedClassId = firstClass?.id ?? null;
+      }
+    }
+
+    const teacherCount = await this.prisma.teacher.count({
+      where: { schoolId },
+    });
+
+    let timetableCount = 0;
+    if (termId) {
+      timetableCount = await this.prisma.timetablePeriod.count({
+        where: {
+          termId,
+          type: 'LESSON',
+          ...(schoolType
+            ? {
+                OR: [
+                  { class: { type: schoolType as any } },
+                  { classArm: { classLevel: { type: schoolType as any } } },
+                  { course: { type: schoolType as any } },
+                ],
+              }
+            : {}),
+        },
+      });
+    }
+
+    const schemeCount = await (this.prisma as any).schemeOfWork.count({
+      where: {
+        schoolId,
+        status: SchemeOfWorkStatus.PUBLISHED,
+        ...(termId ? { termId } : {}),
+      },
+    });
+
+    let enrollmentWhere: any = { schoolId, isActive: true };
+    if (schoolType) {
+      const classes = await this.prisma.class.findMany({
+        where: { schoolId, type: schoolType as any, isActive: true },
+        select: { id: true, name: true },
+      });
+      const classIds = classes.map((c) => c.id);
+      const classLevels = classes.map((c) => c.name);
+      if (classIds.length > 0 || classLevels.length > 0) {
+        enrollmentWhere = {
+          ...enrollmentWhere,
+          OR: [
+            ...(classIds.length > 0 ? [{ classId: { in: classIds } }] : []),
+            ...(classLevels.length > 0 ? [{ classLevel: { in: classLevels } }] : []),
+          ],
+        };
+      }
+    }
+
+    const studentCount = await this.prisma.enrollment.count({
+      where: enrollmentWhere,
+    });
+
+    const flags = {
+      hasActiveSession,
+      hasSubjects: subjectCount > 0,
+      hasClasses: classCount > 0,
+      hasStaff: teacherCount > 0,
+      hasTimetable: timetableCount > 0,
+      hasCurriculum: schemeCount > 0,
+      hasStudents: studentCount > 0,
+      hasMidtermDates,
+      hasExamDates,
+      hasHolidays,
+    };
+
+    const isFoundationComplete =
+      flags.hasSubjects && flags.hasClasses && flags.hasStaff && flags.hasStudents;
+
+    // One-time foundation steps drop out of the checklist once done so later terms
+    // only surface term-scoped work (session, timetable, curriculum, dates, holidays).
+    const visibleFlags = isFoundationComplete
+      ? {
+          hasActiveSession: flags.hasActiveSession,
+          hasTimetable: flags.hasTimetable,
+          hasCurriculum: flags.hasCurriculum,
+          hasMidtermDates: flags.hasMidtermDates,
+          hasExamDates: flags.hasExamDates,
+          hasHolidays: flags.hasHolidays,
+        }
+      : flags;
+
+    const completedCount = Object.values(visibleFlags).filter(Boolean).length;
+    const totalCount = Object.keys(visibleFlags).length;
+
+    return {
+      ...flags,
+      isFoundationComplete,
+      completedCount,
+      totalCount,
+      suggestedClassId,
     };
   }
 

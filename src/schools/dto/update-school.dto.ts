@@ -1,5 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsEmail, IsOptional, IsBoolean } from 'class-validator';
+import { IsString, IsEmail, IsOptional, IsBoolean, IsArray, IsEnum } from 'class-validator';
+import { DayOfWeek } from '@prisma/client';
 
 export class UpdateSchoolDto {
   @ApiPropertyOptional({ description: 'School name' })
@@ -59,4 +60,10 @@ export class UpdateSchoolDto {
     secondary?: boolean;
     tertiary?: boolean;
   };
+
+  @ApiPropertyOptional({ enum: DayOfWeek, isArray: true })
+  @IsOptional()
+  @IsArray()
+  @IsEnum(DayOfWeek, { each: true })
+  workingDays?: DayOfWeek[];
 }

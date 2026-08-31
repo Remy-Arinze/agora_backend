@@ -104,12 +104,25 @@ export class NotificationController {
                 this.teacherConnections.set(profileId, new Set());
             }
             this.teacherConnections.get(profileId)!.add(res);
-            this.logger.log(`SSE teacher notification stream opened: ${profileId}`);
+            // Always also register by userId so inbox.created reaches school admins
+            if (profileId !== user.id) {
+                if (!this.teacherConnections.has(user.id)) {
+                    this.teacherConnections.set(user.id, new Set());
+                }
+                this.teacherConnections.get(user.id)!.add(res);
+            }
+            this.logger.log(`SSE teacher/admin notification stream opened: ${profileId} (user ${user.id})`);
 
             req.on('close', () => {
                 this.teacherConnections.get(profileId)?.delete(res);
                 if (this.teacherConnections.get(profileId)?.size === 0) {
                     this.teacherConnections.delete(profileId);
+                }
+                if (profileId !== user.id) {
+                    this.teacherConnections.get(user.id)?.delete(res);
+                    if (this.teacherConnections.get(user.id)?.size === 0) {
+                        this.teacherConnections.delete(user.id);
+                    }
                 }
             });
         } else if (user.role === 'STUDENT') {
@@ -342,5 +355,61 @@ export class NotificationController {
                 });
             }
         });
+    }
+
+    /**
+     * Live badge refresh — push inbox.created to the matching user's SSE connections.
+     * School admins and teachers share teacherConnections keyed by teacher profile or userId.
+     */
+    @OnEvent('inbox.created')
+    async handleInboxCreated(payload: { notification: { userId: string; schoolId: string | null; type: string; title: string; body: string; link: string | null; id: string; createdAt: string } }) {
+        const n = payload.notification;
+        const eventData = JSON.stringify({
+            type: 'INBOX_CREATED',
+            notificationId: n.id,
+            title: n.title,
+            body: n.body,
+            link: n.link,
+            notificationType: n.type,
+            timestamp: n.createdAt,
+        });
+
+        const writeTo = (map: Map<string, Set<Response>>, key: string) => {
+            const connections = map.get(key);
+            if (!connections?.size) return;
+            connections.forEach((res) => {
+                try { res.write(`event: notification\ndata: ${eventData}\n\n`); }
+                catch { /* ignore */ }
+            });
+        };
+
+        // Direct key by userId (admins often use user.id as profileId fallback)
+        writeTo(this.teacherConnections, n.userId);
+        writeTo(this.studentConnections, n.userId);
+
+        try {
+            const [teacher, student, admin] = await Promise.all([
+                this.prisma.teacher.findFirst({
+                    where: { userId: n.userId, ...(n.schoolId ? { schoolId: n.schoolId } : {}) },
+                    select: { id: true },
+                }),
+                this.prisma.student.findUnique({
+                    where: { userId: n.userId },
+                    select: { id: true },
+                }),
+                n.schoolId
+                    ? this.prisma.schoolAdmin.findFirst({
+                        where: { userId: n.userId, schoolId: n.schoolId },
+                        select: { id: true },
+                      })
+                    : null,
+            ]);
+            if (teacher?.id) writeTo(this.teacherConnections, teacher.id);
+            if (student?.id) writeTo(this.studentConnections, student.id);
+            // Admin without teacher profile already covered via userId key above
+            void admin;
+        } catch {
+            // ignore lookup failures
+        }
     }
 }

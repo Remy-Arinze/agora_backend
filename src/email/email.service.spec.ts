@@ -27,6 +27,7 @@ describe('EmailService', () => {
           useValue: {
             get: jest.fn((key: string) => {
               const config: Record<string, any> = {
+                EMAIL_DRIVER: 'gmail',
                 MAIL_HOST: 'smtp.example.com',
                 MAIL_PORT: '587',
                 MAIL_USER: 'test@example.com',

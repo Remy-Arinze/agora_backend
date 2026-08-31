@@ -7,13 +7,17 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { safeResolvePath } from '../../common/utils/path-traversal';
+import { NotificationService } from '../../notification/notification.service';
+import { NotificationInboxService } from '../../notification/notification-inbox.service';
 
 @Injectable()
 export class ClassResourceService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly schoolRepository: SchoolRepository,
-    private readonly cloudinaryService: CloudinaryService
+    private readonly cloudinaryService: CloudinaryService,
+    private readonly notificationService: NotificationService,
+    private readonly notificationInbox: NotificationInboxService,
   ) { }
 
   private get classModel() {
@@ -112,6 +116,25 @@ export class ClassResourceService {
         class: true,
       },
     });
+
+    try {
+      const studentUserIds = await this.notificationInbox.getStudentUserIdsInClass({
+        schoolId: school.id,
+        classId: targetClassId || undefined,
+        classArmId: targetClassArmId || undefined,
+      });
+      void this.notificationService.notifyUsers(studentUserIds, {
+        schoolId: school.id,
+        role: 'STUDENT',
+        type: 'RESOURCE_UPLOADED',
+        title: 'New class resource',
+        body: `${file.originalname} was added to your class resources.`,
+        link: '/dashboard/student/resources',
+        metadata: { resourceId: resource.id, classId: targetClassId, classArmId: targetClassArmId },
+      });
+    } catch {
+      // Uploads must succeed even when notification delivery fails.
+    }
 
     return this.mapToDto(resource);
   }

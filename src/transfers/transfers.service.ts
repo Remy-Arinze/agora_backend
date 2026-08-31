@@ -16,6 +16,8 @@ import {
 } from './dto/transfer.dto';
 import { TransferStatus, TermStatus, SessionStatus } from '@prisma/client';
 import { randomBytes } from 'crypto';
+import { NotificationService } from '../notification/notification.service';
+import { SchoolSettingsService } from '../school-settings/school-settings.service';
 
 @Injectable()
 export class TransfersService {
@@ -23,7 +25,9 @@ export class TransfersService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly emailService: EmailService
+    private readonly emailService: EmailService,
+    private readonly notificationService: NotificationService,
+    private readonly schoolSettingsService: SchoolSettingsService,
   ) {}
 
   /**
@@ -61,6 +65,7 @@ export class TransfersService {
       include: {
         user: {
           select: {
+            id: true,
             email: true,
           },
         },
@@ -131,10 +136,12 @@ export class TransfersService {
 
     // Generate unique TAC
     const tac = await this.generateUniqueTac();
+    const admissionPolicy = await this.schoolSettingsService.getAdmissionPolicy(schoolId);
+    const expiryDays = admissionPolicy.tacExpiryDays ?? 30;
 
     // Create transfer record
     const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 30); // 30 days expiration
+    expiresAt.setDate(expiresAt.getDate() + expiryDays);
 
     const transfer = await this.prisma.transfer.create({
       data: {
@@ -173,6 +180,23 @@ export class TransfersService {
       console.warn(
         `Student ${student.id} does not have an email address. Cannot send transfer notification.`
       );
+    }
+
+    try {
+      const studentUserId = student.user?.id;
+      if (studentUserId) {
+        void this.notificationService.notifyUsers([studentUserId], {
+          schoolId,
+          role: 'STUDENT',
+          type: 'TRANSFER_INITIATED',
+          title: 'Transfer initiated',
+          body: 'Your transfer access code has been generated.',
+          link: '/dashboard/student/applications',
+          metadata: { transferId: transfer.id, expiresAt: expiresAt.toISOString() },
+        });
+      }
+    } catch {
+      // Transfer initiation must not depend on notification delivery.
     }
 
     return {

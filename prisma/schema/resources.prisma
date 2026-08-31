@@ -25,16 +25,19 @@ model Fee {
   dueDate      DateTime
   paidDate     DateTime?
   status       String    @default("PENDING")
+  feeScheduleId String?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
-  enrollment Enrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
-  school     School     @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  enrollment Enrollment  @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  school     School      @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  feeSchedule FeeSchedule? @relation(fields: [feeScheduleId], references: [id], onDelete: SetNull)
 
   @@index([enrollmentId])
   @@index([schoolId])
   @@index([status])
   @@index([dueDate])
+  @@index([feeScheduleId])
 }
 
 model ClassResource {

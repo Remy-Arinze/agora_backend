@@ -10,6 +10,7 @@ import {
   VerificationResult,
 } from './ai.types';
 import { AiLlmClientService } from './ai-llm-client.service';
+import { NotificationService } from '../notification/notification.service';
 
 /**
  * Curriculum parsing, consolidation, scheme-of-work generation, and school doc parsing.
@@ -22,6 +23,7 @@ export class AiCurriculumPipelineService {
     private readonly llm: AiLlmClientService,
     private readonly prisma: PrismaService,
     private readonly metricsService: MetricsService,
+    private readonly notificationService: NotificationService,
   ) {}
 
   async verifyCurriculumDocument(
@@ -122,7 +124,7 @@ export class AiCurriculumPipelineService {
         rawText = `[Simulated text extraction from ${source.fileType} at ${source.fileUrl}]`;
       }
 
-      let cleanedText = rawText.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '').replace(/\s+/g, ' ').trim();
+      const cleanedText = rawText.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '').replace(/\s+/g, ' ').trim();
 
       const MAX_CHUNK_LENGTH = 100000;
       const textChunks = [];
@@ -611,6 +613,8 @@ ${overview.progressionNotes || ''}
             generatedAt: new Date(),
           },
         });
+
+        void this.notifyCurriculumReady(schemeId, scheme?.schoolId, true);
       }
 
       const durationSec = (Date.now() - startTime) / 1000;
@@ -630,8 +634,42 @@ ${overview.progressionNotes || ''}
           where: { id: schemeId },
           data: { status: SchemeOfWorkStatus.FAILED },
         });
+        void this.notifyCurriculumReady(schemeId, undefined, false);
       }
       throw error;
+    }
+  }
+
+  private async notifyCurriculumReady(schemeId: string, schoolId?: string, success = true) {
+    try {
+      let sid = schoolId;
+      let classLevelId: string | undefined;
+      if (!sid) {
+        const scheme = await (this.prisma as any).schemeOfWork.findUnique({
+          where: { id: schemeId },
+          select: { schoolId: true, classLevelId: true },
+        });
+        sid = scheme?.schoolId;
+        classLevelId = scheme?.classLevelId;
+      } else {
+        const scheme = await (this.prisma as any).schemeOfWork.findUnique({
+          where: { id: schemeId },
+          select: { classLevelId: true },
+        });
+        classLevelId = scheme?.classLevelId;
+      }
+      if (!sid) return;
+      await this.notificationService.notifySchoolAdmins(sid, {
+        type: success ? 'CURRICULUM_READY' : 'CURRICULUM_FAILED',
+        title: success ? 'Curriculum ready' : 'Curriculum generation failed',
+        body: success
+          ? 'A scheme of work is ready for review'
+          : 'Scheme of work generation failed — please try again',
+        link: '/dashboard/school/courses',
+        metadata: { schemeId, classLevelId },
+      });
+    } catch (err: any) {
+      this.logger.warn(`Curriculum notify failed: ${err?.message || err}`);
     }
   }
 

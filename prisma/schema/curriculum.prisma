@@ -58,6 +58,7 @@ model Subject {
   grades              Grade[] // Grades for this subject
   assessmentTemplates AssessmentTemplate[] // Assessment templates for this subject
   assessments         Assessment[]
+  examTimetableSlots  ExamTimetableSlot[]
 
   @@unique([schoolId, code, schoolType])
   @@index([schoolId])
@@ -321,6 +322,12 @@ enum SchemeGenerationMode {
   MERGED
 }
 
+enum SchemeDeliveryCatchUpReason {
+  MISSED
+  CATCH_UP
+  COMBINED
+}
+
 model AgoraCurriculumSource {
   id         String @id @default(cuid())
   subjectId  String
@@ -531,6 +538,17 @@ model SchemeOfWorkWeek {
   deliveredAt DateTime?
   deliveredBy String? // Teacher ID who marked as delivered
 
+  /// Attestation note shown in audit (why / what was covered)
+  deliveryNote String?
+  /// Required when marking a past week delivered
+  catchUpReason SchemeDeliveryCatchUpReason?
+  /// Optional lesson note file (Cloudinary / storage)
+  lessonNoteUrl      String?
+  lessonNotePublicId String?
+  lessonNoteFileName String?
+  /// 0–100 confidence from proof attached (attestation, note, file)
+  deliveryConfidence Int @default(0)
+
   order     Int      @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -541,4 +559,34 @@ model SchemeOfWorkWeek {
   @@index([schemeOfWorkId])
   @@index([weekNumber])
   @@index([isDelivered])
+}
+
+/// Per-subject, calendar-dated exam slots (replaces weekly lesson grid during exam period).
+model ExamTimetableSlot {
+  id         String   @id @default(cuid())
+  termId     String
+  examDate   DateTime
+  startTime  String // HH:mm
+  endTime    String // HH:mm
+  subjectId  String
+  classId    String?
+  classArmId String?
+  teacherId  String?
+  roomId     String?
+  notes      String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  term     Term      @relation(fields: [termId], references: [id], onDelete: Cascade)
+  subject  Subject   @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  class    Class?    @relation(fields: [classId], references: [id], onDelete: Cascade)
+  classArm ClassArm? @relation(fields: [classArmId], references: [id], onDelete: Cascade)
+  teacher  Teacher?  @relation(fields: [teacherId], references: [id], onDelete: SetNull)
+  room     Room?     @relation(fields: [roomId], references: [id], onDelete: SetNull)
+
+  @@index([termId])
+  @@index([examDate])
+  @@index([subjectId])
+  @@index([classArmId])
+  @@index([classId])
 }

@@ -1,0 +1,336 @@
+// School settings policy models — one-to-one or scoped per school
+
+enum ClassLevelNamingMode {
+  STANDARD
+  CUSTOM
+}
+
+enum SubjectRegistryMode {
+  AGORA_DEFAULT
+  AGORA_PLUS_CUSTOM
+  CUSTOM_ONLY
+}
+
+enum TeacherScopeMode {
+  ASSIGNED_ONLY
+  ALL_SCHOOL
+}
+
+enum GradeScaleType {
+  PERCENTAGE
+  A1_F9
+  CUSTOM
+}
+
+enum TemplatesMode {
+  SCHOOL_TEMPLATES
+  TEACHER_DISCRETION
+}
+
+enum ReportCardReleaseMode {
+  MANUAL
+  AUTO_AFTER_LOCK
+  AUTO_ON_TERM_END
+}
+
+enum TransferPolicyMode {
+  MANUAL_REVIEW
+  AUTO_ACCEPT
+  DISABLED
+}
+
+enum CurriculumSourceMode {
+  AGORA_NATIONAL
+  SCHOOL_UPLOAD
+  MERGED
+}
+
+model SchoolStructureConfig {
+  id                     String               @id @default(cuid())
+  schoolId               String               @unique
+  terminologyOverrides   Json?
+  defaultClassArmNames   String[]             @default(["A", "B", "C"])
+  classLevelNamingMode   ClassLevelNamingMode @default(STANDARD)
+  subjectRegistryMode    SubjectRegistryMode  @default(AGORA_PLUS_CUSTOM)
+  defaultAgoraSubjectIds String[]             @default([])
+  facultyStructureVisible Boolean             @default(true)
+  teacherScope           TeacherScopeMode     @default(ASSIGNED_ONLY)
+  customRoles            String[]             @default([])
+  admissionApproverRoles String[]             @default([])
+  transferApproverRoles  String[]             @default([])
+  createdAt              DateTime             @default(now())
+  updatedAt              DateTime             @updatedAt
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+}
+
+model SchoolHolidayPreset {
+  id             String   @id @default(cuid())
+  schoolId       String
+  name           String
+  startDate      DateTime
+  endDate        DateTime
+  recurringRule  String?
+  schoolType     String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId])
+}
+
+model GradingPolicy {
+  id                                  String                @id @default(cuid())
+  schoolId                            String                @unique
+  gradeScaleType                      GradeScaleType        @default(PERCENTAGE)
+  gradeScaleBands                     Json?
+  passMark                            Decimal               @default(40)
+  defaultCaWeight                     Decimal               @default(40)
+  defaultExamWeight                   Decimal               @default(60)
+  defaultLateDuePenalty               Decimal               @default(0)
+  defaultLateTimerPenalty             Decimal               @default(0)
+  defaultIntegrityEnabled             Boolean               @default(false)
+  defaultViolationThreshold           Int                   @default(1)
+  defaultPointsPerViolation           Decimal               @default(0)
+  defaultAllowLateSubmissionAfterDue  Boolean               @default(false)
+  defaultAllowLateSubmissionAfterTimer Boolean              @default(false)
+  templatesMode                       TemplatesMode         @default(TEACHER_DISCRETION)
+  gradeLockDaysAfterTermEnd           Int                   @default(7)
+  reportCardReleaseMode               ReportCardReleaseMode @default(MANUAL)
+  gradeApprovalRequired               Boolean               @default(false)
+  gradeApproverRoles                  String[]              @default([])
+  minAttendancePercentForExam         Decimal               @default(75)
+  createdAt                           DateTime              @default(now())
+  updatedAt                           DateTime              @updatedAt
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+}
+
+model RoleTemplate {
+  id            String   @id @default(cuid())
+  schoolId      String
+  name          String
+  description   String?
+  permissionIds String[]
+  isSystem      Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@unique([schoolId, name])
+  @@index([schoolId])
+}
+
+model AdmissionPolicy {
+  id                   String             @id @default(cuid())
+  schoolId             String             @unique
+  applicationsOpen     Boolean            @default(true)
+  applicationDeadline  DateTime?
+  tacExpiryDays        Int                @default(30)
+  transferPolicy       TransferPolicyMode @default(MANUAL_REVIEW)
+  formFields           Json?
+  documentRequirements Json?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+}
+
+model AdmissionDocument {
+  id            String   @id @default(cuid())
+  applicationId String
+  schoolId      String
+  key           String
+  fileName      String
+  fileUrl       String
+  createdAt     DateTime @default(now())
+
+  application AdmissionApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  school      School               @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId])
+  @@index([schoolId])
+}
+
+model BellScheduleTemplate {
+  id         String   @id @default(cuid())
+  schoolId   String
+  schoolType String
+  periods    Json
+  isDefault  Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId, schoolType])
+}
+
+model TimetablePolicy {
+  id                         String   @id @default(cuid())
+  schoolId                   String   @unique
+  defaultPeriodLengthMinutes Int      @default(40)
+  maxPeriodsPerTeacherPerDay Int      @default(6)
+  roomCapacityWarningEnabled Boolean  @default(true)
+  examBlackoutEnabled        Boolean  @default(true)
+  substituteNotifyRoles      String[] @default([])
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+}
+
+model AttendancePolicy {
+  id                    String   @id @default(cuid())
+  schoolId              String   @unique
+  markingWindowHours    Int      @default(24)
+  statusOptions         String[] @default(["PRESENT", "ABSENT", "LATE", "EXCUSED", "SICK"])
+  minAttendancePercent  Decimal  @default(75)
+  absenceNotifyChannels String[] @default(["EMAIL", "IN_APP"])
+  editRoles             String[] @default(["TEACHER", "ADMIN"])
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+}
+
+model NotificationPolicy {
+  id                 String   @id @default(cuid())
+  schoolId           String   @unique
+  emailSenderName    String?
+  enabledChannels    String[] @default(["EMAIL", "IN_APP", "PUSH"])
+  eventTriggers      Json?
+  quietHoursStart    String?
+  quietHoursEnd      String?
+  quietHoursTimezone String   @default("Africa/Lagos")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+}
+
+model FeeCategory {
+  id          String   @id @default(cuid())
+  schoolId    String
+  name        String
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  school    School        @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  schedules FeeSchedule[]
+
+  @@unique([schoolId, name])
+  @@index([schoolId])
+}
+
+model FeeSchedule {
+  id                 String    @id @default(cuid())
+  schoolId           String
+  categoryId         String
+  classLevelId       String?
+  termId             String?
+  amount             Decimal
+  dueDate            DateTime
+  lateGraceDays      Int       @default(0)
+  latePenaltyPercent Decimal   @default(0)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  school     School      @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  category   FeeCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  classLevel ClassLevel? @relation(fields: [classLevelId], references: [id], onDelete: SetNull)
+  term       Term?       @relation(fields: [termId], references: [id], onDelete: SetNull)
+  fees       Fee[]
+
+  @@index([schoolId])
+  @@index([categoryId])
+}
+
+model FinancePolicy {
+  id                   String   @id @default(cuid())
+  schoolId             String   @unique
+  paymentMethods       String[] @default(["BANK_TRANSFER", "PAYSTACK", "CASH"])
+  feeVisibleToStudents Boolean  @default(false)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+}
+
+model CurriculumPolicy {
+  id                         String               @id @default(cuid())
+  schoolId                   String               @unique
+  curriculumSource           CurriculumSourceMode @default(MERGED)
+  schemeApprovalRequired     Boolean              @default(false)
+  schemeApproverRoles        String[]             @default([])
+  aiCreditLimitPerTeacher    Int?
+  aiCreditLimitPerDepartment Int?
+  departmentCreditOverrides  Json?
+  createdAt                  DateTime             @default(now())
+  updatedAt                  DateTime             @updatedAt
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+}
+
+model SecurityPolicy {
+  id                                    String   @id @default(cuid())
+  schoolId                              String   @unique
+  sessionTimeoutMinutes                 Int      @default(480)
+  passwordMinLength                     Int      @default(8)
+  passwordRequireSpecialChar            Boolean  @default(true)
+  passwordResetDays                     Int      @default(90)
+  auditLogRetentionDays                 Int      @default(365)
+  alumniDataRetentionYears              Int      @default(7)
+  studentPhotoConsentRequired           Boolean  @default(false)
+  sensitiveChangesRequireEmailVerification Boolean @default(true)
+  createdAt                             DateTime @default(now())
+  updatedAt                             DateTime @updatedAt
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+}
+
+model StudentRecordAudit {
+  id        String   @id @default(cuid())
+  schoolId  String
+  userId    String?
+  studentId String?
+  action    String
+  resource  String?
+  ipAddress String?
+  createdAt DateTime @default(now())
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId])
+  @@index([userId])
+  @@index([studentId])
+  @@index([createdAt])
+}
+
+model SchoolCloudBackup {
+  id          String   @id @default(cuid())
+  schoolId    String
+  provider    String   // 'GOOGLE_DRIVE' | 'DROPBOX' | 'MEGA'
+  isConnected Boolean  @default(false)
+  // OAuth providers (Google Drive, Dropbox)
+  accessToken  String?  // AES-256-GCM encrypted
+  refreshToken String?  // AES-256-GCM encrypted
+  tokenExpiry  DateTime?
+  // MEGA credentials
+  megaEmail    String?  // AES-256-GCM encrypted
+  megaPassword String?  // AES-256-GCM encrypted
+  // Audit
+  lastBackupAt     DateTime?
+  lastBackupStatus String?   // 'SUCCESS' | 'FAILED'
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@unique([schoolId, provider])
+  @@index([schoolId])
+}

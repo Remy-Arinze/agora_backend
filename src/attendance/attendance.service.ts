@@ -2,13 +2,44 @@ import { Injectable, NotFoundException, BadRequestException, ForbiddenException 
 import { PrismaService } from '../database/prisma.service';
 import { CreateAttendanceDto, BulkAttendanceDto, AttendanceStatus } from './dto/create-attendance.dto';
 import { UserWithContext } from '../auth/types/user-with-context.type';
+import { SchoolSettingsService } from '../school-settings/school-settings.service';
 
 @Injectable()
 export class AttendanceService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly schoolSettingsService: SchoolSettingsService,
+  ) {}
+
+  private async validateAttendancePolicy(schoolId: string, date: string, status: string) {
+    const policy = await this.schoolSettingsService.getAttendancePolicy(schoolId);
+    const allowed = policy.statusOptions ?? ['PRESENT', 'ABSENT', 'LATE'];
+    if (!allowed.includes(status)) {
+      throw new BadRequestException(`Status "${status}" is not allowed by school policy.`);
+    }
+    const windowHours = policy.markingWindowHours ?? 24;
+    if (windowHours === 0) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const markDate = new Date(date);
+      markDate.setHours(0, 0, 0, 0);
+      if (markDate.getTime() !== today.getTime()) {
+        throw new BadRequestException('Attendance can only be marked for today.');
+      }
+    } else {
+      const markDate = new Date(date);
+      const hoursDiff = (Date.now() - markDate.getTime()) / (1000 * 60 * 60);
+      if (hoursDiff > windowHours) {
+        throw new BadRequestException(`Attendance marking window (${windowHours}h) has expired.`);
+      }
+    }
+  }
 
   async markAttendance(user: UserWithContext, dto: CreateAttendanceDto) {
     const teacher = await this.getTeacherProfile(user);
+    const enrollment = await this.prisma.enrollment.findUnique({ where: { id: dto.enrollmentId } });
+    if (!enrollment) throw new NotFoundException('Enrollment not found');
+    await this.validateAttendancePolicy(enrollment.schoolId, dto.date, dto.status);
 
     return this.prisma.attendance.upsert({
       where: {
@@ -35,6 +66,15 @@ export class AttendanceService {
   async markBulkAttendance(user: UserWithContext, dto: BulkAttendanceDto) {
     const teacher = await this.getTeacherProfile(user);
     const date = new Date(dto.date);
+
+    const firstEnrollment = await this.prisma.enrollment.findUnique({
+      where: { id: dto.students[0]?.enrollmentId },
+    });
+    if (firstEnrollment) {
+      for (const s of dto.students) {
+        await this.validateAttendancePolicy(firstEnrollment.schoolId, dto.date, s.status);
+      }
+    }
 
     const operations = dto.students.map((s) =>
       this.prisma.attendance.upsert({

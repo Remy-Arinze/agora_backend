@@ -12,6 +12,9 @@ import { AttendanceService } from './attendance.service';
 import { CreateAttendanceDto, BulkAttendanceDto } from './dto/create-attendance.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { SchoolDataAccessGuard } from '../common/guards/school-data-access.guard';
+import { PermissionGuard } from '../common/guards/permission.guard';
+import { RequirePermission } from '../common/decorators/permission.decorator';
+import { PermissionResource, PermissionType } from '../schools/dto/permission.dto';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { UserWithContext } from '../auth/types/user-with-context.type';
 import { ResponseDto } from '../common/dto/response.dto';
@@ -23,13 +26,14 @@ import { SkipThrottle, Throttle } from '@nestjs/throttler';
  */
 @ApiTags('attendance')
 @Controller('schools/:schoolId/attendance')
-@UseGuards(JwtAuthGuard, SchoolDataAccessGuard)
+@UseGuards(JwtAuthGuard, SchoolDataAccessGuard, PermissionGuard)
 @ApiBearerAuth()
 @Throttle({ standard: {} })
 export class AttendanceController {
   constructor(private readonly attendanceService: AttendanceService) {}
 
   @Post()
+  @RequirePermission(PermissionResource.GRADES, PermissionType.WRITE)
   @ApiOperation({ summary: 'Mark attendance for a student' })
   @ApiResponse({ status: 201, description: 'Attendance marked successfully' })
   async markAttendance(

@@ -15,6 +15,7 @@ coverage
 # Logs
 *.log
 npm-debug.log*
+logs/
 
 # OS
 .DS_Store
@@ -26,6 +27,17 @@ Thumbs.db
 
 # Script (local commit helper – do not commit)
 cgh.js
+
+# Build cache
+*.tsbuildinfo
+
+# Local E2E / QA helpers — not production
+scripts/*e2e*
+scripts/test-assessment-*.ts
+scripts/complete-login-otp.ts
+scripts/qa-school-admin-smoke.mjs
+scripts/check-transfer-fixture.ts
+scripts/check-subjects.ts
 
 # Prisma (optional: uncomment if you don't commit migrations)
 # prisma/migrations/

@@ -8,6 +8,8 @@ import { AddStudentDto } from '../schools/dto/add-student.dto';
 import { TermStatus, SessionStatus, AdmissionStatus } from '@prisma/client';
 import { generateSecurePasswordHash } from '../common/utils/password.utils';
 import { SubmitAdmissionApplicationDto, ApproveAdmissionApplicationDto } from './dto/admission-application.dto';
+import { NotificationService } from '../notification/notification.service';
+import { SchoolSettingsService } from '../school-settings/school-settings.service';
 
 @Injectable()
 export class StudentAdmissionService {
@@ -16,7 +18,9 @@ export class StudentAdmissionService {
     private readonly schoolRepository: SchoolRepository,
     private readonly idGenerator: IdGeneratorService,
     private readonly authService: AuthService,
-    private readonly subscriptionsService: SubscriptionsService
+    private readonly subscriptionsService: SubscriptionsService,
+    private readonly notificationService: NotificationService,
+    private readonly schoolSettingsService: SchoolSettingsService,
   ) { }
 
   /**
@@ -290,6 +294,14 @@ export class StudentAdmissionService {
       throw new BadRequestException('School not found');
     }
 
+    const admissionPolicy = await this.schoolSettingsService.getAdmissionPolicy(schoolId);
+    if (!admissionPolicy.applicationsOpen) {
+      throw new BadRequestException('This school is not currently accepting applications.');
+    }
+    if (admissionPolicy.applicationDeadline && new Date() > admissionPolicy.applicationDeadline) {
+      throw new BadRequestException('The application deadline has passed.');
+    }
+
     // Check if student email exists globally
     const existingUser = await this.prisma.user.findUnique({
       where: { email: dto.email },
@@ -303,7 +315,7 @@ export class StudentAdmissionService {
       );
     }
 
-    return this.prisma.admissionApplication.create({
+    const application = await this.prisma.admissionApplication.create({
       data: {
         schoolId,
         firstName: dto.firstName,
@@ -326,6 +338,20 @@ export class StudentAdmissionService {
         status: AdmissionStatus.PENDING,
       },
     });
+
+    try {
+      void this.notificationService.notifySchoolAdmins(schoolId, {
+        type: 'ADMISSION_SUBMITTED',
+        title: 'New admission application',
+        body: `${dto.firstName} ${dto.lastName} submitted an admission application.`,
+        link: '/dashboard/school/applications',
+        metadata: { applicationId: application.id },
+      });
+    } catch {
+      // Notifications must never interrupt a public application submission.
+    }
+
+    return application;
   }
 
   /**
@@ -391,6 +417,25 @@ export class StudentAdmissionService {
       },
     });
 
+    try {
+      const user = application.email
+        ? await this.prisma.user.findUnique({ where: { email: application.email }, select: { id: true } })
+        : null;
+      if (user) {
+        void this.notificationService.notifyUsers([user.id], {
+          schoolId,
+          role: 'STUDENT',
+          type: 'APPLICATION_APPROVED',
+          title: 'Application approved',
+          body: 'Your admission application has been approved.',
+          link: '/dashboard/student/overview',
+          metadata: { applicationId },
+        });
+      }
+    } catch {
+      // Admission completion is independent of notification delivery.
+    }
+
     return result;
   }
 
@@ -406,7 +451,7 @@ export class StudentAdmissionService {
       throw new NotFoundException('Application not found');
     }
 
-    return this.prisma.admissionApplication.update({
+    const rejected = await this.prisma.admissionApplication.update({
       where: { id: applicationId },
       data: {
         status: AdmissionStatus.DECLINED,
@@ -415,6 +460,27 @@ export class StudentAdmissionService {
         reviewedAt: new Date(),
       },
     });
+
+    try {
+      const user = application.email
+        ? await this.prisma.user.findUnique({ where: { email: application.email }, select: { id: true } })
+        : null;
+      if (user) {
+        void this.notificationService.notifyUsers([user.id], {
+          schoolId,
+          role: 'STUDENT',
+          type: 'APPLICATION_REJECTED',
+          title: 'Application update',
+          body: 'Your admission application was not approved.',
+          link: '/dashboard/student/overview',
+          metadata: { applicationId, reason },
+        });
+      }
+    } catch {
+      // Rejection must remain successful when notification delivery fails.
+    }
+
+    return rejected;
   }
 
   /**

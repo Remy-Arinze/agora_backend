@@ -1,5 +1,6 @@
-import { Controller, Get, Post, Body, Patch, Param, UseGuards, Query } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { Controller, Get, Post, Body, Patch, Param, UseGuards, Query, UseInterceptors, UploadedFile } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam, ApiQuery, ApiConsumes } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -16,10 +17,11 @@ import {
   UpdateSchemeOfWorkStatusDto,
   MarkWeekDeliveredDto,
 } from './dto/scheme-of-work.dto';
+import { SchoolDataAccessGuard } from '../../common/guards/school-data-access.guard';
 
 @ApiTags('Scheme of Work')
-@Controller('scheme-of-work')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@Controller('schools/:schoolId/scheme-of-work')
+@UseGuards(JwtAuthGuard, RolesGuard, SchoolDataAccessGuard)
 @ApiBearerAuth()
 export class SchemeOfWorkController {
   constructor(private readonly schemeOfWorkService: SchemeOfWorkService) {}
@@ -35,10 +37,10 @@ export class SchemeOfWorkController {
   @ApiOperation({ summary: 'Generate a new Scheme of Work for a specific context' })
   @ApiResponse({ status: 201, description: 'Scheme of Work queued for generation' })
   async generateScheme(
+    @Param('schoolId') schoolId: string,
     @CurrentUser() user: UserWithContext,
-    @Body() dto: GenerateSchemeOfWorkDto
+    @Body() dto: GenerateSchemeOfWorkDto,
   ) {
-    const schoolId = user.currentSchoolId!;
     const scheme = await this.schemeOfWorkService.generateScheme(schoolId, dto, user.id);
     return ResponseDto.ok(scheme, 'Scheme of Work generation queued successfully');
   }
@@ -49,14 +51,81 @@ export class SchemeOfWorkController {
   @RequirePermission(PermissionResource.SCHEME_OF_WORK, PermissionType.READ)
   @ApiOperation({ summary: 'Get all Schemes of Work within the school' })
   async getSchemes(
-    @CurrentUser() user: UserWithContext,
+    @Param('schoolId') schoolId: string,
     @Query('classId') classId?: string,
     @Query('termId') termId?: string,
-    @Query('subjectId') subjectId?: string
+    @Query('subjectId') subjectId?: string,
   ) {
-    const schoolId = user.currentSchoolId!;
-    const schemes = await this.schemeOfWorkService.getSchemesBySchool(schoolId, { classId, termId, subjectId });
+    const schemes = await this.schemeOfWorkService.getSchemesBySchool(schoolId, {
+      classId,
+      termId,
+      subjectId,
+    });
     return ResponseDto.ok(schemes, 'Schemes of Work retrieved successfully');
+  }
+
+  /**
+   * Used by teacher/student class detail SchemeOfWorkView.
+   * Must be registered before GET :id so "class" is not captured as an id.
+   */
+  @Get('class/:classId')
+  @Roles(UserRole.TEACHER, UserRole.STUDENT, UserRole.SCHOOL_ADMIN, UserRole.SUPER_ADMIN)
+  @ApiOperation({
+    summary: 'Get a published Scheme of Work for a class arm/class (class-level Agora schemes supported)',
+  })
+  @ApiParam({ name: 'schoolId' })
+  @ApiParam({ name: 'classId', description: 'ClassArm id (PRIMARY/SECONDARY) or Class id' })
+  @ApiQuery({ name: 'subjectId', required: false })
+  @ApiQuery({ name: 'termId', required: false })
+  async getSchemeForClass(
+    @Param('schoolId') schoolId: string,
+    @Param('classId') classId: string,
+    @Query('subjectId') subjectId?: string,
+    @Query('termId') termId?: string,
+  ) {
+    const scheme = await this.schemeOfWorkService.getPublishedSchemeForClass(schoolId, classId, {
+      subjectId,
+      termId,
+    });
+    return ResponseDto.ok(scheme, 'Scheme of Work retrieved');
+  }
+
+  @Patch('week/:weekId')
+  @Roles(UserRole.TEACHER, UserRole.SCHOOL_ADMIN, UserRole.SUPER_ADMIN)
+  @ApiOperation({ summary: 'Update week delivery status / private notes (enforces current-week window)' })
+  async updateWeek(
+    @Param('schoolId') schoolId: string,
+    @Param('weekId') weekId: string,
+    @Body() dto: MarkWeekDeliveredDto,
+    @CurrentUser() user: UserWithContext,
+  ) {
+    const result = await this.schemeOfWorkService.updateWeekForSchool(
+      schoolId,
+      weekId,
+      dto,
+      user.id,
+    );
+    return ResponseDto.ok(result, 'Week updated');
+  }
+
+  @Post('week/:weekId/lesson-note')
+  @Roles(UserRole.TEACHER, UserRole.SCHOOL_ADMIN, UserRole.SUPER_ADMIN)
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: 'Upload optional lesson note to raise delivery confidence' })
+  async uploadLessonNote(
+    @Param('schoolId') schoolId: string,
+    @Param('weekId') weekId: string,
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser() user: UserWithContext,
+  ) {
+    const result = await this.schemeOfWorkService.uploadLessonNote(
+      schoolId,
+      weekId,
+      file,
+      user.id,
+    );
+    return ResponseDto.ok(result, 'Lesson note uploaded');
   }
 
   @Get(':id')
@@ -64,11 +133,7 @@ export class SchemeOfWorkController {
   @UseGuards(PermissionGuard)
   @RequirePermission(PermissionResource.SCHEME_OF_WORK, PermissionType.READ)
   @ApiOperation({ summary: 'Get full details of a specific Scheme of Work' })
-  async getSchemeById(
-    @CurrentUser() user: UserWithContext,
-    @Param('id') id: string
-  ) {
-    const schoolId = user.currentSchoolId!;
+  async getSchemeById(@Param('schoolId') schoolId: string, @Param('id') id: string) {
     const scheme = await this.schemeOfWorkService.getSchemeById(schoolId, id);
     return ResponseDto.ok(scheme, 'Scheme of Work detail retrieved');
   }
@@ -79,31 +144,33 @@ export class SchemeOfWorkController {
   @RequirePermission(PermissionResource.SCHEME_OF_WORK, PermissionType.WRITE)
   @ApiOperation({ summary: 'Update Scheme of Work status (Draft/Approved/Published)' })
   async updateStatus(
+    @Param('schoolId') schoolId: string,
     @CurrentUser() user: UserWithContext,
     @Param('id') id: string,
-    @Body() dto: UpdateSchemeOfWorkStatusDto
+    @Body() dto: UpdateSchemeOfWorkStatusDto,
   ) {
-    const schoolId = user.currentSchoolId!;
     const scheme = await this.schemeOfWorkService.updateSchemeStatus(schoolId, id, dto, user.id);
     return ResponseDto.ok(scheme, 'Scheme of Work status updated');
   }
 
   // ==========================================
   // TEACHER ENDPOINTS
-  // Class scoped
   // ==========================================
 
   @Get('teacher/class/:classId/term/:termId')
   @Roles(UserRole.TEACHER)
   @ApiOperation({ summary: 'Teacher view: Get published schemes of work for their assigned class context' })
   async getTeacherClassLoader(
+    @Param('schoolId') schoolId: string,
     @CurrentUser() user: UserWithContext,
     @Param('classId') classId: string,
-    @Param('termId') termId: string
+    @Param('termId') termId: string,
   ) {
-    const schoolId = user.currentSchoolId!;
     const scheme = await this.schemeOfWorkService.getSchemeForTeacherClassScope(
-      schoolId, classId, termId, user.id
+      schoolId,
+      classId,
+      termId,
+      user.id,
     );
     return ResponseDto.ok(scheme, 'Class Scheme of Work payload retrieved');
   }
@@ -112,31 +179,33 @@ export class SchemeOfWorkController {
   @Roles(UserRole.TEACHER)
   @ApiOperation({ summary: 'Teacher view: Mark a specific topic/week as delivered or add private notes' })
   async markWeekDelivered(
+    @Param('schoolId') schoolId: string,
     @CurrentUser() user: UserWithContext,
     @Param('weekId') weekId: string,
-    @Body() dto: MarkWeekDeliveredDto
+    @Body() dto: MarkWeekDeliveredDto,
   ) {
-    const schoolId = user.currentSchoolId!;
     const result = await this.schemeOfWorkService.markWeekDelivered(schoolId, weekId, dto, user.id);
     return ResponseDto.ok(result, 'Week delivery status updated');
   }
 
   // ==========================================
   // STUDENT ENDPOINTS
-  // Class scoped and structurally limited
   // ==========================================
 
   @Get('student/class/:classId/term/:termId')
   @Roles(UserRole.STUDENT)
   @ApiOperation({ summary: 'Student view: Get public-facing published schemes of work for their class' })
   async getStudentClassLoader(
+    @Param('schoolId') schoolId: string,
     @CurrentUser() user: UserWithContext,
     @Param('classId') classId: string,
-    @Param('termId') termId: string
+    @Param('termId') termId: string,
   ) {
-    const schoolId = user.currentSchoolId!;
     const scheme = await this.schemeOfWorkService.getSchemeForStudentClassScope(
-      schoolId, classId, termId, user.id
+      schoolId,
+      classId,
+      termId,
+      user.id,
     );
     return ResponseDto.ok(scheme, 'Student Scheme of Work payload retrieved');
   }

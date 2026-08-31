@@ -26,6 +26,7 @@ import {
 import { SchoolAdminSchoolsService } from './school-admin-schools.service';
 import { SchoolDto } from '../dto/school.dto';
 import { SchoolDashboardDto } from '../dto/dashboard.dto';
+import { SchoolSetupProgressDto } from '../dto/setup-progress.dto';
 import { StaffListResponseDto } from '../dto/staff-list.dto';
 import { UpdateSchoolDto } from '../dto/update-school.dto';
 import { ResponseDto } from '../../common/dto/response.dto';
@@ -81,6 +82,28 @@ export class SchoolAdminSchoolsController {
   ): Promise<ResponseDto<SchoolDashboardDto>> {
     const data = await this.schoolAdminSchoolsService.getDashboard(req.user, schoolType);
     return ResponseDto.ok(data, 'Dashboard data retrieved successfully');
+  }
+
+  @Get('setup-progress')
+  @RequirePermission(PermissionResource.OVERVIEW, PermissionType.READ)
+  @ApiOperation({ summary: 'Get school setup checklist progress' })
+  @ApiQuery({
+    name: 'schoolType',
+    required: false,
+    type: String,
+    description: 'Filter by school type (PRIMARY, SECONDARY, TERTIARY)',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Setup progress retrieved successfully',
+    type: ResponseDto<SchoolSetupProgressDto>,
+  })
+  async getSetupProgress(
+    @Request() req: any,
+    @Query('schoolType') schoolType?: string
+  ): Promise<ResponseDto<SchoolSetupProgressDto>> {
+    const data = await this.schoolAdminSchoolsService.getSetupProgress(req.user, schoolType);
+    return ResponseDto.ok(data, 'Setup progress retrieved successfully');
   }
 
   @Get('staff')

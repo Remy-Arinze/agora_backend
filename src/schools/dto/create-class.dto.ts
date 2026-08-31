@@ -28,7 +28,11 @@ export class CreateClassDto {
   @IsOptional()
   classLevel?: string;
 
-  @ApiProperty({ description: 'Class type', enum: ClassType })
+  @ApiProperty({
+    description:
+      'Class type. PRIMARY and SECONDARY are rejected — use class-arms instead. Only TERTIARY creates a Class row.',
+    enum: ClassType,
+  })
   @IsEnum(ClassType)
   @IsNotEmpty()
   type: ClassType;

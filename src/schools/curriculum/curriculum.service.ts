@@ -640,17 +640,26 @@ export class CurriculumService {
       where.termId = termId;
     }
 
-    // If user is a teacher, filter by their assigned subjects in timetable
+    // Teachers may view class-level curricula for classes they teach (not only rows they "own")
     if (user?.currentProfileId && user.role === 'TEACHER') {
       const teacher = await this.staffRepository.findTeacherByTeacherId(user.currentProfileId);
-      if (teacher) {
-        // Allow viewing curricula the teacher owns or is assigned to teach
-        where.OR = [
-          { teacherId: teacher.id },
-          // Also allow if they're assigned to teach this subject in timetable
-        ];
-      } else {
+      if (!teacher) {
         return null;
+      }
+      const teachesClass = await (this.prisma as any).classTeacher.findFirst({
+        where: {
+          teacherId: teacher.id,
+          OR: [{ classArmId: classId }, { classId }],
+        },
+        select: { id: true },
+      });
+      const isFormTeacher = await (this.prisma as any).classArm.findFirst({
+        where: { id: classId, classTeacherId: teacher.id },
+        select: { id: true },
+      });
+      // Not assigned to this class → only curricula explicitly owned by the teacher
+      if (!teachesClass && !isFormTeacher) {
+        where.teacherId = teacher.id;
       }
     }
 
@@ -670,7 +679,106 @@ export class CurriculumService {
       },
     });
 
-    return curriculum ? this.mapToDto(curriculum) : null;
+    if (curriculum) {
+      return this.mapToDto(curriculum);
+    }
+
+    // Fallback: Agora / admin setup stores SchemeOfWork (not legacy Curriculum rows)
+    return this.getCurriculumFromSchemeOfWork(schoolId, classId, {
+      subjectName: subject,
+      termId,
+      classLevelId,
+    });
+  }
+
+  /**
+   * Map a published SchemeOfWork into the CurriculumDto shape used by teacher/student Curriculum tabs.
+   */
+  private async getCurriculumFromSchemeOfWork(
+    schoolId: string,
+    classId: string,
+    options: { subjectName?: string; termId?: string; classLevelId?: string | null },
+  ): Promise<CurriculumDto | null> {
+    let classLevelId = options.classLevelId;
+    if (!classLevelId) {
+      const resolved = await this.resolveClassTarget(schoolId, classId);
+      classLevelId = resolved.classLevelId;
+    }
+    if (!classLevelId) {
+      return null;
+    }
+
+    let subjectId: string | undefined;
+    if (options.subjectName) {
+      const subject = await (this.prisma as any).subject.findFirst({
+        where: {
+          schoolId,
+          name: { equals: options.subjectName, mode: 'insensitive' },
+        },
+        select: { id: true },
+      });
+      subjectId = subject?.id;
+    }
+
+    const schemeWhere: any = {
+      schoolId,
+      classLevelId,
+      status: { in: ['PUBLISHED', 'APPROVED'] },
+    };
+    if (options.termId) schemeWhere.termId = options.termId;
+    if (subjectId) schemeWhere.subjectId = subjectId;
+
+    const scheme = await (this.prisma as any).schemeOfWork.findFirst({
+      where: schemeWhere,
+      include: {
+        weeks: { orderBy: { order: 'asc' } },
+        classLevel: true,
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+
+    if (!scheme) {
+      // If subject filter missed, try any published scheme for the level
+      if (subjectId) {
+        const anyScheme = await (this.prisma as any).schemeOfWork.findFirst({
+          where: {
+            schoolId,
+            classLevelId,
+            status: { in: ['PUBLISHED', 'APPROVED'] },
+            ...(options.termId ? { termId: options.termId } : {}),
+          },
+          include: {
+            weeks: { orderBy: { order: 'asc' } },
+            classLevel: true,
+          },
+          orderBy: { updatedAt: 'desc' },
+        });
+        if (!anyScheme) return null;
+        const subject = await (this.prisma as any).subject.findUnique({
+          where: { id: anyScheme.subjectId },
+        });
+        const term = anyScheme.termId
+          ? await (this.prisma as any).term.findUnique({
+              where: { id: anyScheme.termId },
+              include: { academicSession: { select: { name: true } } },
+            })
+          : null;
+        return this.mapSchemeToCurriculumDto({ ...anyScheme, term }, subject);
+      }
+      return null;
+    }
+
+    const subject = await (this.prisma as any).subject.findUnique({
+      where: { id: scheme.subjectId },
+    });
+    const term = scheme.termId
+      ? await (this.prisma as any).term.findUnique({
+          where: { id: scheme.termId },
+          include: { academicSession: { select: { name: true } } },
+        })
+      : null;
+
+    return this.mapSchemeToCurriculumDto({ ...scheme, term }, subject);
   }
 
   /**
@@ -1557,7 +1665,7 @@ export class CurriculumService {
     // PATH A: Agora Curriculum (Free)
     if (mode === SchemeGenerationMode.AGORA_ONLY) {
       if (!dto.agoraCurriculumId) {
-        throw new BadRequestException('Agora Curriculum ID is required for Agora-only mode.');
+        throw new BadRequestException('Bud library Curriculum ID is required for Bud library-only mode.');
       }
 
       const agoraCurriculum = await (this.prisma as any).agoraCurriculum.findUnique({
@@ -1566,7 +1674,7 @@ export class CurriculumService {
       });
 
       if (!agoraCurriculum) {
-        throw new NotFoundException('Agora Curriculum not found.');
+        throw new NotFoundException('Bud library Curriculum not found.');
       }
 
       // 1. Get the current term number (1, 2, or 3)
@@ -1694,12 +1802,20 @@ export class CurriculumService {
         classLevelId,
         termId,
       },
+      include: {
+        weeks: {
+          select: { id: true, isDelivered: true },
+        },
+      },
     });
 
     const schemeMap = new Map(schemes.map((s: any) => [s.subjectId, s]));
 
     return subjects.map(subject => {
       const scheme = schemeMap.get(subject.subjectId) as any;
+      const weeks = scheme?.weeks || [];
+      const weeksTotal = weeks.length;
+      const weeksCompleted = weeks.filter((w: any) => w.isDelivered).length;
       return {
         ...subject,
         schemeId: scheme?.id || null,
@@ -1707,6 +1823,11 @@ export class CurriculumService {
         generationMode: scheme?.generationMode || null,
         version: scheme?.version || null,
         updatedAt: scheme?.updatedAt || null,
+        isAgoraBased: !!scheme?.agoraCurriculumId,
+        agoraCurriculumId: scheme?.agoraCurriculumId || null,
+        weeksTotal,
+        weeksCompleted,
+        progressPercentage: weeksTotal > 0 ? Math.round((weeksCompleted / weeksTotal) * 100) : 0,
       };
     });
   }
@@ -1731,7 +1852,44 @@ export class CurriculumService {
       where: { id: scheme.subjectId }
     });
 
-    return this.mapSchemeToCurriculumDto(scheme, subject);
+    // termId is stored without a Prisma relation — load explicitly
+    const term = scheme.termId
+      ? await (this.prisma as any).term.findUnique({
+          where: { id: scheme.termId },
+          include: { academicSession: { select: { name: true } } },
+        })
+      : null;
+
+    // Prefer a timetable teacher for this subject + level + term
+    let teacherName: string | undefined;
+    let teacherId = '';
+    if (scheme.classLevelId && scheme.termId && scheme.subjectId) {
+      const period = await (this.prisma as any).timetablePeriod.findFirst({
+        where: {
+          type: 'LESSON',
+          subjectId: scheme.subjectId,
+          termId: scheme.termId,
+          teacherId: { not: null },
+          OR: [
+            { classArm: { classLevelId: scheme.classLevelId } },
+            { classId: scheme.classLevelId },
+          ],
+        },
+        include: {
+          teacher: { select: { id: true, firstName: true, lastName: true } },
+        },
+      });
+      if (period?.teacher) {
+        teacherId = period.teacher.id;
+        teacherName = `${period.teacher.firstName || ''} ${period.teacher.lastName || ''}`.trim() || undefined;
+      }
+    }
+
+    return this.mapSchemeToCurriculumDto(
+      { ...scheme, term },
+      subject,
+      { teacherId, teacherName },
+    );
   }
 
   /**
@@ -1757,10 +1915,26 @@ export class CurriculumService {
     });
   }
 
-  private mapSchemeToCurriculumDto(scheme: any, subject: any): CurriculumDto {
+  private mapSchemeToCurriculumDto(
+    scheme: any,
+    subject: any,
+    extras?: { teacherId?: string; teacherName?: string },
+  ): CurriculumDto {
     const weeks = scheme.weeks || [];
     const totalWeeks = weeks.length;
     const completedWeeks = weeks.filter((w: any) => w.isDelivered).length;
+    const term = scheme.term;
+
+    // Map scheme statuses onto curriculum badge vocabulary where needed
+    const statusMap: Record<string, string> = {
+      PUBLISHED: 'ACTIVE',
+      DRAFT: 'DRAFT',
+      APPROVED: 'APPROVED',
+      GENERATING: 'DRAFT',
+      QUEUED: 'DRAFT',
+      FAILED: 'REJECTED',
+      CANCELLED: 'DRAFT',
+    };
 
     return {
       id: scheme.id,
@@ -1769,15 +1943,15 @@ export class CurriculumService {
       classLevelId: scheme.classLevelId,
       subjectId: scheme.subjectId,
       subject: subject?.name || 'Unknown Subject',
-      teacherId: '', // Scheme level doesn't always have a teacher yet
-      teacherName: undefined,
-      academicYear: '', // Pull from term if needed
+      teacherId: extras?.teacherId || '',
+      teacherName: extras?.teacherName,
+      academicYear: term?.academicSession?.name || scheme.classLevel?.name || '',
       termId: scheme.termId,
-      termName: undefined,
+      termName: term?.name,
       agoraCurriculumTemplateId: scheme.agoraCurriculumId,
       isAgoraBased: !!scheme.agoraCurriculumId,
       customizations: 0,
-      status: scheme.status, // Should map DRAFT, etc.
+      status: (statusMap[scheme.status] || scheme.status) as any,
       submittedAt: null,
       approvedBy: scheme.approvedBy,
       approvedAt: scheme.approvedAt,
@@ -1791,7 +1965,7 @@ export class CurriculumService {
         weekNumber: w.weekNumber,
         topic: w.topic,
         subTopics: w.subTopics || [],
-        objectives: w.learningOutcomes || [], // Map outcomes to objectives
+        objectives: w.learningOutcomes || [],
         activities: w.suggestedActivities || [],
         resources: w.resources || [],
         assessment: w.assessmentType || null,

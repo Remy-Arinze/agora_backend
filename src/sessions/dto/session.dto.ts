@@ -23,6 +23,18 @@ export class TermDto {
   @ApiProperty({ required: false })
   halfTermEnd?: Date;
 
+  @ApiProperty({ required: false })
+  midtermStart?: Date;
+
+  @ApiProperty({ required: false })
+  midtermEnd?: Date;
+
+  @ApiProperty({ required: false })
+  examStart?: Date;
+
+  @ApiProperty({ required: false })
+  examEnd?: Date;
+
   @ApiProperty({ enum: TermStatus })
   status: TermStatus;
 
@@ -31,15 +43,61 @@ export class TermDto {
 
   @ApiProperty({
     required: false,
-    description: 'Current week number (computed from term start date). Only present for ACTIVE terms.',
+    description: 'Current calendar week number (from term start). Only present for ACTIVE terms.',
   })
   currentWeek?: number;
 
   @ApiProperty({
     required: false,
-    description: 'Total number of weeks in this term (computed from start/end dates).',
+    description: 'Total calendar weeks in this term (from start/end dates).',
   })
   totalWeeks?: number;
+
+  @ApiProperty({
+    required: false,
+    description:
+      'Current teaching week (skips non-instructional stretches). Only present for ACTIVE terms.',
+  })
+  currentTeachingWeek?: number;
+
+  @ApiProperty({
+    required: false,
+    description: 'Total teaching weeks in this term (working days minus half-term / holidays).',
+  })
+  totalTeachingWeeks?: number;
+
+  @ApiProperty({
+    required: false,
+    description: 'Calendar days until term end (negative when overdue).',
+  })
+  daysRemaining?: number;
+
+  @ApiProperty({
+    required: false,
+    description: 'True when today is after the scheduled end date (term may still be ACTIVE).',
+  })
+  isPastEndDate?: boolean;
+
+  @ApiProperty({
+    required: false,
+    description: 'True when status is ACTIVE and today falls within start/end dates.',
+  })
+  isOperationallyActive?: boolean;
+
+  @ApiProperty({ required: false })
+  examTimetablePublishedAt?: Date;
+
+  @ApiProperty({ required: false })
+  isInExamPeriod?: boolean;
+
+  @ApiProperty({ required: false })
+  isLessonScheduleActive?: boolean;
+
+  @ApiProperty({
+    required: false,
+    enum: ['NOT_STARTED', 'IN_SESSION', 'EXAM_PERIOD', 'OVERDUE', 'ENDED'],
+  })
+  termPhase?: string;
 
   @ApiProperty()
   createdAt: Date;

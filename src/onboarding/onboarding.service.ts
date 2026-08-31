@@ -65,7 +65,7 @@ export class OnboardingService {
     }
 
     // Parse Excel/CSV file
-    let rows: any[] = [];
+    const rows: any[] = [];
     try {
       const workbook = new Workbook();
       const fileExtension = file.originalname.split('.').pop()?.toLowerCase();

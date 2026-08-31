@@ -339,6 +339,7 @@ export class PermissionService implements OnModuleInit {
       RESOURCES: 'Class Resources',
       TRANSFERS: 'Student Transfers',
       INTEGRATIONS: 'External Integrations',
+      SETTINGS: 'School Settings',
     };
 
     const typeNames: Record<PermissionType, string> = {

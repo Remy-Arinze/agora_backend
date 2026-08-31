@@ -35,6 +35,8 @@ model User {
   schoolAdmins    SchoolAdmin[] // Changed to array to support multiple schools
 
   notifications       NotificationLog[]
+  inAppNotifications  InAppNotification[]
+  pushSubscriptions   WebPushSubscription[]
   passwordResetTokens PasswordResetToken[]
   passwordOtps        PasswordOtp[]
   googleCalendarSyncs GoogleCalendarSync[]

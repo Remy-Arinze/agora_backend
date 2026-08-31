@@ -92,6 +92,31 @@ export class EventController {
     return ResponseDto.ok(data, 'Upcoming events retrieved successfully');
   }
 
+  @Post('import-nigerian-holidays')
+  @RequirePermission(PermissionResource.EVENTS, PermissionType.WRITE)
+  @ApiOperation({
+    summary: 'Import fixed Nigerian public holidays as HOLIDAY calendar events',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Holidays imported (idempotent; existing titles for the same day are skipped)',
+  })
+  async importNigerianHolidays(
+    @Param('schoolId') schoolId: string,
+    @Body()
+    body: { startDate?: string; endDate?: string; schoolType?: string },
+    @CurrentUser() user: UserWithContext
+  ): Promise<ResponseDto<{ created: number; skipped: number; events: EventDto[] }>> {
+    const data = await this.eventService.importNigerianHolidays(schoolId, {
+      ...body,
+      createdBy: user.id,
+    });
+    return ResponseDto.ok(
+      data,
+      `Imported ${data.created} holiday(s)${data.skipped ? `, skipped ${data.skipped} existing` : ''}`,
+    );
+  }
+
   @Patch(':eventId')
   @RequirePermission(PermissionResource.EVENTS, PermissionType.WRITE)
   @ApiOperation({ summary: 'Update an event' })

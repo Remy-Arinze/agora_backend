@@ -1,6 +1,6 @@
 import { IsString, IsNotEmpty, IsOptional, IsEnum, IsInt, Min, Max, IsBoolean } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { SchemeGenerationMode, SchemeOfWorkStatus } from '@prisma/client';
+import { SchemeGenerationMode, SchemeOfWorkStatus, SchemeDeliveryCatchUpReason } from '@prisma/client';
 
 export class GenerateSchemeOfWorkDto {
   @ApiPropertyOptional({ description: 'Specific class arm ID (primary/secondary)' })
@@ -109,4 +109,17 @@ export class MarkWeekDeliveredDto {
   @IsOptional()
   @IsString()
   privateTeacherNotes?: string;
+
+  @ApiPropertyOptional({ description: 'Short attestation of what was covered' })
+  @IsOptional()
+  @IsString()
+  deliveryNote?: string;
+
+  @ApiPropertyOptional({
+    enum: SchemeDeliveryCatchUpReason,
+    description: 'Required when marking a past week as delivered',
+  })
+  @IsOptional()
+  @IsEnum(SchemeDeliveryCatchUpReason)
+  catchUpReason?: SchemeDeliveryCatchUpReason;
 }

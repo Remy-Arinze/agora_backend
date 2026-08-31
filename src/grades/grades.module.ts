@@ -6,9 +6,11 @@ import { SchoolRepository } from '../schools/domain/repositories/school.reposito
 import { StaffRepository } from '../schools/domain/repositories/staff.repository';
 
 import { AiModule } from '../ai/ai.module';
+import { NotificationModule } from '../notification/notification.module';
+import { SchoolSettingsModule } from '../school-settings/school-settings.module';
 
 @Module({
-  imports: [DatabaseModule, AiModule],
+  imports: [DatabaseModule, AiModule, NotificationModule, SchoolSettingsModule],
   controllers: [GradesController],
   providers: [GradesService, SchoolRepository, StaffRepository],
   exports: [GradesService],

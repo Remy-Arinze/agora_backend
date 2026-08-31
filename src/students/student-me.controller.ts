@@ -100,6 +100,18 @@ export class StudentMeController {
     return ResponseDto.ok(data, 'Timetable retrieved successfully');
   }
 
+  @Get('me/exam-timetable')
+  @ApiOperation({ summary: 'Get published exam timetable for current student' })
+  @ApiQuery({ name: 'termId', required: false, type: String })
+  async getMyExamTimetable(
+    @CurrentUser() user: UserWithContext,
+    @Query('termId') termId?: string,
+  ): Promise<ResponseDto<any[]>> {
+    const schoolId = user.currentSchoolId || null;
+    const data = await this.studentsService.getMyExamTimetable(user, schoolId, termId);
+    return ResponseDto.ok(data, 'Exam timetable retrieved successfully');
+  }
+
   @Get('me/grades')
   @ApiOperation({ summary: 'Get all published grades for current student' })
   @ApiQuery({ name: 'classId', required: false, type: String })

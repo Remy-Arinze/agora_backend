@@ -12,6 +12,7 @@ import { ClassType } from '../schools/dto/create-class.dto';
 import { UserWithContext } from '../auth/types/user-with-context.type';
 import { LiveStatusService } from '../live-status/live-status.service';
 import { TimetableService } from '../timetable/timetable.service';
+import { ExamTimetableService } from '../exam-timetable/exam-timetable.service';
 import { GradesService } from '../grades/grades.service';
 import { EventService } from '../events/event.service';
 import { CloudinaryService } from '../storage/cloudinary/cloudinary.service';
@@ -28,6 +29,7 @@ export class StudentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly timetableService: TimetableService,
+    private readonly examTimetableService: ExamTimetableService,
     private readonly liveStatusService: LiveStatusService,
     private readonly gradesService: GradesService,
     private readonly eventService: EventService,
@@ -38,7 +40,8 @@ export class StudentsService {
   async findAll(
     tenantId: string,
     pagination: PaginationDto,
-    schoolType?: ClassType | string
+    schoolType?: ClassType | string,
+    search?: string
   ): Promise<PaginatedResponseDto<StudentWithEnrollmentDto>> {
     const { page = 1, limit = 20 } = pagination;
     const skip = (page - 1) * limit;
@@ -129,6 +132,17 @@ export class StudentsService {
         some: enrollmentFilter,
       },
     };
+
+    const trimmedSearch = search?.trim();
+    if (trimmedSearch) {
+      whereClause.OR = [
+        { firstName: { contains: trimmedSearch, mode: 'insensitive' } },
+        { lastName: { contains: trimmedSearch, mode: 'insensitive' } },
+        { middleName: { contains: trimmedSearch, mode: 'insensitive' } },
+        { uid: { contains: trimmedSearch, mode: 'insensitive' } },
+        { publicId: { contains: trimmedSearch, mode: 'insensitive' } },
+      ];
+    }
 
     const [students, total] = await Promise.all([
       this.prisma.student.findMany({
@@ -690,6 +704,35 @@ export class StudentsService {
       // If error, return empty array (e.g., student not found, etc.)
       return [];
     }
+  }
+
+  /** Published exam timetable slots for the student's class during exam period. */
+  async getMyExamTimetable(
+    user: UserWithContext,
+    schoolId: string | null,
+    termId?: string,
+  ) {
+    if (user.role !== 'STUDENT') {
+      throw new ForbiddenException('Access denied. Student role required.');
+    }
+    const student = await this.prisma.student.findFirst({ where: { userId: user.id } });
+    if (!student) return [];
+
+    let actualSchoolId = schoolId;
+    if (!actualSchoolId) {
+      const enrollment = await this.prisma.enrollment.findFirst({
+        where: { studentId: student.id, isActive: true },
+        select: { schoolId: true },
+      });
+      actualSchoolId = enrollment?.schoolId ?? null;
+    }
+    if (!actualSchoolId) return [];
+
+    return this.examTimetableService.listSlotsForStudent(
+      actualSchoolId,
+      student.id,
+      termId,
+    );
   }
 
   /**

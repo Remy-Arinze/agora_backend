@@ -116,6 +116,28 @@ export class CreateAssessmentDto {
     @IsBoolean()
     autoSubmitOnTimeout?: boolean;
 
+    @ApiPropertyOptional({ description: 'Allow students to submit after the due date (may be flagged late for grading)' })
+    @IsOptional()
+    @IsBoolean()
+    allowLateSubmissionAfterDue?: boolean;
+
+    @ApiPropertyOptional({ description: 'Allow students to submit after the exam timer expires (may be flagged late for grading)' })
+    @IsOptional()
+    @IsBoolean()
+    allowLateSubmissionAfterTimer?: boolean;
+
+    @ApiPropertyOptional({ description: 'Default points deducted when submission is late (due date)' })
+    @IsOptional()
+    @IsNumber()
+    @Min(0)
+    lateDuePenaltyPoints?: number;
+
+    @ApiPropertyOptional({ description: 'Default points deducted when submission is late (timer)' })
+    @IsOptional()
+    @IsNumber()
+    @Min(0)
+    lateTimerPenaltyPoints?: number;
+
     @ApiPropertyOptional()
     @IsOptional()
     @IsNumber()
@@ -168,6 +190,11 @@ export class SubmitAssessmentDto {
     @IsOptional()
     @IsString()
     examSessionToken?: string;
+
+    @ApiPropertyOptional({ description: 'Set when the client auto-submits on timer expiry' })
+    @IsOptional()
+    @IsBoolean()
+    isAutoSubmit?: boolean;
 }
 
 export class StartAssessmentResponseDto {
@@ -216,4 +243,16 @@ export class GradeSubmissionDto {
     @ApiProperty({ type: 'object', additionalProperties: { type: 'string' } })
     @IsOptional()
     questionFeedback?: Record<string, string>;
+
+    @ApiPropertyOptional({ description: 'Points to deduct for late due-date submission (0 = waived)' })
+    @IsOptional()
+    @IsNumber()
+    @Min(0)
+    lateDueDeduction?: number;
+
+    @ApiPropertyOptional({ description: 'Points to deduct for late timer submission (0 = waived)' })
+    @IsOptional()
+    @IsNumber()
+    @Min(0)
+    lateTimerDeduction?: number;
 }

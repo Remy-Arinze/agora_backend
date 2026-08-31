@@ -26,6 +26,7 @@ model Teacher {
   attendances        Attendance[]
   classTeachers      ClassTeacher[]
   timetablePeriods   TimetablePeriod[]
+  examTimetableSlots ExamTimetableSlot[]
   subjectTeachers    SubjectTeacher[]
   curricula          Curriculum[]
   curriculumProgress CurriculumItemProgress[]
@@ -138,6 +139,7 @@ enum PermissionResource {
   RESOURCES
   TRANSFERS
   INTEGRATIONS
+  SETTINGS
 }
 
 enum PermissionType {

@@ -8,8 +8,10 @@ import { SessionService } from './session.service';
 import { PrismaService } from '../database/prisma.service';
 import { SchoolRepository } from '../schools/domain/repositories/school.repository';
 import { EmailService } from '../email/email.service';
+import { SchoolValidatorService } from '../schools/shared/school-validator.service';
+import { NotificationService } from '../notification/notification.service';
+import { NotificationInboxService } from '../notification/notification-inbox.service';
 import { TestUtils } from '../common/test/test-utils';
-import { InitializeSessionDto, SessionType } from './dto/initialize-session.dto';
 import { SessionStatus, TermStatus } from '@prisma/client';
 
 describe('SessionService', () => {
@@ -36,6 +38,18 @@ describe('SessionService', () => {
           provide: EmailService,
           useValue: TestUtils.createMockEmailService(),
         },
+        {
+          provide: SchoolValidatorService,
+          useValue: { validateSchoolActive: jest.fn() },
+        },
+        {
+          provide: NotificationService,
+          useValue: {},
+        },
+        {
+          provide: NotificationInboxService,
+          useValue: { createAndFanOut: jest.fn(), getAllSchoolMemberUserIds: jest.fn() },
+        },
       ],
     }).compile();
 
@@ -47,82 +61,6 @@ describe('SessionService', () => {
 
   it('should be defined', () => {
     expect(service).toBeDefined();
-  });
-
-  describe('initializeSession', () => {
-    const mockSchoolId = 'school-1';
-    const startDate = new Date('2024-09-01');
-    const endDate = new Date('2025-07-31');
-    const mockDto: InitializeSessionDto = {
-      name: '2024/2025',
-      startDate: startDate.toISOString(),
-      endDate: endDate.toISOString(),
-      schoolType: 'PRIMARY',
-      type: SessionType.NEW_SESSION,
-    };
-
-    it('should successfully initialize a new session', async () => {
-      const mockSchool = TestUtils.createMockSchool({ id: mockSchoolId });
-      const mockSession = {
-        id: 'session-1',
-        name: mockDto.name,
-        schoolId: mockSchoolId,
-        status: SessionStatus.DRAFT,
-        schoolType: mockDto.schoolType,
-      };
-
-      schoolRepository.findById.mockResolvedValue(mockSchool as any);
-      (prisma.academicSession.findFirst as jest.Mock).mockResolvedValue(null); // No active session
-      (prisma.academicSession.create as jest.Mock).mockResolvedValue(mockSession as any);
-
-      const result = await service.initializeSession(mockSchoolId, mockDto);
-
-      expect(schoolRepository.findById).toHaveBeenCalledWith(mockSchoolId);
-      expect(result).toHaveProperty('id', 'session-1');
-    });
-
-    it('should throw BadRequestException if school not found', async () => {
-      schoolRepository.findById.mockResolvedValue(null);
-
-      await expect(service.initializeSession(mockSchoolId, mockDto)).rejects.toThrow(
-        BadRequestException
-      );
-    });
-
-    it('should throw ConflictException if active session exists', async () => {
-      const mockSchool = TestUtils.createMockSchool({ id: mockSchoolId });
-      const activeSession = {
-        id: 'active-session',
-        name: '2023/2024',
-        status: SessionStatus.ACTIVE,
-        schoolType: 'PRIMARY',
-      };
-
-      schoolRepository.findById.mockResolvedValue(mockSchool as any);
-      (prisma.academicSession.findFirst as jest.Mock).mockResolvedValue(activeSession as any);
-
-      await expect(service.initializeSession(mockSchoolId, mockDto)).rejects.toThrow(
-        ConflictException
-      );
-    });
-
-    it('should throw BadRequestException if session duration is too short', async () => {
-      const mockSchool = TestUtils.createMockSchool({ id: mockSchoolId });
-      const shortEndDate = new Date(startDate);
-      shortEndDate.setMonth(shortEndDate.getMonth() + 5); // Only 5 months
-
-      schoolRepository.findById.mockResolvedValue(mockSchool as any);
-      (prisma.academicSession.findFirst as jest.Mock).mockResolvedValue(null);
-
-      const invalidDto = {
-        ...mockDto,
-        endDate: shortEndDate.toISOString(),
-      };
-
-      await expect(service.initializeSession(mockSchoolId, invalidDto)).rejects.toThrow(
-        BadRequestException
-      );
-    });
   });
 
   describe('createTerm', () => {

@@ -10,6 +10,8 @@ import { StaffRepository } from '../schools/domain/repositories/staff.repository
 import { UserWithContext } from '../auth/types/user-with-context.type';
 import { CreateGradeDto, UpdateGradeDto } from './dto/grade.dto';
 import { KnowledgeIndexingService } from '../ai/knowledge-indexing.service';
+import { NotificationService } from '../notification/notification.service';
+import { SchoolSettingsService } from '../school-settings/school-settings.service';
 
 @Injectable()
 export class GradesService {
@@ -17,8 +19,18 @@ export class GradesService {
     private readonly prisma: PrismaService,
     private readonly schoolRepository: SchoolRepository,
     private readonly staffRepository: StaffRepository,
-    private readonly indexingService: KnowledgeIndexingService
+    private readonly indexingService: KnowledgeIndexingService,
+    private readonly notificationService: NotificationService,
+    private readonly schoolSettingsService: SchoolSettingsService,
   ) {}
+
+  /** JWT profileId is Teacher.id; legacy tokens may use Teacher.teacherId. */
+  private async resolveTeacherProfile(profileId: string) {
+    return (
+      (await this.staffRepository.findTeacherById(profileId)) ??
+      (await this.staffRepository.findTeacherByTeacherId(profileId))
+    );
+  }
 
   /**
    * Create a new grade
@@ -37,7 +49,7 @@ export class GradesService {
 
     // Validate teacher exists and belongs to school
     // Note: currentProfileId contains teacherId (unique string), not the database id
-    const teacher = await this.staffRepository.findTeacherByTeacherId(teacherId);
+    const teacher = await this.resolveTeacherProfile(teacherId);
     if (!teacher || teacher.schoolId !== school.id) {
       throw new ForbiddenException('Teacher not found in this school');
     }
@@ -266,6 +278,21 @@ export class GradesService {
     this.indexingService.triggerEntitySync('student', grade.enrollment.studentId).catch((err: Error) => 
       console.error(`[AI Indexing] Failed to update student ${grade.enrollment.studentId}:`, err)
     );
+    if (grade.isPublished) {
+      try {
+        void this.notificationService.emitGradePublished({
+          schoolId,
+          studentId: grade.enrollment.studentId,
+          assessmentTitle: grade.assessmentName || grade.gradeType,
+          subjectName: grade.subject,
+          score: grade.score.toNumber(),
+          maxScore: grade.maxScore.toNumber(),
+          timestamp: new Date().toISOString(),
+        });
+      } catch {
+        // Grade creation must not depend on notification delivery.
+      }
+    }
 
     return {
       id: grade.id,
@@ -316,7 +343,7 @@ export class GradesService {
 
     // Get teacher's database ID from profile ID
     // Note: currentProfileId contains teacherId (unique string like "TCH-XXX"), not the database id
-    const teacher = await this.staffRepository.findTeacherByTeacherId(teacherProfileId);
+    const teacher = await this.resolveTeacherProfile(teacherProfileId);
     if (!teacher || teacher.schoolId !== school.id) {
       throw new ForbiddenException('Teacher not found in this school');
     }
@@ -347,6 +374,22 @@ export class GradesService {
     const isOwner = grade.teacherId === teacher.id || grade.teacherId === teacherProfileId;
     if (!isOwner) {
       throw new ForbiddenException('You can only update grades you created');
+    }
+
+    const gradingPolicy = await this.schoolSettingsService.getGradingPolicy(school.id);
+    if (grade.termId) {
+      const term = await this.prisma.term.findUnique({ where: { id: grade.termId } });
+      if (term?.endDate) {
+        const lockDate = new Date(term.endDate);
+        lockDate.setDate(lockDate.getDate() + (gradingPolicy.gradeLockDaysAfterTermEnd ?? 7));
+        if (new Date() > lockDate && (dto.score !== undefined || dto.isPublished !== undefined)) {
+          throw new BadRequestException('Grading period is locked for this term.');
+        }
+      }
+    }
+
+    if (dto.isPublished && gradingPolicy.gradeApprovalRequired && !grade.isPublished) {
+      throw new BadRequestException('Grade approval is required before publishing. Contact your administrator.');
     }
 
     // Validate score if provided
@@ -414,6 +457,21 @@ export class GradesService {
     this.indexingService.triggerEntitySync('student', updatedGrade.enrollment.studentId).catch((err: Error) => 
       console.error(`[AI Indexing] Failed to update student ${updatedGrade.enrollment.studentId}:`, err)
     );
+    if (!grade.isPublished && updatedGrade.isPublished) {
+      try {
+        void this.notificationService.emitGradePublished({
+          schoolId,
+          studentId: updatedGrade.enrollment.studentId,
+          assessmentTitle: updatedGrade.assessmentName || updatedGrade.gradeType,
+          subjectName: updatedGrade.subject,
+          score: updatedGrade.score.toNumber(),
+          maxScore: updatedGrade.maxScore.toNumber(),
+          timestamp: new Date().toISOString(),
+        });
+      } catch {
+        // Grade publishing must not depend on notification delivery.
+      }
+    }
 
     return {
       id: updatedGrade.id,
@@ -459,7 +517,7 @@ export class GradesService {
 
     // Get teacher's database ID from profile ID
     // Note: currentProfileId contains teacherId (unique string like "TCH-XXX"), not the database id
-    const teacher = await this.staffRepository.findTeacherByTeacherId(teacherProfileId);
+    const teacher = await this.resolveTeacherProfile(teacherProfileId);
     if (!teacher || teacher.schoolId !== school.id) {
       throw new ForbiddenException('Teacher not found in this school');
     }
@@ -601,7 +659,7 @@ export class GradesService {
     if (user?.currentProfileId) {
       // Note: currentProfileId contains teacherId (unique string), not the database id
       const teacherIdString = user.currentProfileId;
-      const teacher = await this.staffRepository.findTeacherByTeacherId(teacherIdString);
+      const teacher = await this.resolveTeacherProfile(teacherIdString);
 
       if (teacher) {
         // Get teacher's assigned subjects for this class/ClassArm
@@ -745,7 +803,7 @@ export class GradesService {
     if (user?.currentProfileId) {
       // Note: currentProfileId contains teacherId (unique string), not the database id
       const teacherIdString = user.currentProfileId;
-      const teacher = await this.staffRepository.findTeacherByTeacherId(teacherIdString);
+      const teacher = await this.resolveTeacherProfile(teacherIdString);
 
       if (teacher) {
         // Use teacher.id (database ID) for Grade.teacherId
@@ -880,7 +938,7 @@ export class GradesService {
 
     // Validate teacher exists and belongs to school
     // Note: currentProfileId contains teacherId (unique string), not the database id
-    const teacher = await this.staffRepository.findTeacherByTeacherId(teacherId);
+    const teacher = await this.resolveTeacherProfile(teacherId);
     if (!teacher || teacher.schoolId !== school.id) {
       throw new ForbiddenException('Teacher not found in this school');
     }
@@ -1275,7 +1333,7 @@ export class GradesService {
     // If teacher context provided, filter by teacher's subjects
     if (user?.currentProfileId) {
       const teacherIdString = user.currentProfileId;
-      const teacher = await this.staffRepository.findTeacherByTeacherId(teacherIdString);
+      const teacher = await this.resolveTeacherProfile(teacherIdString);
 
       if (teacher) {
         where.teacherId = teacher.id;

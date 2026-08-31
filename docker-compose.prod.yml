@@ -87,7 +87,7 @@ services:
 
   # ─── PostgreSQL ──────────────────────────────────────────────────────────────
   db:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg18
     restart: unless-stopped
     # No ports: block — not reachable from outside the VPS
     environment:

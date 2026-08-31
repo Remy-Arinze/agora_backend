@@ -78,12 +78,16 @@ model Assessment {
   description         String?
   type                String // "QUIZ", "EXAM", "ASSIGNMENT"
   status              String    @default("DRAFT") // "DRAFT", "PUBLISHED", "CLOSED"
-  dueDate             DateTime?
-  maxScore            Decimal   @default(100)
-  isTimed             Boolean   @default(false)
-  duration            Int? // In minutes
-  hasIntegrity        Boolean   @default(false)
-  autoSubmitOnTimeout Boolean   @default(true)
+  dueDate                       DateTime?
+  maxScore                      Decimal   @default(100)
+  isTimed                       Boolean   @default(false)
+  duration                      Int? // In minutes
+  allowLateSubmissionAfterDue   Boolean   @default(false)
+  allowLateSubmissionAfterTimer Boolean   @default(false)
+  lateDuePenaltyPoints          Decimal   @default(0)
+  lateTimerPenaltyPoints        Decimal   @default(0)
+  hasIntegrity                  Boolean   @default(false)
+  autoSubmitOnTimeout           Boolean   @default(true)
   violationThreshold  Int       @default(1)
   pointsPerViolation  Decimal   @default(0)
   createdAt           DateTime  @default(now())
@@ -145,6 +149,10 @@ model AssessmentSubmission {
   isFlagged        Boolean   @default(false)
   pointDeductions  Decimal?  @default(0)
   isAutoSubmitted  Boolean   @default(false)
+  isLateDue        Boolean   @default(false)
+  isLateTimer      Boolean   @default(false)
+  lateDueDeduction Decimal?  @default(0)
+  lateTimerDeduction Decimal? @default(0)
 
   assessment Assessment            @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
   student    Student               @relation(fields: [studentId], references: [id], onDelete: Cascade)

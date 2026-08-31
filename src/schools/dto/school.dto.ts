@@ -87,6 +87,9 @@ export class SchoolDto {
   @ApiProperty()
   hasTertiary: boolean;
 
+  @ApiProperty({ type: [String], description: 'Instructional weekdays' })
+  workingDays?: string[];
+
   @ApiProperty({ description: 'Registration status: UNAPPROVED, VERIFIED, or REJECTED' })
   registrationStatus: string;
 

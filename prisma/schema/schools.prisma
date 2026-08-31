@@ -14,6 +14,8 @@ model School {
   hasPrimary   Boolean  @default(false)
   hasSecondary Boolean  @default(false)
   hasTertiary  Boolean  @default(false)
+  /// School instructional weekdays (default Mon–Fri). Weekends outside this list are non-school days.
+  workingDays  DayOfWeek[] @default([MONDAY, TUESDAY, WEDNESDAY, THURSDAY, FRIDAY])
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -53,6 +55,23 @@ model School {
   admissionApplications AdmissionApplication[]
   subscriptionBillingAuditLogs SubscriptionBillingAuditLog[]
   loisConfig            LoisConfig?
+  structureConfig       SchoolStructureConfig?
+  holidayPresets        SchoolHolidayPreset[]
+  gradingPolicy         GradingPolicy?
+  roleTemplates         RoleTemplate[]
+  admissionPolicy       AdmissionPolicy?
+  admissionDocuments    AdmissionDocument[]
+  bellScheduleTemplates BellScheduleTemplate[]
+  timetablePolicy       TimetablePolicy?
+  attendancePolicy      AttendancePolicy?
+  notificationPolicy    NotificationPolicy?
+  feeCategories         FeeCategory[]
+  feeSchedules          FeeSchedule[]
+  financePolicy         FinancePolicy?
+  curriculumPolicy      CurriculumPolicy?
+  securityPolicy        SecurityPolicy?
+  studentRecordAudits   StudentRecordAudit[]
+  schoolCloudBackups    SchoolCloudBackup[]
 
   @@index([schoolId])
   @@index([isActive])
