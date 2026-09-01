@@ -1,8 +1,0 @@
-# Dokploy/Nixpacks defaults to a ~2GB Node heap, which OOMs on `nest build`.
-# Start the compiled app (not `nest start`, which needs the CLI at runtime).
-[variables]
-NODE_OPTIONS = "--max-old-space-size=4096"
-HUSKY = "0"
-
-[start]
-cmd = "npm run start"
