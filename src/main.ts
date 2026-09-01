@@ -87,7 +87,7 @@ async function bootstrap() {
 
       const isLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
       const isProductionDomain =
-        origin.endsWith('.agora-schools.com') || origin === 'https://agora-schools.com';
+        origin.endsWith('.myschoolbud.com') || origin === 'https://myschoolbud.com';
       const isConfiguredOrigin = allowedOrigins.some(
         (allowed) => origin === allowed || origin.startsWith(allowed),
       );
@@ -152,7 +152,7 @@ async function bootstrap() {
 
   const port = process.env.PORT || 4000;
   await app.listen(port);
-  logger.log(`🚀 Agora API running on http://localhost:${port}`);
+  logger.log(`🚀 myschoolbud API running on http://localhost:${port}`);
 }
 
 bootstrap();
