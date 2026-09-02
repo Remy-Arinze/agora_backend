@@ -56,7 +56,7 @@ export class AiLlmClientService {
     const openaiKey = this.configService.get<string>('OPENAI_API_KEY');
     const openrouterKey = this.configService.get<string>('OPENROUTER_API_KEY');
     const openrouterBaseUrl = this.configService.get<string>('OPENROUTER_BASE_URL') || 'https://openrouter.ai/api/v1';
-    const appUrl = this.configService.get<string>('FRONTEND_URL') || 'https://agora-schools.com';
+    const appUrl = this.configService.get<string>('FRONTEND_URL') || 'https://myschoolbud.com';
 
     const azureApiKey = this.configService.get<string>('AZURE_OPENAI_API_KEY');
     const azureEndpoint = this.configService.get<string>('AZURE_OPENAI_ENDPOINT');
@@ -85,7 +85,7 @@ export class AiLlmClientService {
         baseURL: openrouterBaseUrl,
         defaultHeaders: {
           'HTTP-Referer': appUrl,
-          'X-Title': 'Agora Education Platform',
+          'X-Title': 'Myschoolbud Education Platform',
         },
       });
       this.model = customModel || 'openai/gpt-4o-mini';

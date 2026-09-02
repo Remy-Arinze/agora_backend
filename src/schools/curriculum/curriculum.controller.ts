@@ -83,7 +83,7 @@ export class CurriculumController {
     @Query() query: GetAgoraSubjectsQueryDto
   ): Promise<ResponseDto<AgoraSubjectDto[]>> {
     const data = await this.nerdcService.getSubjects(query);
-    return ResponseDto.ok(data, 'Agora subjects retrieved successfully');
+    return ResponseDto.ok(data, 'Myschoolbud subjects retrieved successfully');
   }
 
   @Get('agora/template')
@@ -109,7 +109,7 @@ export class CurriculumController {
     );
     return ResponseDto.ok(
       data,
-      data ? 'Agora template retrieved successfully' : 'No Agora template found'
+      data ? 'Myschoolbud template retrieved successfully' : 'No Myschoolbud template found'
     );
   }
 
@@ -273,7 +273,7 @@ export class CurriculumController {
     @Query('gradeLevel') gradeLevel: string
   ): Promise<ResponseDto<any[]>> {
     const data = await this.curriculumService.getAgoraLibraryCurricula(subjectId, gradeLevel);
-    return ResponseDto.ok(data, 'Agora curricula retrieved successfully');
+    return ResponseDto.ok(data, 'Myschoolbud curricula retrieved successfully');
   }
 
   @Get('agora/:curriculumId/preview')

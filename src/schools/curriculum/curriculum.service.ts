@@ -1560,7 +1560,7 @@ export class CurriculumService {
     }
 
     if (mode === SchemeGenerationMode.AGORA_ONLY) {
-      throw new BadRequestException('Agora templates must be set up per-term directly.');
+      throw new BadRequestException('Myschoolbud templates must be set up per-term directly.');
     }
 
     const creditsNeeded = this.TOTAL_COST * session.terms.length;

@@ -54,7 +54,7 @@ export class StudentAdmissionService {
       if (existingUser && existingUser.studentProfile) {
         // Student already exists in Agora system
         throw new ConflictException(
-          `A student with email ${studentData.email} already exists in the Agora system. ` +
+          `A student with email ${studentData.email} already exists in the Myschoolbud system. ` +
           `Please initiate a transfer instead of creating a new admission.`
         );
       }
@@ -310,7 +310,7 @@ export class StudentAdmissionService {
 
     if (existingUser && existingUser.studentProfile) {
       throw new ConflictException(
-        `A student with email ${dto.email} already exists in the Agora system. ` +
+        `A student with email ${dto.email} already exists in the Myschoolbud system. ` +
         `Please log in and initiate a transfer instead.`
       );
     }

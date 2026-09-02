@@ -53,7 +53,7 @@ export class NotificationInboxService {
   private configureVapid() {
     const publicKey = this.config.get<string>('VAPID_PUBLIC_KEY');
     const privateKey = this.config.get<string>('VAPID_PRIVATE_KEY');
-    const subject = this.config.get<string>('VAPID_SUBJECT') || 'mailto:support@agora-schools.com';
+    const subject = this.config.get<string>('VAPID_SUBJECT') || 'mailto:support@myschoolbud.com';
     if (publicKey && privateKey) {
       try {
         webpush.setVapidDetails(subject, publicKey, privateKey);

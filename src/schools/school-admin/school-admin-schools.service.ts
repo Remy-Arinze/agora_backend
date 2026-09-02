@@ -1512,7 +1512,7 @@ export class SchoolAdminSchoolsService {
     const explicitFrontendUrl = this.configService.get<string>('FRONTEND_URL');
     const nodeEnv = this.configService.get<string>('NODE_ENV') || 'development';
     const frontendUrl = explicitFrontendUrl ||
-      (nodeEnv === 'production' ? 'https://agora-schools.com' : 'http://localhost:3000');
+      (nodeEnv === 'production' ? 'https://myschoolbud.com' : 'http://localhost:3000');
     // Normalize URL - remove trailing slash if present to prevent double slashes
     const normalizedUrl = frontendUrl.replace(/\/+$/, '');
     const verificationUrl = `${normalizedUrl}/dashboard/school/settings/profile?token=${token}`;

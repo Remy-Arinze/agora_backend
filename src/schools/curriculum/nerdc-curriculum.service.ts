@@ -234,7 +234,7 @@ export class NerdcCurriculumService {
     });
 
     if (!subject) {
-      throw new NotFoundException(`Agora subject with code ${data.subjectCode} not found`);
+      throw new NotFoundException(`Myschoolbud subject with code ${data.subjectCode} not found`);
     }
 
     // Check if curriculum exists

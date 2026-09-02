@@ -149,7 +149,7 @@ async function main() {
 
     {
       slug: 'agora-ai',
-      name: 'Agora AI',
+      name: 'Myschoolbud AI',
       description: "The Teacher's Copilot. AI-powered lesson planning, assessment creation, and grading assistance.",
       icon: '🤖',
       monthlyPrice: 0, // Included in Professional+
@@ -210,7 +210,7 @@ async function main() {
     {
       tierCode: 'FREE',
       name: 'Free',
-      description: 'Get started with the Agora core',
+      description: 'Get started with the Myschoolbud core',
       monthlyPrice: 0,
       yearlyPrice: 0,
       highlight: false,
@@ -226,7 +226,7 @@ async function main() {
         { text: '10 Teachers', included: true },
         { text: '2 Admin Users', included: true },
         { text: 'Core Management Platform', included: true },
-        { text: 'Agora AI Assistant', included: false },
+        { text: 'Myschoolbud AI Assistant', included: false },
         { text: 'Automated AI Grading', included: false },
         { text: 'Detailed AI Analytics', included: false },
       ],
@@ -234,7 +234,7 @@ async function main() {
     {
       tierCode: 'PRO',
       name: 'Pro',
-      description: 'Unlock the power of Agora AI',
+      description: 'Unlock the power of Myschoolbud AI',
       monthlyPrice: 49999,
       yearlyPrice: 499990,
       highlight: true,
@@ -250,8 +250,8 @@ async function main() {
         { text: '80 Teachers', included: true },
         { text: '20 Admin Users', included: true },
         { text: 'Core Management Platform', included: true },
-        { text: 'Agora AI Assistant', included: true, isGlowing: true },
-        { text: '10,000 Agora AI credits / month', included: true },
+        { text: 'Myschoolbud AI Assistant', included: true, isGlowing: true },
+        { text: '10,000 Myschoolbud AI credits / month', included: true },
         { text: 'Automated Essay Grading', included: true },
       ],
     },
@@ -274,8 +274,8 @@ async function main() {
         { text: '150 Teachers', included: true },
         { text: '35 Admin Users', included: true },
         { text: 'Core Management Platform', included: true },
-        { text: 'Agora AI Assistant', included: true },
-        { text: '25,000 Agora AI credits / month', included: true },
+        { text: 'Myschoolbud AI Assistant', included: true },
+        { text: '25,000 Myschoolbud AI credits / month', included: true },
         { text: 'Dedicated Support', included: true },
       ],
     }

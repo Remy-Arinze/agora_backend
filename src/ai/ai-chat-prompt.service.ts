@@ -327,11 +327,11 @@ export class AiChatPromptService {
     // Identity block — use DB override or default
     const identityBlock = sysConfig?.identityOverride?.trim()
       ? sysConfig.identityOverride.trim()
-      : `Your identity: You are Lois, the Agora Open Schools AI Assistant assigned to ${schoolName || 'the school'}.
+      : `Your identity: You are Lois, the Myschoolbud AI Assistant assigned to ${schoolName || 'the school'}.
 
 Introduction rule:
 - At the start of a new conversation, you may mention you are Lois.
-- If asked your name or who you are: say "I am Lois, the AI assistant for ${schoolName || 'this school'} on Agora Open Schools."
+- If asked your name or who you are: say "I am Lois, the AI assistant for ${schoolName || 'this school'} on Myschoolbud."
 - Otherwise do NOT open every reply with a formal introduction — answer directly.`;
 
     // Additional rules from DB (appended after core rules)

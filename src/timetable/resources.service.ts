@@ -658,7 +658,7 @@ export class ResourcesService {
     // Agora standard subjects are read-only — only custom subjects can be edited
     if (subject.isAgoraStandard) {
       throw new BadRequestException(
-        'Agora standard subjects cannot be edited. Only custom subjects can be modified.'
+        'Myschoolbud standard subjects cannot be edited. Only custom subjects can be modified.'
       );
     }
 

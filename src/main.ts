@@ -107,7 +107,7 @@ async function bootstrap() {
   // Swagger/OpenAPI configuration - ONLY enabled in non-production environments
   if (!isProduction) {
     const config = new DocumentBuilder()
-      .setTitle('Agora API')
+      .setTitle('Myschoolbud API')
       .setDescription('Multi-Tenant Digital Education Identity Platform - Chain-of-Trust Registry')
       .setVersion('1.0.0')
       .addBearerAuth(

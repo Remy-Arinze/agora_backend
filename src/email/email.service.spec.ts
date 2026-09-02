@@ -176,7 +176,7 @@ describe('EmailService', () => {
       });
 
       const url = (service as any).getFrontendUrl();
-      expect(url).toBe('https://agora-schools.com');
+      expect(url).toBe('https://myschoolbud.com');
     });
 
     it('should use explicit FRONTEND_URL if set', () => {

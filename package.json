@@ -34,7 +34,7 @@
     "db:resolve-failed-migration": "tsx scripts/check-failed-migration.ts --resolve",
     "db:apply-missing-class-arms": "prisma db execute --file scripts/apply-missing-class-arms.sql",
     "backfill-embeddings": "tsx scripts/backfill-embeddings.ts",
-    "push": "git push origin dev; git checkout staging; git merge dev --no-edit; git push origin staging; git checkout master; git merge staging --no-edit; git push origin master; git checkout dev"
+    "push": "git push origin dev && git checkout staging && git merge dev --no-edit && git push origin staging && git checkout master && git merge staging --no-edit && git push origin master && git checkout dev"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts",

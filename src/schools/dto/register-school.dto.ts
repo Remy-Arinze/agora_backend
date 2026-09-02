@@ -113,7 +113,7 @@ export class RegisterSchoolDto {
     @Type(() => RegisterSchoolOwnerDto)
     owner: RegisterSchoolOwnerDto;
 
-    @ApiPropertyOptional({ description: 'Optional note/message to Agora team' })
+    @ApiPropertyOptional({ description: 'Optional note/message to Myschoolbud team' })
     @IsOptional()
     @IsString()
     @MaxLength(1000)

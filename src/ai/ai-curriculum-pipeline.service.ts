@@ -867,7 +867,7 @@ ${overview.progressionNotes || ''}
       }
 
       const prompt = `
-        As Lois, the Agora Intelligent Curriculum Architect, analyze this school's private curriculum document for the subject: ${doc.subject?.name || 'Unknown'}.
+        As Lois, the Myschoolbud Intelligent Curriculum Architect, analyze this school's private curriculum document for the subject: ${doc.subject?.name || 'Unknown'}.
         
         DETECT ALL GRADES:
         Scan the text for mentions of Nigeria's standard class levels (e.g. JSS 1, SS 1, Primary 3).

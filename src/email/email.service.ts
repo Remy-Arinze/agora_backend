@@ -237,7 +237,7 @@ export class EmailService {
 
     // Otherwise, auto-detect based on environment
     return nodeEnv === 'production'
-      ? 'https://agora-schools.com'
+      ? 'https://myschoolbud.com'
       : 'http://localhost:3000';
   }
 
@@ -1106,7 +1106,7 @@ export class EmailService {
       this.configService.get<string>('MAIL_USER') ||
       this.configService.get<string>('SMTP_USER');
     const replyToEmail = replyTo || this.configService.get<string>('MAIL_REPLY_TO') || fromEmail;
-    const messageId = `<${Date.now()}-${Math.random().toString(36).substring(2, 15)}@agora-schools.com>`;
+    const messageId = `<${Date.now()}-${Math.random().toString(36).substring(2, 15)}@myschoolbud.com>`;
 
     return {
       'Message-ID': messageId,
@@ -1612,7 +1612,7 @@ export class EmailService {
     const replyTo = this.configService.get<string>('MAIL_REPLY_TO') || fromEmail;
 
     // Generate unique Message-ID
-    const messageId = `<${Date.now()}-${Math.random().toString(36).substring(2, 15)}@agora-schools.com>`;
+    const messageId = `<${Date.now()}-${Math.random().toString(36).substring(2, 15)}@myschoolbud.com>`;
 
     // Plain text version for better deliverability
     const textVersion = `Hi ${name},

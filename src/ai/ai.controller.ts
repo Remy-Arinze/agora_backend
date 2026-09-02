@@ -52,7 +52,7 @@ export class AiController {
 
         const toolAccess = await this.subscriptionsService.checkToolAccess(schoolId, 'agora-ai');
         if (!toolAccess.hasAccess) {
-            throw new BadRequestException('School does not have access to Agora AI tools. Please upgrade your subscription.');
+            throw new BadRequestException('School does not have access to Myschoolbud AI tools. Please upgrade your subscription.');
         }
 
         const summary = await this.subscriptionsService.getSubscriptionSummary(schoolId);

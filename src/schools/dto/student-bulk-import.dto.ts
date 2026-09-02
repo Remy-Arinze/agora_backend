@@ -130,7 +130,7 @@ export class StudentImportSummaryDto {
 
   @ApiProperty({
     example: [
-      { row: 3, error: 'Student email already exists in Agora system - transfer required' },
+      { row: 3, error: 'Student email already exists in Myschoolbud system - transfer required' },
       { row: 7, error: 'Invalid date format for dateOfBirth' },
       { row: 12, error: 'Class level "JSS5" not found' },
     ],
