@@ -5,6 +5,10 @@ import { v4 as uuidv4 } from 'uuid';
 
 const prisma = new PrismaClient();
 
+const SUPER_ADMIN_EMAIL = 'myschoolbud3@gmail.com';
+const SUPER_ADMIN_PHONE = '+2347065605763';
+const SUPER_ADMIN_PASSWORD = 'Test1234!';
+
 /**
  * Generate a unique school ID
  */
@@ -60,72 +64,26 @@ function generatePublicId(schoolName: string): string {
 async function main() {
   console.log('🌱 Seeding database...');
 
-  // Hash password for all test users
-  const hashedPassword = await bcrypt.hash('Test1234!', 10);
-
   // ============================================
-  // STEP 1: Create Super Admin
+  // STEP 1: Super Admin (create only — never overwrite)
   // ============================================
-  // Check if user with email exists
   const existingByEmail = await prisma.user.findUnique({
-    where: { email: 'agoraschoolspace@gmail.com' },
+    where: { email: SUPER_ADMIN_EMAIL },
   });
-
-  // Check if user with phone exists (and it's not the same user)
-  const existingByPhone = await prisma.user.findFirst({
-    where: {
-      phone: '+2347065605763',
-      ...(existingByEmail ? { id: { not: existingByEmail.id } } : {}),
-    },
-  });
-
-  let superAdmin;
 
   if (existingByEmail) {
-    // If phone is taken by another user, clear it first
-    if (existingByPhone) {
-      await prisma.user.update({
-        where: { id: existingByPhone.id },
-        data: { phone: null },
-      });
-    }
-    // User exists with this email, update it
-    superAdmin = await prisma.user.update({
-      where: { id: existingByEmail.id },
-      data: {
-        phone: '+2347065605763',
-        passwordHash: hashedPassword,
-        accountStatus: 'ACTIVE',
-        role: 'SUPER_ADMIN',
-        firstName: 'Jeremy',
-        lastName: 'Arinze',
-      },
-    });
-  } else if (existingByPhone) {
-    // User exists with this phone but different email
-    // First, clear the phone from this user to avoid conflict
-    await prisma.user.update({
-      where: { id: existingByPhone.id },
-      data: { phone: null },
-    });
-    // Now create the super admin
-    superAdmin = await prisma.user.create({
-      data: {
-        email: 'agoraschoolspace@gmail.com',
-        phone: '+2347065605763',
-        passwordHash: hashedPassword,
-        accountStatus: 'ACTIVE',
-        role: 'SUPER_ADMIN',
-        firstName: 'Jeremy',
-        lastName: 'Arinze',
-      },
-    });
+    console.log('⏭️ Super Admin already exists, skipping:', existingByEmail.email);
   } else {
-    // No existing user, create new
-    superAdmin = await prisma.user.create({
+    const hashedPassword = await bcrypt.hash(SUPER_ADMIN_PASSWORD, 10);
+    const phoneTaken = await prisma.user.findFirst({
+      where: { phone: SUPER_ADMIN_PHONE },
+      select: { id: true },
+    });
+
+    const created = await prisma.user.create({
       data: {
-        email: 'agoraschoolspace@gmail.com',
-        phone: '+2347065605763',
+        email: SUPER_ADMIN_EMAIL,
+        phone: phoneTaken ? null : SUPER_ADMIN_PHONE,
         passwordHash: hashedPassword,
         accountStatus: 'ACTIVE',
         role: 'SUPER_ADMIN',
@@ -133,12 +91,9 @@ async function main() {
         lastName: 'Arinze',
       },
     });
+    console.log('✅ Created Super Admin:', created.email, '(Jeremy Arinze)');
   }
-  console.log('✅ Created/Updated Super Admin:', superAdmin.email, '(Jeremy Arinze)');
 
-
-
-  // Fetch the created records to get public IDs for display (already have them from transactions)
 
   // ============================================
   // SEED TOOLS
@@ -189,18 +144,14 @@ async function main() {
   ];
 
   for (const tool of tools) {
-    await prisma.tool.upsert({
+    const existingTool = await prisma.tool.findUnique({
       where: { slug: tool.slug },
-      update: {
-        name: tool.name,
-        description: tool.description,
-        icon: tool.icon,
-        features: tool.features,
-        targetRoles: tool.targetRoles,
-        sortOrder: tool.sortOrder,
-      },
-      create: tool,
     });
+    if (existingTool) {
+      console.log(`  ⏭️ Tool exists, skipping: ${tool.name}`);
+      continue;
+    }
+    await prisma.tool.create({ data: tool });
     console.log(`  ✅ Tool: ${tool.name}`);
   }
 
@@ -289,44 +240,31 @@ async function main() {
     });
 
     if (createdPlan) {
-      createdPlan = await prisma.subscriptionPlan.update({
-        where: { id: createdPlan.id },
-        data: {
-          name: plan.name,
-          description: plan.description,
-          monthlyPrice: plan.monthlyPrice,
-          yearlyPrice: plan.yearlyPrice,
-          features: plan.features as any,
-          highlight: plan.highlight,
-          cta: plan.cta,
-          accent: plan.accent,
-          isPublic: plan.isPublic,
-          maxStudents: plan.maxStudents,
-          maxTeachers: plan.maxTeachers,
-          maxAdmins: plan.maxAdmins,
-          aiCredits: plan.aiCredits,
-        }
-      });
-    } else {
-      createdPlan = await prisma.subscriptionPlan.create({
-        data: {
-          tierCode: plan.tierCode as any,
-          name: plan.name,
-          description: plan.description,
-          monthlyPrice: plan.monthlyPrice,
-          yearlyPrice: plan.yearlyPrice,
-          features: plan.features as any,
-          highlight: plan.highlight,
-          cta: plan.cta,
-          accent: plan.accent,
-          isPublic: plan.isPublic,
-          maxStudents: plan.maxStudents,
-          maxTeachers: plan.maxTeachers,
-          maxAdmins: plan.maxAdmins,
-          aiCredits: plan.aiCredits,
-        }
-      });
+      console.log(`  ⏭️ Plan exists, skipping: ${plan.name}`);
+      if (plan.tierCode === 'FREE') {
+        freePlanId = createdPlan.id;
+      }
+      continue;
     }
+
+    createdPlan = await prisma.subscriptionPlan.create({
+      data: {
+        tierCode: plan.tierCode as any,
+        name: plan.name,
+        description: plan.description,
+        monthlyPrice: plan.monthlyPrice,
+        yearlyPrice: plan.yearlyPrice,
+        features: plan.features as any,
+        highlight: plan.highlight,
+        cta: plan.cta,
+        accent: plan.accent,
+        isPublic: plan.isPublic,
+        maxStudents: plan.maxStudents,
+        maxTeachers: plan.maxTeachers,
+        maxAdmins: plan.maxAdmins,
+        aiCredits: plan.aiCredits,
+      }
+    });
     console.log(`  ✅ Plan: ${plan.name}`);
     if (plan.tierCode === 'FREE') {
       freePlanId = createdPlan.id;
@@ -338,9 +276,9 @@ async function main() {
   console.log('\n🎉 Seeding completed!\n');
   console.log('📋 Test Login Credentials:\n');
   console.log('Super Admin:');
-  console.log('  Email: agoraschoolspace@gmail.com');
+  console.log(`  Email: ${SUPER_ADMIN_EMAIL}`);
   console.log('  Name: Jeremy Arinze');
-  console.log('  Password: Test1234!\n');
+  console.log(`  Password: ${SUPER_ADMIN_PASSWORD}\n`);
 }
 
 main()

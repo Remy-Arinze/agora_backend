@@ -21,6 +21,8 @@ import { KnowledgeEventService } from './knowledge-event.service';
 import { AiSchoolInsightsService } from './ai-school-insights.service';
 import { AiAcademicRiskDigestScheduler } from './ai-academic-risk-digest.scheduler';
 import { AiStaffPermissionCheckerService } from './ai-staff-permission-checker.service';
+import { AiSchoolQueryService } from './ai-school-query.service';
+import { AiInsightsService } from './ai-insights.service';
 import { PermissionGuard } from '../common/guards/permission.guard';
 import { LoisConfigService } from './lois-config.service';
 import { LoisConfigAdminController } from './lois-config-admin.controller';
@@ -44,6 +46,8 @@ import { LoisSkillsService } from './lois-skills.service';
     LoisSkillsService,
     AiSchoolInsightsService,
     AiStaffPermissionCheckerService,
+    AiSchoolQueryService,
+    AiInsightsService,
     AiContextRagService,
     AiContentGeneratorsService,
     AiAgentToolsService,

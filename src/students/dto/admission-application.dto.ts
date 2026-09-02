@@ -27,30 +27,30 @@ export class SubmitAdmissionApplicationDto {
   @IsString()
   phone?: string;
 
-  @ApiProperty()
-  @IsNotEmpty()
+  @ApiPropertyOptional()
+  @IsOptional()
   @IsDateString()
-  dateOfBirth: string;
+  dateOfBirth?: string;
 
-  @ApiProperty()
-  @IsNotEmpty()
+  @ApiPropertyOptional()
+  @IsOptional()
   @IsString()
-  gender: string;
+  gender?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
   address?: string;
 
-  @ApiProperty()
-  @IsNotEmpty()
+  @ApiPropertyOptional()
+  @IsOptional()
   @IsString()
-  nationality: string;
+  nationality?: string;
 
-  @ApiProperty()
-  @IsNotEmpty()
+  @ApiPropertyOptional()
+  @IsOptional()
   @IsString()
-  state: string;
+  state?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -67,25 +67,55 @@ export class SubmitAdmissionApplicationDto {
   @IsString()
   academicYear?: string;
 
-  @ApiProperty()
-  @IsNotEmpty()
+  @ApiPropertyOptional()
+  @IsOptional()
   @IsString()
-  parentName: string;
+  parentName?: string;
 
-  @ApiProperty()
-  @IsNotEmpty()
+  @ApiPropertyOptional()
+  @IsOptional()
   @IsString()
-  parentPhone: string;
+  parentPhone?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsEmail()
   parentEmail?: string;
 
-  @ApiProperty()
-  @IsNotEmpty()
+  @ApiPropertyOptional()
+  @IsOptional()
   @IsString()
-  parentRelationship: string;
+  parentRelationship?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  bloodGroup?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  allergies?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  medications?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  emergencyContact?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  emergencyContactPhone?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  medicalNotes?: string;
 
   @ApiPropertyOptional()
   @IsOptional()

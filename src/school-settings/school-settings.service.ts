@@ -44,11 +44,54 @@ export type SettingsSection =
   | 'curriculum'
   | 'security';
 
+export interface RuntimePolicies {
+  workingDays: string[];
+  terminologyOverrides?: Record<string, string> | null;
+  facultyStructureVisible: boolean;
+  teacherScope: string;
+  subjectRegistryMode: string;
+  defaultClassArmNames: string[];
+  classLevelNamingMode: string;
+  attendanceStatusOptions: string[];
+  grading: {
+    gradeScaleType: string;
+    passMark: number;
+    defaultCaWeight: number;
+    defaultExamWeight: number;
+    templatesMode: string;
+    defaultAllowLateSubmissionAfterDue: boolean;
+    defaultAllowLateSubmissionAfterTimer: boolean;
+    defaultLateDuePenalty: number;
+    defaultLateTimerPenalty: number;
+    defaultIntegrityEnabled: boolean;
+    defaultViolationThreshold: number;
+    defaultPointsPerViolation: number;
+    templates?: Array<{
+      id: string;
+      name: string;
+      gradeType: string;
+      maxScore: number;
+      weight?: number | null;
+      sequence?: number | null;
+    }>;
+  };
+  timetable: {
+    defaultPeriodLengthMinutes: number;
+    maxPeriodsPerTeacherPerDay: number;
+    roomCapacityWarningEnabled: boolean;
+    examBlackoutEnabled: boolean;
+  };
+  bellScheduleTemplates: Array<{ schoolType: string; periods: unknown; isDefault: boolean }>;
+}
+
 @Injectable()
 export class SchoolSettingsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async ensureDefaults(schoolId: string): Promise<void> {
+    if (!schoolId) {
+      throw new BadRequestException('School context is required to load settings.');
+    }
     await Promise.all([
       this.prisma.schoolStructureConfig.upsert({
         where: { schoolId },
@@ -585,6 +628,85 @@ export class SchoolSettingsService {
       select: { workingDays: true },
     });
     return school.workingDays;
+  }
+
+  /** Non-sensitive policy subset for teacher/student/admin UIs. */
+  async getRuntimePolicies(schoolId: string): Promise<RuntimePolicies> {
+    await this.ensureDefaults(schoolId);
+    const [school, structure, grading, attendance, timetable, bellScheduleTemplates, assessmentTemplates] =
+      await Promise.all([
+        this.prisma.school.findUniqueOrThrow({
+          where: { id: schoolId },
+          select: { workingDays: true },
+        }),
+        this.prisma.schoolStructureConfig.findUniqueOrThrow({ where: { schoolId } }),
+        this.prisma.gradingPolicy.findUniqueOrThrow({ where: { schoolId } }),
+        this.prisma.attendancePolicy.findUniqueOrThrow({ where: { schoolId } }),
+        this.prisma.timetablePolicy.findUniqueOrThrow({ where: { schoolId } }),
+        this.prisma.bellScheduleTemplate.findMany({
+          where: { schoolId, isDefault: true },
+        }),
+        this.prisma.assessmentTemplate.findMany({
+          where: { schoolId, isActive: true },
+          orderBy: { sequence: 'asc' },
+        }),
+      ]);
+
+    const toNum = (v: unknown, fallback: number) => {
+      if (v == null) return fallback;
+      const n = Number(v);
+      return Number.isFinite(n) ? n : fallback;
+    };
+
+    return {
+      workingDays: school.workingDays?.length
+        ? school.workingDays
+        : ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY'],
+      terminologyOverrides: (structure.terminologyOverrides as Record<string, string> | null) ?? null,
+      facultyStructureVisible: structure.facultyStructureVisible,
+      teacherScope: structure.teacherScope,
+      subjectRegistryMode: structure.subjectRegistryMode,
+      defaultClassArmNames: structure.defaultClassArmNames?.length
+        ? structure.defaultClassArmNames
+        : ['A', 'B', 'C'],
+      classLevelNamingMode: structure.classLevelNamingMode,
+      attendanceStatusOptions: attendance.statusOptions?.length
+        ? attendance.statusOptions
+        : ['PRESENT', 'ABSENT', 'LATE', 'EXCUSED', 'SICK'],
+      grading: {
+        gradeScaleType: grading.gradeScaleType,
+        passMark: toNum(grading.passMark, 40),
+        defaultCaWeight: toNum(grading.defaultCaWeight, 40),
+        defaultExamWeight: toNum(grading.defaultExamWeight, 60),
+        templatesMode: grading.templatesMode,
+        defaultAllowLateSubmissionAfterDue: grading.defaultAllowLateSubmissionAfterDue,
+        defaultAllowLateSubmissionAfterTimer: grading.defaultAllowLateSubmissionAfterTimer,
+        defaultLateDuePenalty: toNum(grading.defaultLateDuePenalty, 0),
+        defaultLateTimerPenalty: toNum(grading.defaultLateTimerPenalty, 0),
+        defaultIntegrityEnabled: grading.defaultIntegrityEnabled,
+        defaultViolationThreshold: grading.defaultViolationThreshold,
+        defaultPointsPerViolation: toNum(grading.defaultPointsPerViolation, 0),
+        templates: assessmentTemplates.map((t) => ({
+          id: t.id,
+          name: t.name,
+          gradeType: t.gradeType,
+          maxScore: toNum(t.maxScore, 100),
+          weight: t.weight != null ? Number(t.weight) : null,
+          sequence: t.sequence,
+        })),
+      },
+      timetable: {
+        defaultPeriodLengthMinutes: timetable.defaultPeriodLengthMinutes,
+        maxPeriodsPerTeacherPerDay: timetable.maxPeriodsPerTeacherPerDay,
+        roomCapacityWarningEnabled: timetable.roomCapacityWarningEnabled,
+        examBlackoutEnabled: timetable.examBlackoutEnabled,
+      },
+      bellScheduleTemplates: bellScheduleTemplates.map((t) => ({
+        schoolType: t.schoolType,
+        periods: t.periods,
+        isDefault: t.isDefault,
+      })),
+    };
   }
 
   async logStudentRecordAudit(params: {

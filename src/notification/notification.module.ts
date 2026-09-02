@@ -5,9 +5,10 @@ import { NotificationInboxService } from './notification-inbox.service';
 import { NotificationInboxController } from './notification-inbox.controller';
 import { DatabaseModule } from '../database/database.module';
 import { AuthModule } from '../auth/auth.module';
+import { SchoolSettingsModule } from '../school-settings/school-settings.module';
 
 @Module({
-  imports: [DatabaseModule, AuthModule],
+  imports: [DatabaseModule, AuthModule, SchoolSettingsModule],
   controllers: [NotificationController, NotificationInboxController],
   providers: [NotificationService, NotificationInboxService],
   exports: [NotificationService, NotificationInboxService],

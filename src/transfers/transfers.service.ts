@@ -45,6 +45,11 @@ export class TransfersService {
    * Generate a unique TAC (Transfer Access Code) for outgoing transfer
    */
   async generateTac(schoolId: string, userId: string, dto: GenerateTacDto) {
+    const admissionPolicy = await this.schoolSettingsService.getAdmissionPolicy(schoolId);
+    if (admissionPolicy.transferPolicy === 'DISABLED') {
+      throw new BadRequestException('Transfers are disabled for this school.');
+    }
+
     // Get school info for email
     const school = await this.prisma.school.findUnique({
       where: { id: schoolId },
@@ -136,7 +141,6 @@ export class TransfersService {
 
     // Generate unique TAC
     const tac = await this.generateUniqueTac();
-    const admissionPolicy = await this.schoolSettingsService.getAdmissionPolicy(schoolId);
     const expiryDays = admissionPolicy.tacExpiryDays ?? 30;
 
     // Create transfer record
@@ -248,6 +252,11 @@ export class TransfersService {
    * Validate TAC and initiate transfer
    */
   async initiateTransfer(schoolId: string, dto: InitiateTransferDto) {
+    const destPolicy = await this.schoolSettingsService.getAdmissionPolicy(schoolId);
+    if (destPolicy.transferPolicy === 'DISABLED') {
+      throw new BadRequestException('This school is not accepting incoming transfers.');
+    }
+
     // Find transfer by TAC
     const transfer = await this.prisma.transfer.findUnique({
       where: { tac: dto.tac },
@@ -314,6 +323,27 @@ export class TransfersService {
         // Note: tacUsedAt and tacUsedBy are NOT set here - only set after successful completion
       },
     });
+
+    if (destPolicy.transferPolicy === 'AUTO_ACCEPT') {
+      const classLevel = studentData.enrollment?.classLevel;
+      const academicYear = studentData.enrollment?.academicYear;
+      if (classLevel && academicYear) {
+        await this.completeTransfer(schoolId, updatedTransfer.id, {
+          targetClassLevel: classLevel,
+          academicYear,
+        });
+        return {
+          transferId: updatedTransfer.id,
+          studentData,
+          message: 'Transfer auto-accepted and completed',
+        };
+      }
+      return {
+        transferId: updatedTransfer.id,
+        studentData,
+        message: 'Transfer auto-accepted. Assign a class to complete enrollment.',
+      };
+    }
 
     return {
       transferId: updatedTransfer.id,

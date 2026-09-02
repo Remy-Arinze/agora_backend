@@ -37,7 +37,7 @@ RUN apk add --no-cache openssl libc6-compat
 ENV NODE_ENV=production
 # Keep the memory limit for the runtime as well just in case
 ENV NODE_OPTIONS="--max-old-space-size=4096"
-# Set true on first deploy only — seed.ts resets the super-admin password
+# Seeds are insert-only (skip existing rows). Safe to leave true after first deploy.
 ENV RUN_DB_SEED=false
 
 # 7. Copy production dependencies directly from the builder stage

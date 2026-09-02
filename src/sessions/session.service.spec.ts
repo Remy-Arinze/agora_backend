@@ -11,6 +11,7 @@ import { EmailService } from '../email/email.service';
 import { SchoolValidatorService } from '../schools/shared/school-validator.service';
 import { NotificationService } from '../notification/notification.service';
 import { NotificationInboxService } from '../notification/notification-inbox.service';
+import { SchoolSettingsService } from '../school-settings/school-settings.service';
 import { TestUtils } from '../common/test/test-utils';
 import { SessionStatus, TermStatus } from '@prisma/client';
 
@@ -49,6 +50,13 @@ describe('SessionService', () => {
         {
           provide: NotificationInboxService,
           useValue: { createAndFanOut: jest.fn(), getAllSchoolMemberUserIds: jest.fn() },
+        },
+        {
+          provide: SchoolSettingsService,
+          useValue: {
+            getWorkingDays: jest.fn().mockResolvedValue(['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY']),
+            getTimetablePolicy: jest.fn().mockResolvedValue({ examBlackoutEnabled: true }),
+          },
         },
       ],
     }).compile();

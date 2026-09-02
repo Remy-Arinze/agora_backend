@@ -41,6 +41,7 @@ model Class {
   @@index([academicYear])
   @@index([isActive])
   @@index([schoolId, type, isActive])
+  @@index([schoolId, isActive, createdAt])
 }
 
 model AcademicSession {

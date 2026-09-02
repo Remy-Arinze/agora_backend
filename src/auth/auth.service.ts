@@ -23,6 +23,7 @@ import { MetricsService } from '../common/metrics/metrics.service';
 import * as bcrypt from 'bcryptjs';
 import { randomBytes } from 'crypto';
 import { generateSecurePasswordHash } from '../common/utils/password.utils';
+import { SchoolSettingsService } from '../school-settings/school-settings.service';
 
 @Injectable()
 export class AuthService {
@@ -36,6 +37,7 @@ export class AuthService {
     private readonly passwordOtpService: PasswordOtpService,
     private readonly cloudinaryService: CloudinaryService,
     private readonly metricsService: MetricsService,
+    private readonly schoolSettingsService: SchoolSettingsService,
   ) { }
 
   /**
@@ -740,6 +742,8 @@ export class AuthService {
       throw new BadRequestException('Reset token has expired. Please request a new password reset link.');
     }
 
+    await this.assertPasswordMeetsSchoolPolicy(resetToken.userId, newPassword);
+
     // Hash new password
     const passwordHash = await bcrypt.hash(newPassword, 10);
 
@@ -1102,6 +1106,7 @@ export class AuthService {
       dto.sessionId,
       dto.otpCode,
     );
+    await this.assertPasswordMeetsSchoolPolicy(userId, dto.newPassword.trim());
     const newPasswordHash = await bcrypt.hash(dto.newPassword.trim(), 10);
     await this.applyPasswordUpdateAndNotify(userId, newPasswordHash, email, 'change');
   }
@@ -1114,8 +1119,50 @@ export class AuthService {
       dto.email.trim().toLowerCase(),
       dto.otpCode,
     );
+    await this.assertPasswordMeetsSchoolPolicy(userId, dto.newPassword.trim());
     const newPasswordHash = await bcrypt.hash(dto.newPassword.trim(), 10);
     await this.applyPasswordUpdateAndNotify(userId, newPasswordHash, email, 'reset');
+  }
+
+  /**
+   * Enforce school password policy when it is stricter than DTO mins.
+   */
+  private async assertPasswordMeetsSchoolPolicy(userId: string, password: string): Promise<void> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        schoolAdmins: { select: { schoolId: true } },
+        teacherProfiles: { select: { schoolId: true } },
+        studentProfile: {
+          select: {
+            enrollments: { where: { isActive: true }, select: { schoolId: true } },
+          },
+        },
+      },
+    });
+    const schoolIds = new Set<string>();
+    user?.schoolAdmins?.forEach((a) => schoolIds.add(a.schoolId));
+    user?.teacherProfiles?.forEach((t) => schoolIds.add(t.schoolId));
+    user?.studentProfile?.enrollments?.forEach((e) => schoolIds.add(e.schoolId));
+    if (schoolIds.size === 0) return;
+
+    let minLength = 8;
+    let requireSpecial = false;
+    for (const schoolId of schoolIds) {
+      try {
+        const policy = await this.schoolSettingsService.getSecurityPolicy(schoolId);
+        minLength = Math.max(minLength, policy.passwordMinLength ?? 8);
+        requireSpecial = requireSpecial || !!policy.passwordRequireSpecialChar;
+      } catch {
+        // Missing policy should not block password changes.
+      }
+    }
+    if (password.length < minLength) {
+      throw new BadRequestException(`Password must be at least ${minLength} characters long.`);
+    }
+    if (requireSpecial && !/[^A-Za-z0-9]/.test(password)) {
+      throw new BadRequestException('Password must contain at least one special character.');
+    }
   }
 
   /**
@@ -1164,6 +1211,7 @@ export class AuthService {
     if (sanitizedCurrent === sanitizedNew) {
       throw new BadRequestException('New password must be different from current password');
     }
+    await this.assertPasswordMeetsSchoolPolicy(userId, sanitizedNew);
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { id: true, email: true, passwordHash: true, firstName: true, lastName: true },

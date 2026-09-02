@@ -3,6 +3,11 @@ import { PrismaService } from '../database/prisma.service';
 import { CsvSerializer } from './csv-serializer';
 import { PdfBuilder } from './pdf-builder';
 import { OpenObserveLogger } from '../common/logger/openobserve-logger.service';
+import { SchoolSettingsService } from '../school-settings/school-settings.service';
+import {
+  percentageToDisplayGrade,
+  weightedSubjectPercentage,
+} from '../common/utils/grade-scale.util';
 
 @Injectable()
 export class ExportService {
@@ -11,6 +16,7 @@ export class ExportService {
     private readonly csv: CsvSerializer,
     private readonly pdf: PdfBuilder,
     private readonly logger: OpenObserveLogger,
+    private readonly schoolSettingsService: SchoolSettingsService,
   ) {}
 
   // ── Helpers ────────────────────────────────────────────────────────────────
@@ -391,7 +397,14 @@ export class ExportService {
     const academicYear = term?.academicSession?.name ?? enrollment.academicYear;
     const termName = term?.name ?? '';
 
-    // Compute per-grade percentages and overall average
+    const schoolId = enrollment.schoolId;
+    const grading = await this.schoolSettingsService.getGradingPolicy(schoolId);
+    const gradeScale = grading.gradeScaleType;
+    const passMark = Number(grading.passMark) || 40;
+    const caWeight = Number(grading.defaultCaWeight) || 40;
+    const examWeight = Number(grading.defaultExamWeight) || 60;
+
+    // Compute per-grade percentages and overall average (CA/exam weighted by subject)
     const gradeRows = grades.map((g) => {
       const score = Number(g.score);
       const maxScore = Number(g.maxScore);
@@ -399,10 +412,38 @@ export class ExportService {
       return { g, score, maxScore, pct };
     });
 
+    const subjectTotals = new Map<
+      string,
+      { caScore: number; caMax: number; examScore: number; examMax: number }
+    >();
+    for (const row of gradeRows) {
+      const key = row.g.subject || 'N/A';
+      if (!subjectTotals.has(key)) {
+        subjectTotals.set(key, { caScore: 0, caMax: 0, examScore: 0, examMax: 0 });
+      }
+      const entry = subjectTotals.get(key)!;
+      const type = String(row.g.gradeType || '');
+      if (type === 'EXAM') {
+        entry.examScore += row.score;
+        entry.examMax += row.maxScore;
+      } else {
+        entry.caScore += row.score;
+        entry.caMax += row.maxScore;
+      }
+    }
+    const subjectPcts = Array.from(subjectTotals.values()).map((s) =>
+      weightedSubjectPercentage(
+        s.caMax > 0 ? (s.caScore / s.caMax) * 100 : null,
+        s.examMax > 0 ? (s.examScore / s.examMax) * 100 : null,
+        caWeight,
+        examWeight,
+      ),
+    );
     const overallAvg =
-      gradeRows.length > 0
-        ? gradeRows.reduce((sum, r) => sum + r.pct, 0) / gradeRows.length
+      subjectPcts.length > 0
+        ? subjectPcts.reduce((sum, p) => sum + p, 0) / subjectPcts.length
         : 0;
+    const overallGrade = percentageToDisplayGrade(overallAvg, gradeScale, passMark);
 
     const studentFullName = `${student.firstName} ${student.lastName}`;
     const exportTs = new Date();
@@ -425,8 +466,8 @@ export class ExportService {
         doc.moveDown(1);
 
         // Table header
-        const colWidths = [120, 110, 70, 40, 50, 55];
-        const headers = ['Subject', 'Assessment', 'Type', 'Score', 'Max', 'Percentage'];
+        const colWidths = [100, 90, 55, 40, 40, 55, 45];
+        const headers = ['Subject', 'Assessment', 'Type', 'Score', 'Max', 'Pct', 'Grade'];
         const leftMargin = doc.page.margins.left;
         let x = leftMargin;
 
@@ -458,6 +499,7 @@ export class ExportService {
             String(score),
             String(maxScore),
             `${pct.toFixed(1)}%`,
+            percentageToDisplayGrade(pct, gradeScale, passMark),
           ];
           cells.forEach((cell, i) => {
             doc.text(cell, x, rowY, { width: colWidths[i], lineBreak: false });
@@ -476,7 +518,7 @@ export class ExportService {
         doc
           .font('Helvetica-Bold')
           .fontSize(10)
-          .text(`Overall Average: ${overallAvg.toFixed(1)}%`);
+          .text(`Overall Average: ${overallAvg.toFixed(1)}%  (${overallGrade})`);
       },
     );
 
@@ -662,13 +704,21 @@ export class ExportService {
       throw new NotFoundException('No published academic records found for this student.');
     }
 
-    // Grade letter computation: ≥70=A, ≥60=B, ≥50=C, ≥40=D, <40=F
-    const toLetterGrade = (pct: number): string => {
-      if (pct >= 70) return 'A';
-      if (pct >= 60) return 'B';
-      if (pct >= 50) return 'C';
-      if (pct >= 40) return 'D';
-      return 'F';
+    const schoolGradeCache = new Map<string, { scale: string; passMark: number }>();
+    const schoolIds = Array.from(new Set(enrollmentsWithGrades.map((e) => e.schoolId)));
+    await Promise.all(
+      schoolIds.map(async (sid) => {
+        const gp = await this.schoolSettingsService.getGradingPolicy(sid);
+        schoolGradeCache.set(sid, {
+          scale: gp.gradeScaleType,
+          passMark: Number(gp.passMark) || 40,
+        });
+      }),
+    );
+
+    const toLetterGrade = (pct: number, schoolId: string): string => {
+      const cached = schoolGradeCache.get(schoolId);
+      return percentageToDisplayGrade(pct, cached?.scale ?? 'PERCENTAGE', cached?.passMark ?? 40);
     };
 
     // Group enrollments: school → academicYear → term
@@ -750,7 +800,7 @@ export class ExportService {
         doc.moveDown(1);
 
         // Per-school sections
-        for (const [, schoolEntry] of schoolMap) {
+        for (const [schoolId, schoolEntry] of schoolMap) {
           doc
             .font('Helvetica-Bold')
             .fontSize(12)
@@ -789,7 +839,7 @@ export class ExportService {
                 const score = Number(g.score);
                 const max = Number(g.maxScore);
                 const pct = max > 0 ? (score / max) * 100 : 0;
-                const letter = toLetterGrade(pct);
+                const letter = toLetterGrade(pct, schoolId);
                 x = leftMargin;
                 const rowY = doc.y;
                 [

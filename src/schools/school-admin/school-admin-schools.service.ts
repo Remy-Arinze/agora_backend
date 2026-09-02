@@ -12,6 +12,7 @@ import { SchoolMapper } from '../domain/mappers/school.mapper';
 import { SchoolDto } from '../dto/school.dto';
 import {
   SchoolDashboardDto,
+  SchoolDashboardChartsDto,
   DashboardStatsDto,
   GrowthTrendDataDto,
   WeeklyActivityDataDto,
@@ -31,7 +32,10 @@ import { EmailService } from '../../email/email.service';
 import { randomBytes } from 'crypto';
 import { isPrincipalRole } from '../dto/permission.dto';
 import { LiveStatusService } from '../../live-status/live-status.service';
-import { SessionStatus, TermStatus, SchemeOfWorkStatus } from '@prisma/client';
+import { Prisma, SessionStatus, TermStatus, SchemeOfWorkStatus } from '@prisma/client';
+import { RedisService } from '../../common/redis/redis.service';
+import { dashboardCacheKey } from '../../common/redis/dashboard-cache.events';
+import { SchoolSettingsService } from '../../school-settings/school-settings.service';
 
 /** Max staff records fetched per type (admins + teachers) to avoid unbounded memory; full server-side pagination would require a union query. */
 const STAFF_FETCH_CAP = 500;
@@ -53,7 +57,9 @@ export class SchoolAdminSchoolsService {
     private readonly cloudinaryService: CloudinaryService,
     private readonly emailService: EmailService,
     private readonly configService: ConfigService,
-    private readonly liveStatusService: LiveStatusService
+    private readonly liveStatusService: LiveStatusService,
+    private readonly redis: RedisService,
+    private readonly schoolSettingsService: SchoolSettingsService,
   ) { }
 
   /**
@@ -61,7 +67,7 @@ export class SchoolAdminSchoolsService {
    */
   async getMySchool(
     user: UserWithContext
-  ): Promise<SchoolDto & { currentAdmin?: { id: string; role: string } }> {
+  ): Promise<SchoolDto & { currentAdmin?: { id: string; role: string }; runtimePolicies?: unknown }> {
     const schoolId = user.currentSchoolId;
     const profileId = user.currentProfileId;
 
@@ -75,25 +81,30 @@ export class SchoolAdminSchoolsService {
       throw new BadRequestException('School not found');
     }
 
-    const completeSchool = await this.prisma.school.findUnique({
-      where: { id: school.id },
-      include: {
-        admins: {
-          include: { user: true },
-          orderBy: { role: 'asc' },
+    const [completeSchool, teachersCount, studentsCount] = await Promise.all([
+      this.prisma.school.findUnique({
+        where: { id: school.id },
+        include: {
+          admins: {
+            include: { user: true },
+            orderBy: { role: 'asc' },
+          },
         },
-        teachers: true,
-        enrollments: {
-          where: { isActive: true },
-        },
-      },
-    });
+      }),
+      this.prisma.teacher.count({ where: { schoolId } }),
+      this.prisma.enrollment.count({ where: { schoolId, isActive: true } }),
+    ]);
 
     if (!completeSchool) {
       throw new BadRequestException('School not found');
     }
 
-    const schoolDto = this.schoolMapper.toDto(completeSchool);
+    const schoolDto = this.schoolMapper.toDto(completeSchool, {
+      teachersCount,
+      studentsCount,
+    });
+
+    const runtimePolicies = await this.schoolSettingsService.getRuntimePolicies(school.id);
 
     // Include current admin info for permission checks
     let currentAdmin: { id: string; role: string } | undefined;
@@ -104,256 +115,107 @@ export class SchoolAdminSchoolsService {
       }
     }
 
-    return { ...schoolDto, currentAdmin };
+    return { ...schoolDto, currentAdmin, runtimePolicies };
   }
 
   /**
-   * Get dashboard data for school admin
+   * Overview stats + recent students. Charts load via getDashboardCharts.
    */
   async getDashboard(user: UserWithContext, schoolType?: string): Promise<SchoolDashboardDto> {
     const schoolId = user.currentSchoolId;
-
     if (!schoolId) {
       throw new BadRequestException('You are not associated with any school');
     }
 
-    // If schoolType is provided, get classes of that type to filter enrollments
-    let classIds: string[] | undefined;
-    let classLevels: string[] | undefined;
-    if (schoolType) {
-      const classes = await this.prisma.class.findMany({
-        where: {
-          schoolId,
-          type: schoolType as any,
-          isActive: true,
-        },
-        select: {
-          id: true,
-          name: true,
-        },
-      });
-      classIds = classes.map((c) => c.id);
-      classLevels = classes.map((c) => c.name);
-    }
+    const cacheKey = dashboardCacheKey('summary', schoolId, schoolType);
+    const cached = await this.redis.getJson<SchoolDashboardDto>(cacheKey);
+    if (cached) return cached;
 
-    // Get current date and calculate date ranges
     const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
-    const sixMonthsAgo = new Date(currentYear, currentMonth - 5, 1);
-    const lastWeek = new Date(now);
-    lastWeek.setDate(lastWeek.getDate() - 7);
     const lastMonth = new Date(now);
     lastMonth.setMonth(lastMonth.getMonth() - 1);
+    const typeFilter = this.enrollmentSchoolTypeSql(schoolId, schoolType);
+    const classTypeFilter = schoolType
+      ? Prisma.sql`AND type = ${schoolType}`
+      : Prisma.empty;
 
-    const enrollmentWhereActive = {
-      schoolId,
-      isActive: true,
-      ...(schoolType &&
-        classIds &&
-        classLevels &&
-        (classIds.length > 0 || classLevels.length > 0)
-        ? {
-          OR: [
-            ...(classIds.length > 0 ? [{ classId: { in: classIds } }] : []),
-            ...(classLevels.length > 0 ? [{ classLevel: { in: classLevels } }] : []),
-          ],
-        }
-        : {}),
-    };
-    const enrollmentWherePrevious = {
-      schoolId,
-      isActive: true,
-      createdAt: { lte: lastMonth },
-      ...(schoolType &&
-        classIds &&
-        classLevels &&
-        (classIds.length > 0 || classLevels.length > 0)
-        ? {
-          OR: [
-            ...(classIds.length > 0 ? [{ classId: { in: classIds } }] : []),
-            ...(classLevels.length > 0 ? [{ classLevel: { in: classLevels } }] : []),
-          ],
-        }
-        : {}),
-    };
-
-    // Run one query at a time so tiny Postgres pools (e.g. Neon free tier) are not
-    // exhausted by a single dashboard request opening many connections at once.
-    const currentEnrollments = await this.prisma.enrollment.count({
-      where: enrollmentWhereActive,
-    });
-    const previousEnrollments = await this.prisma.enrollment.count({
-      where: enrollmentWherePrevious,
-    });
-    const currentTeachers = await this.prisma.teacher.count({ where: { schoolId } });
-    const previousTeachers = await this.prisma.teacher.count({
-      where: { schoolId, createdAt: { lte: lastMonth } },
-    });
-    const currentCourses = await this.prisma.class.count({
-      where: { schoolId, isActive: true, ...(schoolType ? { type: schoolType as any } : {}) },
-    });
-    const previousCourses = await this.prisma.class.count({
-      where: {
-        schoolId,
-        isActive: true,
-        createdAt: { lte: lastMonth },
-        ...(schoolType ? { type: schoolType as any } : {}),
-      },
-    });
-
-    const pendingAdmissions = await this.getPendingAdmissionsCount(schoolId).catch(() => 0);
-    const previousPendingAdmissions = await this.getPendingAdmissionsCount(
-      schoolId,
-      lastMonth
-    ).catch(() => 0);
-    const recentEnrollments = await this.prisma.enrollment.findMany({
-      where: enrollmentWhereActive,
-      include: {
-        student: {
-          select: {
-            id: true,
-            firstName: true,
-            middleName: true,
-            lastName: true,
-            profileImage: true,
-            uid: true,
-            publicId: true,
-          },
-        },
-      },
-      orderBy: { createdAt: 'desc' },
-      take: 5,
-    });
-
-    // Calculate stats with percentage changes
-    const stats: DashboardStatsDto = {
-      totalStudents: currentEnrollments,
-      studentsChange:
-        previousEnrollments > 0
-          ? Math.round(((currentEnrollments - previousEnrollments) / previousEnrollments) * 100)
-          : currentEnrollments > 0
-            ? 100
-            : 0,
-      totalTeachers: currentTeachers,
-      teachersChange:
-        previousTeachers > 0
-          ? Math.round(((currentTeachers - previousTeachers) / previousTeachers) * 100)
-          : currentTeachers > 0
-            ? 100
-            : 0,
-      activeCourses: currentCourses,
-      coursesChange:
-        previousCourses > 0
-          ? Math.round(((currentCourses - previousCourses) / previousCourses) * 100)
-          : currentCourses > 0
-            ? 100
-            : 0,
-      pendingAdmissions: pendingAdmissions,
-      pendingAdmissionsChange: pendingAdmissions - previousPendingAdmissions,
-    };
-
-    // Calculate growth trends (last 6 months)
-    const growthTrends: GrowthTrendDataDto[] = [];
-    const monthNames = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-
-    const enrollmentTrendWhere =
-      schoolType && classIds && classLevels && (classIds.length > 0 || classLevels.length > 0)
-        ? {
-          OR: [
-            ...(classIds.length > 0 ? [{ classId: { in: classIds } }] : []),
-            ...(classLevels.length > 0 ? [{ classLevel: { in: classLevels } }] : []),
-          ],
-        }
-        : {};
-
-    for (let i = 5; i >= 0; i--) {
-      const monthDate = new Date(currentYear, currentMonth - i, 1);
-      const nextMonthDate = new Date(currentYear, currentMonth - i + 1, 1);
-
-      const monthEnrollments = await this.prisma.enrollment.count({
-        where: {
-          schoolId,
-          createdAt: { gte: monthDate, lt: nextMonthDate },
-          ...enrollmentTrendWhere,
-        },
-      });
-      const monthTeachers = await this.prisma.teacher.count({
-        where: {
-          schoolId,
-          createdAt: { gte: monthDate, lt: nextMonthDate },
-        },
-      });
-      const monthCourses = await this.prisma.class.count({
-        where: {
-          schoolId,
-          isActive: true,
-          createdAt: { gte: monthDate, lt: nextMonthDate },
-        },
-      });
-
-      growthTrends.push({
-        name: monthNames[monthDate.getMonth()],
-        students: monthEnrollments,
-        teachers: monthTeachers,
-        courses: monthCourses,
-      });
-    }
-
-    // Calculate weekly activity (last 7 days); counts run sequentially for small DB pools.
-    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const weeklyAdmissionWhere =
-      schoolType && classIds && classLevels && (classIds.length > 0 || classLevels.length > 0)
-        ? {
-          OR: [
-            ...(classIds.length > 0 ? [{ classId: { in: classIds } }] : []),
-            ...(classLevels.length > 0 ? [{ classLevel: { in: classLevels } }] : []),
-          ],
-        }
-        : {};
-
-    const dayRanges = Array.from({ length: 7 }, (_, i) => {
-      const dayDate = new Date(now);
-      dayDate.setDate(dayDate.getDate() - (6 - i));
-      dayDate.setHours(0, 0, 0, 0);
-      const nextDayDate = new Date(dayDate);
-      nextDayDate.setDate(nextDayDate.getDate() + 1);
-      return { dayDate, nextDayDate };
-    });
-
-    const dayAdmissionCounts: number[] = [];
-    for (const { dayDate, nextDayDate } of dayRanges) {
-      dayAdmissionCounts.push(
-        await this.prisma.enrollment.count({
+    const [enrollmentPair, teacherPair, classPair, admissionPair, recentEnrollments] =
+      await Promise.all([
+        this.prisma.$queryRaw<Array<{ current: number; previous: number }>>`
+          SELECT
+            COUNT(*) FILTER (WHERE e."isActive" = true)::int AS current,
+            COUNT(*) FILTER (WHERE e."isActive" = true AND e."createdAt" <= ${lastMonth})::int AS previous
+          FROM "Enrollment" e
+          WHERE e."schoolId" = ${schoolId}
+          ${typeFilter}
+        `,
+        this.prisma.$queryRaw<Array<{ current: number; previous: number }>>`
+          SELECT
+            COUNT(*)::int AS current,
+            COUNT(*) FILTER (WHERE t."createdAt" <= ${lastMonth})::int AS previous
+          FROM "Teacher" t
+          WHERE t."schoolId" = ${schoolId}
+        `,
+        this.prisma.$queryRaw<Array<{ current: number; previous: number }>>`
+          SELECT
+            COUNT(*) FILTER (WHERE c."isActive" = true)::int AS current,
+            COUNT(*) FILTER (WHERE c."isActive" = true AND c."createdAt" <= ${lastMonth})::int AS previous
+          FROM "Class" c
+          WHERE c."schoolId" = ${schoolId}
+          ${classTypeFilter}
+        `,
+        Promise.resolve(
+          this.prisma.$queryRaw<Array<{ current: number; previous: number }>>`
+            SELECT
+              COUNT(*)::int AS current,
+              COUNT(*) FILTER (WHERE a."createdAt" <= ${lastMonth})::int AS previous
+            FROM "AdmissionApplication" a
+            WHERE a."schoolId" = ${schoolId}
+              AND a.status = 'PENDING'::"AdmissionStatus"
+          `
+        ).catch(() => [{ current: 0, previous: 0 }]),
+        this.prisma.enrollment.findMany({
           where: {
             schoolId,
-            createdAt: { gte: dayDate, lt: nextDayDate },
-            ...weeklyAdmissionWhere,
+            isActive: true,
+            ...(schoolType
+              ? { class: { type: schoolType as any, isActive: true } }
+              : {}),
           },
-        })
-      );
-    }
+          include: {
+            student: {
+              select: {
+                id: true,
+                firstName: true,
+                middleName: true,
+                lastName: true,
+                profileImage: true,
+                uid: true,
+                publicId: true,
+              },
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 5,
+        }),
+      ]);
 
-    const weeklyActivity: WeeklyActivityDataDto[] = dayRanges.map(({ dayDate }, idx) => ({
-      name: dayNames[dayDate.getDay()],
-      admissions: dayAdmissionCounts[idx],
-      transfers: 0,
-    }));
+    const enrollments = enrollmentPair[0] ?? { current: 0, previous: 0 };
+    const teachers = teacherPair[0] ?? { current: 0, previous: 0 };
+    const courses = classPair[0] ?? { current: 0, previous: 0 };
+    const admissions = admissionPair[0] ?? { current: 0, previous: 0 };
 
-    // Map recent students
+    const stats: DashboardStatsDto = {
+      totalStudents: enrollments.current,
+      studentsChange: this.percentChange(enrollments.current, enrollments.previous),
+      totalTeachers: teachers.current,
+      teachersChange: this.percentChange(teachers.current, teachers.previous),
+      activeCourses: courses.current,
+      coursesChange: this.percentChange(courses.current, courses.previous),
+      pendingAdmissions: admissions.current,
+      pendingAdmissionsChange: admissions.current - admissions.previous,
+    };
+
     const recentStudents: RecentStudentDto[] = recentEnrollments.map((enrollment) => ({
       id: enrollment.student.id,
       name: `${enrollment.student.firstName} ${enrollment.student.middleName ? `${enrollment.student.middleName} ` : ''}${enrollment.student.lastName}`.trim(),
@@ -364,31 +226,226 @@ export class SchoolAdminSchoolsService {
       createdAt: enrollment.createdAt.toISOString().split('T')[0],
     }));
 
-    // Active student counts by class level (for distribution chart)
-    const distributionRows = await this.prisma.enrollment.groupBy({
-      by: ['classLevel'],
-      where: enrollmentWhereActive,
-      _count: { id: true },
-      orderBy: { classLevel: 'asc' },
-    });
+    const payload: SchoolDashboardDto = { stats, recentStudents };
+    await this.redis.setJson(cacheKey, payload);
+    return payload;
+  }
 
-    const studentDistribution = distributionRows.map((row) => ({
-      name: row.classLevel?.trim() || 'Unassigned',
-      students: row._count.id,
-    }));
+  /**
+   * Growth / distribution / weekly charts — loaded after the overview stats.
+   */
+  async getDashboardCharts(
+    user: UserWithContext,
+    schoolType?: string
+  ): Promise<SchoolDashboardChartsDto> {
+    const schoolId = user.currentSchoolId;
+    if (!schoolId) {
+      throw new BadRequestException('You are not associated with any school');
+    }
 
-    return {
-      stats,
+    const cacheKey = dashboardCacheKey('charts', schoolId, schoolType);
+    const cached = await this.redis.getJson<SchoolDashboardChartsDto>(cacheKey);
+    if (cached) return cached;
+
+    const now = new Date();
+    const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1);
+    const weekStart = new Date(now);
+    weekStart.setDate(weekStart.getDate() - 6);
+    weekStart.setHours(0, 0, 0, 0);
+
+    const typeFilter = this.enrollmentSchoolTypeSql(schoolId, schoolType);
+    const classTypeFilter = schoolType
+      ? Prisma.sql`AND type = ${schoolType}`
+      : Prisma.empty;
+
+    const [enrollmentMonths, teacherMonths, classMonths, enrollmentDays, distributionRows] =
+      await Promise.all([
+        this.prisma.$queryRaw<Array<{ month: Date; count: number }>>`
+          SELECT date_trunc('month', timezone('Africa/Lagos', e."createdAt")) AS month,
+                 COUNT(*)::int AS count
+          FROM "Enrollment" e
+          WHERE e."schoolId" = ${schoolId}
+            AND e."createdAt" >= ${sixMonthsAgo}
+          ${typeFilter}
+          GROUP BY 1
+        `,
+        this.prisma.$queryRaw<Array<{ month: Date; count: number }>>`
+          SELECT date_trunc('month', timezone('Africa/Lagos', t."createdAt")) AS month,
+                 COUNT(*)::int AS count
+          FROM "Teacher" t
+          WHERE t."schoolId" = ${schoolId}
+            AND t."createdAt" >= ${sixMonthsAgo}
+          GROUP BY 1
+        `,
+        this.prisma.$queryRaw<Array<{ month: Date; count: number }>>`
+          SELECT date_trunc('month', timezone('Africa/Lagos', c."createdAt")) AS month,
+                 COUNT(*)::int AS count
+          FROM "Class" c
+          WHERE c."schoolId" = ${schoolId}
+            AND c."isActive" = true
+            AND c."createdAt" >= ${sixMonthsAgo}
+          ${classTypeFilter}
+          GROUP BY 1
+        `,
+        this.prisma.$queryRaw<Array<{ day: Date; count: number }>>`
+          SELECT date_trunc('day', timezone('Africa/Lagos', e."createdAt")) AS day,
+                 COUNT(*)::int AS count
+          FROM "Enrollment" e
+          WHERE e."schoolId" = ${schoolId}
+            AND e."createdAt" >= ${weekStart}
+          ${typeFilter}
+          GROUP BY 1
+        `,
+        this.prisma.$queryRaw<Array<{ name: string; students: number }>>`
+          SELECT COALESCE(NULLIF(trim(e."classLevel"), ''), 'Unassigned') AS name,
+                 COUNT(*)::int AS students
+          FROM "Enrollment" e
+          WHERE e."schoolId" = ${schoolId}
+            AND e."isActive" = true
+          ${typeFilter}
+          GROUP BY 1
+          ORDER BY 1
+        `,
+      ]);
+
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const enrollmentMonthMap = this.monthCountMap(enrollmentMonths);
+    const teacherMonthMap = this.monthCountMap(teacherMonths);
+    const classMonthMap = this.monthCountMap(classMonths);
+
+    const growthTrends: GrowthTrendDataDto[] = [];
+    for (let i = 5; i >= 0; i--) {
+      const monthDate = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const key = this.monthKey(monthDate);
+      growthTrends.push({
+        name: monthNames[monthDate.getMonth()],
+        students: enrollmentMonthMap.get(key) ?? 0,
+        teachers: teacherMonthMap.get(key) ?? 0,
+        courses: classMonthMap.get(key) ?? 0,
+      });
+    }
+
+    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const dayMap = new Map<string, number>();
+    for (const row of enrollmentDays) {
+      dayMap.set(this.dayKey(new Date(row.day)), row.count);
+    }
+
+    const weeklyActivity: WeeklyActivityDataDto[] = [];
+    for (let i = 6; i >= 0; i--) {
+      const dayDate = new Date(now);
+      dayDate.setDate(dayDate.getDate() - i);
+      dayDate.setHours(0, 0, 0, 0);
+      weeklyActivity.push({
+        name: dayNames[dayDate.getDay()],
+        admissions: dayMap.get(this.dayKey(dayDate)) ?? 0,
+        transfers: 0,
+      });
+    }
+
+    const payload: SchoolDashboardChartsDto = {
       growthTrends,
-      studentDistribution,
+      studentDistribution: distributionRows.map((row) => ({
+        name: row.name,
+        students: row.students,
+      })),
       weeklyActivity,
-      recentStudents,
     };
+    await this.redis.setJson(cacheKey, payload);
+    return payload;
+  }
+
+  private enrollmentSchoolTypeSql(schoolId: string, schoolType?: string): Prisma.Sql {
+    if (!schoolType) return Prisma.empty;
+    return Prisma.sql`AND (
+      e."classId" IN (
+        SELECT c.id FROM "Class" c
+        WHERE c."schoolId" = ${schoolId} AND c.type = ${schoolType} AND c."isActive" = true
+      )
+      OR e."classLevel" IN (
+        SELECT c.name FROM "Class" c
+        WHERE c."schoolId" = ${schoolId} AND c.type = ${schoolType} AND c."isActive" = true
+      )
+    )`;
+  }
+
+  private async resolveSetupClasses(
+    schoolId: string,
+    schoolType?: string
+  ): Promise<{ classCount: number; suggestedClassId: string | null }> {
+    if (schoolType === 'TERTIARY') {
+      const first = await this.prisma.class.findFirst({
+        where: { schoolId, isActive: true, type: 'TERTIARY' },
+        select: { id: true },
+        orderBy: { name: 'asc' },
+      });
+      const classCount = first
+        ? await this.prisma.class.count({
+            where: { schoolId, isActive: true, type: 'TERTIARY' },
+          })
+        : 0;
+      return { classCount, suggestedClassId: first?.id ?? null };
+    }
+
+    const armWhere = {
+      isActive: true,
+      classLevel: {
+        schoolId,
+        ...(schoolType === 'PRIMARY' || schoolType === 'SECONDARY'
+          ? { type: schoolType, isActive: true }
+          : { isActive: true }),
+      },
+    };
+
+    const firstArm = await this.prisma.classArm.findFirst({
+      where: armWhere,
+      select: { id: true },
+      orderBy: [{ classLevel: { level: 'asc' } }, { name: 'asc' }],
+    });
+    if (firstArm) {
+      const classCount = await this.prisma.classArm.count({ where: armWhere });
+      return { classCount, suggestedClassId: firstArm.id };
+    }
+
+    if (schoolType === 'PRIMARY' || schoolType === 'SECONDARY') {
+      return { classCount: 0, suggestedClassId: null };
+    }
+
+    const firstClass = await this.prisma.class.findFirst({
+      where: { schoolId, isActive: true },
+      select: { id: true },
+      orderBy: { name: 'asc' },
+    });
+    const classCount = firstClass
+      ? await this.prisma.class.count({ where: { schoolId, isActive: true } })
+      : 0;
+    return { classCount, suggestedClassId: firstClass?.id ?? null };
+  }
+
+  private percentChange(current: number, previous: number): number {
+    if (previous > 0) return Math.round(((current - previous) / previous) * 100);
+    return current > 0 ? 100 : 0;
+  }
+
+  private monthKey(date: Date): string {
+    return `${date.getFullYear()}-${date.getMonth()}`;
+  }
+
+  private dayKey(date: Date): string {
+    return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+  }
+
+  private monthCountMap(rows: Array<{ month: Date; count: number }>): Map<string, number> {
+    const map = new Map<string, number>();
+    for (const row of rows) {
+      map.set(this.monthKey(new Date(row.month)), row.count);
+    }
+    return map;
   }
 
   /**
    * Lightweight checklist flags for school-admin onboarding guidance.
-   * Sequential counts to avoid exhausting small Postgres pools.
+   * Session/term is loaded first (termId is needed); remaining counts run in parallel.
    */
   async getSetupProgress(
     user: UserWithContext,
@@ -428,148 +485,75 @@ export class SchoolAdminSchoolsService {
     const hasMidtermDates = !!(activeTerm?.midtermStart && activeTerm?.midtermEnd);
     const hasExamDates = !!(activeTerm?.examStart && activeTerm?.examEnd);
 
-    const holidayCount = await (this.prisma as any).event.count({
-      where: {
-        schoolId,
-        type: 'HOLIDAY',
-        ...(schoolType
-          ? {
-              OR: [{ schoolType }, { schoolType: null }],
-            }
-          : {}),
-      },
-    });
-    const hasHolidays = holidayCount > 0;
-
-    const subjectCount = await this.prisma.subject.count({
-      where: {
-        schoolId,
-        isActive: true,
-        ...(schoolType
-          ? { OR: [{ schoolType }, { schoolType: null }] }
-          : {}),
-      },
-    });
-
-    // PRIMARY/SECONDARY list ClassArms as "classes"; TERTIARY uses Class rows.
-    let classCount = 0;
-    let suggestedClassId: string | null = null;
-
-    if (schoolType === 'TERTIARY') {
-      classCount = await this.prisma.class.count({
-        where: { schoolId, isActive: true, type: 'TERTIARY' },
-      });
-      if (classCount > 0) {
-        const first = await this.prisma.class.findFirst({
-          where: { schoolId, isActive: true, type: 'TERTIARY' },
-          select: { id: true },
-          orderBy: { name: 'asc' },
-        });
-        suggestedClassId = first?.id ?? null;
-      }
-    } else if (schoolType === 'PRIMARY' || schoolType === 'SECONDARY') {
-      const armWhere = {
-        isActive: true,
-        classLevel: {
+    const [
+      holidayCount,
+      subjectCount,
+      teacherCount,
+      timetableCount,
+      schemeCount,
+      classInfo,
+      studentCount,
+    ] = await Promise.all([
+      this.prisma.event.count({
+        where: {
           schoolId,
-          type: schoolType,
-          isActive: true,
-        },
-      };
-      classCount = await this.prisma.classArm.count({ where: armWhere });
-      if (classCount > 0) {
-        const firstArm = await this.prisma.classArm.findFirst({
-          where: armWhere,
-          select: { id: true },
-          orderBy: [{ classLevel: { level: 'asc' } }, { name: 'asc' }],
-        });
-        suggestedClassId = firstArm?.id ?? null;
-      }
-    } else {
-      // No school-type filter: prefer ClassArms when present (PRIMARY/SECONDARY), else Class rows
-      const armCount = await this.prisma.classArm.count({
-        where: {
-          isActive: true,
-          classLevel: { schoolId, isActive: true },
-        },
-      });
-      if (armCount > 0) {
-        classCount = armCount;
-        const firstArm = await this.prisma.classArm.findFirst({
-          where: {
-            isActive: true,
-            classLevel: { schoolId, isActive: true },
-          },
-          select: { id: true },
-          orderBy: [{ classLevel: { level: 'asc' } }, { name: 'asc' }],
-        });
-        suggestedClassId = firstArm?.id ?? null;
-      } else {
-        classCount = await this.prisma.class.count({
-          where: { schoolId, isActive: true },
-        });
-        const firstClass = await this.prisma.class.findFirst({
-          where: { schoolId, isActive: true },
-          select: { id: true },
-          orderBy: { name: 'asc' },
-        });
-        suggestedClassId = firstClass?.id ?? null;
-      }
-    }
-
-    const teacherCount = await this.prisma.teacher.count({
-      where: { schoolId },
-    });
-
-    let timetableCount = 0;
-    if (termId) {
-      timetableCount = await this.prisma.timetablePeriod.count({
-        where: {
-          termId,
-          type: 'LESSON',
+          type: 'HOLIDAY',
           ...(schoolType
             ? {
-                OR: [
-                  { class: { type: schoolType as any } },
-                  { classArm: { classLevel: { type: schoolType as any } } },
-                  { course: { type: schoolType as any } },
-                ],
+                OR: [{ schoolType }, { schoolType: null }],
               }
             : {}),
         },
-      });
-    }
+      }),
+      this.prisma.subject.count({
+        where: {
+          schoolId,
+          isActive: true,
+          ...(schoolType
+            ? { OR: [{ schoolType }, { schoolType: null }] }
+            : {}),
+        },
+      }),
+      this.prisma.teacher.count({ where: { schoolId } }),
+      termId
+        ? this.prisma.timetablePeriod.count({
+            where: {
+              termId,
+              type: 'LESSON',
+              ...(schoolType
+                ? {
+                    OR: [
+                      { class: { type: schoolType as any } },
+                      { classArm: { classLevel: { type: schoolType as any } } },
+                      { course: { type: schoolType as any } },
+                    ],
+                  }
+                : {}),
+            },
+          })
+        : Promise.resolve(0),
+      this.prisma.schemeOfWork.count({
+        where: {
+          schoolId,
+          status: SchemeOfWorkStatus.PUBLISHED,
+          ...(termId ? { termId } : {}),
+        },
+      }),
+      this.resolveSetupClasses(schoolId, schoolType),
+      this.prisma.enrollment.count({
+        where: {
+          schoolId,
+          isActive: true,
+          ...(schoolType
+            ? { class: { type: schoolType as any, isActive: true } }
+            : {}),
+        },
+      }),
+    ]);
 
-    const schemeCount = await (this.prisma as any).schemeOfWork.count({
-      where: {
-        schoolId,
-        status: SchemeOfWorkStatus.PUBLISHED,
-        ...(termId ? { termId } : {}),
-      },
-    });
+    const hasHolidays = holidayCount > 0;
+    const { classCount, suggestedClassId } = classInfo;
 
-    let enrollmentWhere: any = { schoolId, isActive: true };
-    if (schoolType) {
-      const classes = await this.prisma.class.findMany({
-        where: { schoolId, type: schoolType as any, isActive: true },
-        select: { id: true, name: true },
-      });
-      const classIds = classes.map((c) => c.id);
-      const classLevels = classes.map((c) => c.name);
-      if (classIds.length > 0 || classLevels.length > 0) {
-        enrollmentWhere = {
-          ...enrollmentWhere,
-          OR: [
-            ...(classIds.length > 0 ? [{ classId: { in: classIds } }] : []),
-            ...(classLevels.length > 0 ? [{ classLevel: { in: classLevels } }] : []),
-          ],
-        };
-      }
-    }
-
-    const studentCount = await this.prisma.enrollment.count({
-      where: enrollmentWhere,
-    });
 
     const flags = {
       hasActiveSession,
@@ -610,45 +594,6 @@ export class SchoolAdminSchoolsService {
       totalCount,
       suggestedClassId,
     };
-  }
-
-  /**
-   * Helper method to get course count (handles missing Course model)
-   */
-  private async getCourseCount(
-    schoolId: string,
-    startDate?: Date,
-    endDate?: Date
-  ): Promise<number> {
-    try {
-      const where: any = { schoolId };
-      if (startDate) {
-        where.createdAt = { gte: startDate };
-        if (endDate) {
-          where.createdAt.lt = endDate;
-        } else {
-          where.createdAt.lte = new Date();
-        }
-      }
-      return (await (this.prisma as any).course?.count({ where })) || 0;
-    } catch {
-      return 0; // Course model doesn't exist or error
-    }
-  }
-
-  /**
-   * Helper method to get pending admissions count (handles missing Admission model)
-   */
-  private async getPendingAdmissionsCount(schoolId: string, beforeDate?: Date): Promise<number> {
-    try {
-      const where: any = { schoolId, status: 'PENDING' };
-      if (beforeDate) {
-        where.createdAt = { lte: beforeDate };
-      }
-      return (await (this.prisma as any).admission?.count({ where })) || 0;
-    } catch {
-      return 0; // Admission model doesn't exist or error
-    }
   }
 
   /**

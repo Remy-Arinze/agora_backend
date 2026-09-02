@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../database/prisma.service';
+import { SchoolSettingsService } from '../school-settings/school-settings.service';
 import * as webpush from 'web-push';
 
 export type NotificationRole = 'SCHOOL_ADMIN' | 'TEACHER' | 'STUDENT' | 'SUPER_ADMIN';
@@ -42,6 +43,7 @@ export class NotificationInboxService {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly eventEmitter: EventEmitter2,
+    private readonly schoolSettingsService: SchoolSettingsService,
   ) {
     this.configureVapid();
   }
@@ -70,6 +72,43 @@ export class NotificationInboxService {
     return this.config.get<string>('VAPID_PUBLIC_KEY') || null;
   }
 
+  private mapEventTriggerKey(type: string): string | null {
+    if (type === 'GRADE_PUBLISHED') return 'GRADE_PUBLISHED';
+    if (type === 'ADMISSION_SUBMITTED') return 'ADMISSION_RECEIVED';
+    if (type === 'TRANSFER_APPROVED') return 'TRANSFER_APPROVED';
+    return null;
+  }
+
+  private isQuietHours(policy: {
+    quietHoursStart?: string | null;
+    quietHoursEnd?: string | null;
+    quietHoursTimezone?: string | null;
+  } | null): boolean {
+    if (!policy?.quietHoursStart || !policy?.quietHoursEnd) return false;
+    const tz = policy.quietHoursTimezone || 'Africa/Lagos';
+    try {
+      const parts = new Intl.DateTimeFormat('en-GB', {
+        timeZone: tz,
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      }).formatToParts(new Date());
+      const hh = Number(parts.find((p) => p.type === 'hour')?.value ?? '0');
+      const mm = Number(parts.find((p) => p.type === 'minute')?.value ?? '0');
+      const current = hh * 60 + mm;
+      const [sh, sm] = policy.quietHoursStart.split(':').map(Number);
+      const [eh, em] = policy.quietHoursEnd.split(':').map(Number);
+      if ([sh, sm, eh, em].some((n) => Number.isNaN(n))) return false;
+      const start = sh * 60 + sm;
+      const end = eh * 60 + em;
+      if (start === end) return false;
+      if (start < end) return current >= start && current < end;
+      return current >= start || current < end;
+    } catch {
+      return false;
+    }
+  }
+
   /**
    * Persist inbox rows, emit SSE inbox.created, and send web push.
    */
@@ -81,43 +120,73 @@ export class NotificationInboxService {
     for (const input of list) {
       if (!input.userId) continue;
       try {
-        const row = await this.db.inAppNotification.create({
-          data: {
-            userId: input.userId,
-            schoolId: input.schoolId ?? null,
-            role: input.role ?? null,
-            type: input.type,
+        let policy: Awaited<ReturnType<SchoolSettingsService['getNotificationPolicy']>> | null = null;
+        if (input.schoolId) {
+          try {
+            policy = await this.schoolSettingsService.getNotificationPolicy(input.schoolId);
+          } catch {
+            policy = null;
+          }
+        }
+        const channels: string[] = policy?.enabledChannels?.length
+          ? policy.enabledChannels
+          : ['EMAIL', 'IN_APP', 'PUSH'];
+        const triggers = (policy?.eventTriggers as Record<string, boolean> | null) ?? {};
+        const triggerKey = this.mapEventTriggerKey(input.type);
+        if (triggerKey && triggers[triggerKey] === false) {
+          continue;
+        }
+
+        const persistInApp = channels.includes('IN_APP');
+        const sendPush = channels.includes('PUSH') && !this.isQuietHours(policy);
+
+        if (!persistInApp && !sendPush) {
+          continue;
+        }
+
+        let row: any = null;
+        if (persistInApp) {
+          row = await this.db.inAppNotification.create({
+            data: {
+              userId: input.userId,
+              schoolId: input.schoolId ?? null,
+              role: input.role ?? null,
+              type: input.type,
+              title: input.title,
+              body: input.body,
+              link: input.link ?? null,
+              metadata: input.metadata ?? undefined,
+            },
+          });
+          created.push(row);
+
+          const payload: InboxCreatedPayload = {
+            notification: {
+              id: row.id,
+              userId: row.userId,
+              schoolId: row.schoolId,
+              role: row.role,
+              type: row.type,
+              title: row.title,
+              body: row.body,
+              link: row.link,
+              metadata: row.metadata,
+              readAt: row.readAt ? row.readAt.toISOString() : null,
+              createdAt: row.createdAt.toISOString(),
+            },
+          };
+          this.eventEmitter.emit('inbox.created', payload);
+        }
+
+        if (sendPush) {
+          void this.sendPushToUser(input.userId, {
             title: input.title,
             body: input.body,
-            link: input.link ?? null,
-            metadata: input.metadata ?? undefined,
-          },
-        });
-        created.push(row);
-
-        const payload: InboxCreatedPayload = {
-          notification: {
-            id: row.id,
-            userId: row.userId,
-            schoolId: row.schoolId,
-            role: row.role,
-            type: row.type,
-            title: row.title,
-            body: row.body,
-            link: row.link,
-            metadata: row.metadata,
-            readAt: row.readAt ? row.readAt.toISOString() : null,
-            createdAt: row.createdAt.toISOString(),
-          },
-        };
-        this.eventEmitter.emit('inbox.created', payload);
-        void this.sendPushToUser(row.userId, {
-          title: row.title,
-          body: row.body,
-          link: row.link,
-          type: row.type,
-          notificationId: row.id,
-        });
+            link: input.link,
+            type: input.type,
+            notificationId: row?.id ?? `skip-inapp-${Date.now()}`,
+          });
+        }
       } catch (err: any) {
         this.logger.error(`Failed to create notification for ${input.userId}: ${err?.message || err}`);
       }

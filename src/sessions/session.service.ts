@@ -37,6 +37,7 @@ import {
 } from '../common/utils/term-phase.util';
 import { buildNigerianHolidayEvents } from '../common/utils/nigerian-holidays.util';
 import { EventType } from '@prisma/client';
+import { SchoolSettingsService } from '../school-settings/school-settings.service';
 
 const DEFAULT_WORKING_DAYS_FOR_TERM = DEFAULT_WORKING_DAYS as WorkingDay[];
 const SESSION_START_GRACE_DAYS = 7;
@@ -55,6 +56,7 @@ export class SessionService {
     private readonly schoolValidator: SchoolValidatorService,
     private readonly notificationService: NotificationService,
     private readonly notificationInbox: NotificationInboxService,
+    private readonly schoolSettingsService: SchoolSettingsService,
   ) { }
 
   /**
@@ -178,7 +180,7 @@ export class SessionService {
       } as any,
     });
 
-    return this.mapToTermDto(term);
+    return this.toTermDto(term, session.schoolId);
   }
 
   /**
@@ -214,10 +216,10 @@ export class SessionService {
     }
 
     return {
-      session: this.mapToSessionDto(sessionWithTerms),
+      session: await this.toSessionDto(sessionWithTerms),
       term:
         sessionWithTerms.terms.length > 0
-          ? this.mapToTermDto(sessionWithTerms.terms[0])
+          ? await this.toTermDto(sessionWithTerms.terms[0], sessionWithTerms.schoolId)
           : undefined,
     };
   }
@@ -445,8 +447,8 @@ export class SessionService {
       }
 
       return {
-        session: this.mapToSessionDto(session),
-        term: this.mapToTermDto(term),
+        session: await this.toSessionDto(session),
+        term: await this.toTermDto(term, school.id),
         migratedCount,
       };
     } else {
@@ -527,8 +529,8 @@ export class SessionService {
       );
 
       return {
-        session: this.mapToSessionDto(session),
-        term: this.mapToTermDto(term),
+        session: await this.toSessionDto(session),
+        term: await this.toTermDto(term, school.id),
         migratedCount,
       };
     }
@@ -1138,7 +1140,7 @@ export class SessionService {
     await this.completeSessionIfNoActiveTerms(activeTerm.academicSessionId);
 
     return {
-      term: this.mapToTermDto(updatedTerm),
+      term: await this.toTermDto(updatedTerm, activeTerm.academicSessionId ? activeTerm.academicSession?.schoolId : undefined),
     };
   }
 
@@ -1199,7 +1201,7 @@ export class SessionService {
     });
 
     return {
-      session: this.mapToSessionDto(updatedSession),
+      session: await this.toSessionDto(updatedSession),
     };
   }
 
@@ -1278,7 +1280,7 @@ export class SessionService {
     this.logger.log(`Term ${term.name} reactivated for school ${school.id}`);
 
     return {
-      term: this.mapToTermDto(updatedTerm),
+      term: await this.toTermDto(updatedTerm, activeTerm.academicSessionId ? activeTerm.academicSession?.schoolId : undefined),
     };
   }
 
@@ -1308,10 +1310,44 @@ export class SessionService {
       },
     });
 
-    return sessions.map((s) => this.mapToSessionDto(s));
+    const opts = await this.getTermMapOptions(school.id);
+    return sessions.map((s) => this.mapToSessionDto(s, opts));
   }
 
-  private mapToSessionDto(session: any): AcademicSessionDto {
+  private async getTermMapOptions(schoolId?: string): Promise<{
+    workingDays: WorkingDay[];
+    examBlackoutEnabled: boolean;
+  }> {
+    if (!schoolId) {
+      return { workingDays: DEFAULT_WORKING_DAYS_FOR_TERM, examBlackoutEnabled: true };
+    }
+    try {
+      const [days, policy] = await Promise.all([
+        this.schoolSettingsService.getWorkingDays(schoolId),
+        this.schoolSettingsService.getTimetablePolicy(schoolId),
+      ]);
+      return {
+        workingDays: (days?.length ? days : DEFAULT_WORKING_DAYS_FOR_TERM) as WorkingDay[],
+        examBlackoutEnabled: policy.examBlackoutEnabled !== false,
+      };
+    } catch {
+      return { workingDays: DEFAULT_WORKING_DAYS_FOR_TERM, examBlackoutEnabled: true };
+    }
+  }
+
+  private async toTermDto(term: any, schoolId?: string): Promise<TermDto> {
+    const sid = schoolId ?? term.academicSession?.schoolId;
+    return this.mapToTermDto(term, await this.getTermMapOptions(sid));
+  }
+
+  private async toSessionDto(session: any): Promise<AcademicSessionDto> {
+    return this.mapToSessionDto(session, await this.getTermMapOptions(session.schoolId));
+  }
+
+  private mapToSessionDto(
+    session: any,
+    opts?: { workingDays: WorkingDay[]; examBlackoutEnabled: boolean },
+  ): AcademicSessionDto {
     return {
       id: session.id,
       name: session.name,
@@ -1320,22 +1356,27 @@ export class SessionService {
       status: session.status,
       schoolId: session.schoolId,
       schoolType: session.schoolType,
-      terms: session.terms ? session.terms.map((t: any) => this.mapToTermDto(t)) : [],
+      terms: session.terms ? session.terms.map((t: any) => this.mapToTermDto(t, opts)) : [],
       createdAt: session.createdAt,
     };
   }
 
-  private mapToTermDto(term: any): TermDto {
+  private mapToTermDto(
+    term: any,
+    opts?: { workingDays: WorkingDay[]; examBlackoutEnabled: boolean },
+  ): TermDto {
     const now = new Date();
     const termStart = new Date(term.startDate);
     const termEnd = new Date(term.endDate);
+    const workingDays = opts?.workingDays?.length ? opts.workingDays : DEFAULT_WORKING_DAYS_FOR_TERM;
+    const examBlackoutEnabled = opts?.examBlackoutEnabled !== false;
 
     const msPerWeek = 7 * 24 * 60 * 60 * 1000;
     const totalWeeks = Math.max(1, Math.ceil((termEnd.getTime() - termStart.getTime()) / msPerWeek));
 
     const halfTerm = buildHalfTermRange(term.halfTermStart, term.halfTermEnd);
     const teaching = getTeachingWeekInfo(termStart, termEnd, now, {
-      workingDays: DEFAULT_WORKING_DAYS_FOR_TERM,
+      workingDays,
       nonInstructionalRanges: halfTerm ? [halfTerm] : [],
     });
 
@@ -1363,7 +1404,11 @@ export class SessionService {
     };
     const termPhase = getTermPhase(phaseInput, now);
     const isInExamPeriod = isExamScheduleActive(phaseInput, now);
-    const isLessonScheduleActiveNow = isLessonScheduleActive(phaseInput, now);
+    const isLessonScheduleActiveNow = isLessonScheduleActive(
+      phaseInput,
+      now,
+      examBlackoutEnabled,
+    );
 
     // Calendar weeks (legacy) — freeze at term end when still ACTIVE but overdue
     let currentWeek: number | undefined;
@@ -1669,7 +1714,7 @@ export class SessionService {
       include: { terms: { orderBy: { number: 'asc' } } },
     });
 
-    return this.mapToSessionDto(updated!);
+    return this.toSessionDto(updated!);
   }
 
   /**
@@ -1759,7 +1804,7 @@ export class SessionService {
       } as any,
     });
 
-    return this.mapToTermDto(updated);
+    return this.toTermDto(updated, term.academicSession?.schoolId);
   }
 
   /**
@@ -1908,7 +1953,8 @@ export class SessionService {
           termName,
           startDate,
           endDate,
-          schoolName
+          schoolName,
+          schoolId,
         )
         .then((result) => {
           this.logger.log(

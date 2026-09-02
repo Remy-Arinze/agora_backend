@@ -51,9 +51,19 @@ export function isTermInExamPeriod(term: TermPhaseInput, today = new Date()): bo
 /**
  * Regular lesson timetable is live: term in session, not past end, and not in published exam period.
  */
-export function isLessonScheduleActive(term: TermPhaseInput, today = new Date()): boolean {
+export function isLessonScheduleActive(
+  term: TermPhaseInput,
+  today = new Date(),
+  examBlackoutEnabled = true,
+): boolean {
   if (!isTermInSession(term, today)) return false;
-  if (isTermInExamPeriod(term, today) && isExamTimetablePublished(term)) return false;
+  if (
+    examBlackoutEnabled &&
+    isTermInExamPeriod(term, today) &&
+    isExamTimetablePublished(term)
+  ) {
+    return false;
+  }
   return true;
 }
 

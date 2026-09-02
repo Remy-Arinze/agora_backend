@@ -7,6 +7,8 @@ import { AGORA_TOOLS } from './agora-chat-tools.definition';
 import { AiAgentToolsService } from './ai-agent-tools.service';
 import { AiChatPromptService } from './ai-chat-prompt.service';
 import { AiLlmClientService } from './ai-llm-client.service';
+import { LoisPageContextInput } from './ai-page-context';
+import { LoisSource } from './ai-lois-source';
 import { toLoisStreamErrorPayload } from './ai-stream-errors';
 
 /**
@@ -43,6 +45,7 @@ export class AiChatStreamService {
     schoolId?: string,
     remainingTokens: number = Infinity,
     abortSignal?: AbortSignal,
+    pageContext?: LoisPageContextInput | null,
   ): Promise<any> {
     const startTime = Date.now();
     this.llm.ensureConfigured();
@@ -54,27 +57,33 @@ export class AiChatStreamService {
     // fetched here so LOIS always has full cross-session context.
     if (conversationId && userId) {
       try {
-        const history = await this.prisma.chatMessage.findMany({
-          where: { conversationId },
-          orderBy: { createdAt: 'asc' },
-          take: 30, // last ~15 back-and-forth turns
-          select: { role: true, content: true },
+        const owned = await this.prisma.chatConversation.findFirst({
+          where: { id: conversationId, userId, ...(schoolId ? { schoolId } : {}) },
+          select: { id: true },
         });
+        if (!owned) {
+          conversationId = undefined;
+        } else {
+          const history = await this.prisma.chatMessage.findMany({
+            where: { conversationId },
+            orderBy: { createdAt: 'asc' },
+            take: 30, // last ~15 back-and-forth turns
+            select: { role: true, content: true },
+          });
 
-        if (history.length > 0) {
-          // Prepend stored history, avoiding duplicate of the incoming user message
-          const incomingUserContent = messages.find(m => m.role === 'user')?.content;
-          const filteredHistory = incomingUserContent
-            ? history.filter((_, i) =>
-                // Drop the last message if it duplicates the incoming one
-                !(i === history.length - 1 && history[i].role === 'user' && history[i].content === incomingUserContent)
-              )
-            : history;
+          if (history.length > 0) {
+            const incomingUserContent = messages.find(m => m.role === 'user')?.content;
+            const filteredHistory = incomingUserContent
+              ? history.filter((_, i) =>
+                  !(i === history.length - 1 && history[i].role === 'user' && history[i].content === incomingUserContent)
+                )
+              : history;
 
-          messages = [
-            ...filteredHistory.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })),
-            ...messages,
-          ];
+            messages = [
+              ...filteredHistory.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })),
+              ...messages,
+            ];
+          }
         }
       } catch (err) {
         this.logger.warn(`Failed to load conversation history for ${conversationId}: ${err}`);
@@ -82,13 +91,19 @@ export class AiChatStreamService {
       }
     }
 
-    const { systemPrompt, userRole } = await this.chatPrompt.getChatPrompt(messages, userId, schoolId);
+    const { systemPrompt, userRole } = await this.chatPrompt.getChatPrompt(
+      messages,
+      userId,
+      schoolId,
+      pageContext,
+    );
 
     let fullAssistantContent = '';
     let finalConversationId = conversationId || null;
     let totalUsage: any = null;
     let estimatedTokens = 0;
     const toolEvents: any[] = [];
+    const collectedSources: LoisSource[] = [];
 
     if (userId && !finalConversationId) {
       try {
@@ -130,7 +145,7 @@ export class AiChatStreamService {
       const currentMessages: any[] = [{ role: 'system', content: systemPrompt }, ...messages];
 
       let turn = 0;
-      const MAX_TURNS = 3;
+      const MAX_TURNS = 5;
       let streamedFinalAssistant = false;
 
       while (turn < MAX_TURNS) {
@@ -229,6 +244,9 @@ export class AiChatStreamService {
               userId,
             });
             toolResult = result.data;
+            if (result.sources?.length) {
+              collectedSources.push(...result.sources);
+            }
           } catch (tErr: unknown) {
             this.logger.error(`Tool execution error: ${tErr}`);
             if (tErr instanceof ForbiddenException) {
@@ -251,7 +269,7 @@ export class AiChatStreamService {
           currentMessages.push({
             role: 'tool',
             tool_call_id: toolCall.id,
-            content: JSON.stringify(toolResult),
+            content: this.truncateToolPayload(JSON.stringify(toolResult)),
           });
         }
       }
@@ -286,7 +304,14 @@ export class AiChatStreamService {
             conversationId: finalConversationId,
             role: 'assistant',
             content: fullAssistantContent || 'No response generated.',
-            toolEvents: toolEvents.length > 0 ? toolEvents : undefined,
+            toolEvents: toolEvents.length > 0 || collectedSources.length > 0
+              ? [
+                  ...toolEvents,
+                  ...(collectedSources.length
+                    ? [{ type: 'sources', sources: this.dedupeSources(collectedSources) }]
+                    : []),
+                ]
+              : undefined,
           },
         });
       }
@@ -294,7 +319,10 @@ export class AiChatStreamService {
       if (!abortSignal?.aborted) {
         this.sendSSE(res, {
           event: 'done',
-          data: { conversationId: finalConversationId ?? '' },
+          data: {
+            conversationId: finalConversationId ?? '',
+            sources: this.dedupeSources(collectedSources),
+          },
         });
 
         const durationMs = Date.now() - startTime;
@@ -320,5 +348,22 @@ export class AiChatStreamService {
       }
       return { total_tokens: (totalUsage?.total_tokens || 0) + estimatedTokens };
     }
+  }
+
+  private truncateToolPayload(json: string, max = 8000): string {
+    if (json.length <= max) return json;
+    return `${json.slice(0, max)}\n…[truncated]`;
+  }
+
+  private dedupeSources(sources: LoisSource[]): LoisSource[] {
+    const seen = new Set<string>();
+    const out: LoisSource[] = [];
+    for (const s of sources) {
+      const key = `${s.kind}:${s.tool || s.type || ''}:${s.label}:${s.href || ''}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(s);
+    }
+    return out.slice(0, 8);
   }
 }

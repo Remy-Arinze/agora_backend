@@ -23,9 +23,10 @@ export class GenerateSchemeOfWorkDto {
   @IsNotEmpty()
   termId: string;
 
-  @ApiProperty({ enum: SchemeGenerationMode })
+  @ApiPropertyOptional({ enum: SchemeGenerationMode })
+  @IsOptional()
   @IsEnum(SchemeGenerationMode)
-  generationMode: SchemeGenerationMode;
+  generationMode?: SchemeGenerationMode;
 
   @ApiPropertyOptional({ description: 'Agora Curriculum ID to draw from' })
   @IsOptional()

@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { SchoolSettingsService } from '../school-settings/school-settings.service';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as nodemailer from 'nodemailer';
@@ -14,11 +15,14 @@ export class EmailService {
   private readonly driver: EmailDriver;
   private transporter: nodemailer.Transporter | null = null;
 
-  /** School Bud logo URL for email headers (Cloudinary) */
+  /** Myschoolbud logo URL for email headers (Cloudinary) */
   private static readonly AGORA_LOGO_URL =
     'https://res.cloudinary.com/dstm3asg5/image/upload/v1771924083/agora_main_htekwx.png';
 
-  constructor(private configService: ConfigService) {
+  constructor(
+    private configService: ConfigService,
+    private readonly schoolSettingsService: SchoolSettingsService,
+  ) {
     const rawDriver = (this.configService.get<string>('EMAIL_DRIVER') || 'gmail')
       .trim()
       .toLowerCase();
@@ -242,15 +246,15 @@ export class EmailService {
   }
 
   /**
-   * Returns the shared email header HTML with School Bud logo and optional title.
+   * Returns the shared email header HTML with Myschoolbud logo and optional title.
    * Logo and title are on one line; logo sized to match header text (~24px).
    */
-  private getEmailHeaderHtml(title: string = 'School Bud'): string {
+  private getEmailHeaderHtml(title: string = 'Myschoolbud'): string {
     const logoUrl = EmailService.AGORA_LOGO_URL;
     return `<div style="background-color: #f9fafb; padding: 16px 20px; text-align: center; border-radius: 8px 8px 0 0; border-bottom: 2px solid #e5e7eb;">
 <table cellpadding="0" cellspacing="0" border="0" style="margin: 0 auto;">
 <tr>
-<td style="vertical-align: middle; padding-right: 12px;"><img src="${logoUrl}" alt="School Bud" width="36" height="36" style="display: block; width: 36px; height: 36px; object-fit: contain; border: 0; outline: none; text-decoration: none;" /></td>
+<td style="vertical-align: middle; padding-right: 12px;"><img src="${logoUrl}" alt="Myschoolbud" width="36" height="36" style="display: block; width: 36px; height: 36px; object-fit: contain; border: 0; outline: none; text-decoration: none;" /></td>
 <td style="vertical-align: middle;"><h1 style="color: #1f2937; margin: 0; font-size: 24px;">${title}</h1></td>
 </tr>
 </table>
@@ -1120,14 +1124,27 @@ export class EmailService {
   /**
    * Get formatted From address with display name
    */
-  private getFormattedFrom(): string {
+  private getFormattedFrom(displayName?: string | null): string {
     const fromEmail =
       this.configService.get<string>('MAIL_FROM') ||
       this.configService.get<string>('SMTP_FROM') ||
       this.configService.get<string>('MAIL_USER') ||
       this.configService.get<string>('SMTP_USER');
-    const fromName = this.configService.get<string>('MAIL_FROM_NAME') || 'Bud';
+    const fromName =
+      (displayName && displayName.trim()) ||
+      this.configService.get<string>('MAIL_FROM_NAME') ||
+      'Bud';
     return `"${fromName}" <${fromEmail}>`;
+  }
+
+  private async formattedFromForSchool(schoolId?: string | null): Promise<string> {
+    if (!schoolId) return this.getFormattedFrom();
+    try {
+      const policy = await this.schoolSettingsService.getNotificationPolicy(schoolId);
+      return this.getFormattedFrom(policy.emailSenderName);
+    } catch {
+      return this.getFormattedFrom();
+    }
   }
 
   /**
@@ -1168,7 +1185,8 @@ export class EmailService {
     termName: string,
     startDate: Date,
     endDate: Date,
-    schoolName: string
+    schoolName: string,
+    schoolId?: string,
   ): Promise<void> {
     const fromEmail =
       this.configService.get<string>('MAIL_FROM') ||
@@ -1185,7 +1203,7 @@ export class EmailService {
     const loginUrl = `${frontendUrl}/auth/login`;
 
     const mailOptions = {
-      from: this.getFormattedFrom(),
+      from: await this.formattedFromForSchool(schoolId),
       replyTo: this.getReplyTo(),
       to: email,
       subject: `New Academic Session Started - ${sessionName} - ${schoolName}`,
@@ -1250,7 +1268,8 @@ export class EmailService {
     termName: string,
     startDate: Date,
     endDate: Date,
-    schoolName: string
+    schoolName: string,
+    schoolId?: string,
   ): Promise<void> {
     const fromEmail =
       this.configService.get<string>('MAIL_FROM') ||
@@ -1267,7 +1286,7 @@ export class EmailService {
     const loginUrl = `${frontendUrl}/auth/login`;
 
     const mailOptions = {
-      from: this.getFormattedFrom(),
+      from: await this.formattedFromForSchool(schoolId),
       replyTo: this.getReplyTo(),
       to: email,
       subject: `${termName} Has Started - ${sessionName} - ${schoolName}`,
@@ -1419,7 +1438,8 @@ export class EmailService {
     termName: string,
     startDate: Date,
     endDate: Date,
-    schoolName: string
+    schoolName: string,
+    schoolId?: string,
   ): Promise<{ sent: number; failed: number }> {
     let sent = 0;
     let failed = 0;
@@ -1441,7 +1461,8 @@ export class EmailService {
                 termName,
                 startDate,
                 endDate,
-                schoolName
+                schoolName,
+                schoolId,
               );
             } else {
               await this.sendTermStartEmail(
@@ -1452,7 +1473,8 @@ export class EmailService {
                 termName,
                 startDate,
                 endDate,
-                schoolName
+                schoolName,
+                schoolId,
               );
             }
             sent++;
@@ -1633,7 +1655,7 @@ If you didn't request this code, please ignore this email or contact support imm
       from: this.getFormattedFrom(),
       replyTo: this.getReplyTo(),
       to: email,
-      subject: 'Your School Bud Login Verification Code',
+      subject: 'Myschoolbud verification code',
       headers: {
         ...this.getEmailHeaders(),
         'X-Priority': '1', // High priority for OTP emails

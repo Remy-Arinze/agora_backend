@@ -21,6 +21,7 @@ import { NotificationService } from '../notification/notification.service';
 
 import { ReassignStudentDto } from './dto/reassign-student.dto';
 import { isPrincipalRole } from '../schools/dto/permission.dto';
+import { SchoolSettingsService } from '../school-settings/school-settings.service';
 
 @Injectable()
 export class StudentsService {
@@ -34,7 +35,8 @@ export class StudentsService {
     private readonly gradesService: GradesService,
     private readonly eventService: EventService,
     private readonly cloudinaryService: CloudinaryService,
-    private readonly notificationService: NotificationService
+    private readonly notificationService: NotificationService,
+    private readonly schoolSettingsService: SchoolSettingsService,
   ) { }
 
   async findAll(
@@ -2359,6 +2361,8 @@ export class StudentsService {
     const isMixed = availableTypes.length > 1;
     const primaryType = isMixed ? 'MIXED' : availableTypes[0] || 'PRIMARY';
 
+    const runtimePolicies = await this.schoolSettingsService.getRuntimePolicies(school.id);
+
     return {
       ...school,
       schoolType: {
@@ -2369,6 +2373,7 @@ export class StudentsService {
         availableTypes,
         primaryType,
       },
+      runtimePolicies,
     };
   }
 

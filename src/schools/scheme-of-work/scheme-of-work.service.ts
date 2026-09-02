@@ -35,17 +35,30 @@ export class SchemeOfWorkService {
   // ==========================================
 
   async generateScheme(schoolId: string, dto: GenerateSchemeOfWorkDto, userId: string) {
+    const curriculum = await this.schoolSettingsService.getCurriculumPolicy(schoolId);
+    const generationMode =
+      dto.generationMode ??
+      (curriculum.curriculumSource === 'AGORA_NATIONAL'
+        ? SchemeGenerationMode.AGORA_ONLY
+        : curriculum.curriculumSource === 'SCHOOL_UPLOAD'
+          ? SchemeGenerationMode.SCHOOL_ONLY
+          : SchemeGenerationMode.MERGED);
+    const mergeWeightAgora =
+      dto.mergeWeightAgora ?? (generationMode === SchemeGenerationMode.MERGED ? 50 : undefined);
+    const mergeWeightSchool =
+      dto.mergeWeightSchool ?? (generationMode === SchemeGenerationMode.MERGED ? 50 : undefined);
+
     // Basic validations
-    if (dto.generationMode === SchemeGenerationMode.AGORA_ONLY && !dto.agoraCurriculumId) {
+    if (generationMode === SchemeGenerationMode.AGORA_ONLY && !dto.agoraCurriculumId) {
       throw new BadRequestException('Bud library Curriculum ID is required when mode is AGORA_ONLY');
     }
-    if (dto.generationMode === SchemeGenerationMode.SCHOOL_ONLY && !dto.schoolCurriculumId) {
+    if (generationMode === SchemeGenerationMode.SCHOOL_ONLY && !dto.schoolCurriculumId) {
       throw new BadRequestException('School Curriculum Doc ID is required when mode is SCHOOL_ONLY');
     }
-    if (dto.generationMode === SchemeGenerationMode.MERGED && (!dto.agoraCurriculumId || !dto.schoolCurriculumId)) {
+    if (generationMode === SchemeGenerationMode.MERGED && (!dto.agoraCurriculumId || !dto.schoolCurriculumId)) {
       throw new BadRequestException('Both Bud library Curriculum and School Curriculum Doc IDs are required for MERGED mode');
     }
-    if (dto.generationMode === SchemeGenerationMode.MERGED && (!dto.mergeWeightAgora || !dto.mergeWeightSchool)) {
+    if (generationMode === SchemeGenerationMode.MERGED && (!mergeWeightAgora || !mergeWeightSchool)) {
       throw new BadRequestException('Merge weights are required for MERGED mode');
     }
 
@@ -78,12 +91,12 @@ export class SchemeOfWorkService {
         classId: dto.classId,
         subjectId: dto.subjectId,
         termId: dto.termId,
-        generationMode: dto.generationMode,
+        generationMode,
         agoraCurriculumId: dto.agoraCurriculumId,
         agoraCurriculumVersion: agoraCurriculumVersion,
         schoolCurriculumId: dto.schoolCurriculumId,
-        mergeWeightAgora: dto.mergeWeightAgora,
-        mergeWeightSchool: dto.mergeWeightSchool,
+        mergeWeightAgora,
+        mergeWeightSchool,
         isFork,
         parentSchemeId,
         version,
@@ -468,8 +481,9 @@ export class SchemeOfWorkService {
     const termStart = new Date(term.startDate);
     const termEnd = new Date(term.endDate);
     const halfTerm = buildHalfTermRange(term.halfTermStart, term.halfTermEnd);
+    const days = await this.schoolSettingsService.getWorkingDays(schoolId);
     const teaching = getTeachingWeekInfo(termStart, termEnd, now, {
-      workingDays: DEFAULT_WORKING_DAYS,
+      workingDays: days?.length ? days : DEFAULT_WORKING_DAYS,
       nonInstructionalRanges: halfTerm ? [halfTerm] : [],
     });
 

@@ -103,9 +103,9 @@ export class AiSchoolChatService {
     }
   }
 
-  async getConversations(userId: string) {
+  async getConversations(userId: string, schoolId?: string) {
     return this.prisma.chatConversation.findMany({
-      where: { userId },
+      where: { userId, ...(schoolId ? { schoolId } : {}) },
       orderBy: { updatedAt: 'desc' },
       select: {
         id: true,
@@ -118,7 +118,7 @@ export class AiSchoolChatService {
     });
   }
 
-  async getConversationMessages(conversationId: string, userId: string) {
+  async getConversationMessages(conversationId: string, userId: string, schoolId?: string) {
     const conversation = await this.prisma.chatConversation.findUnique({
       where: { id: conversationId },
       include: {
@@ -128,19 +128,27 @@ export class AiSchoolChatService {
       },
     });
 
-    if (!conversation || conversation.userId !== userId) {
+    if (
+      !conversation ||
+      conversation.userId !== userId ||
+      (schoolId && conversation.schoolId && conversation.schoolId !== schoolId)
+    ) {
       throw new BadRequestException('Conversation not found');
     }
 
     return conversation.messages;
   }
 
-  async deleteConversation(conversationId: string, userId: string) {
+  async deleteConversation(conversationId: string, userId: string, schoolId?: string) {
     const conversation = await this.prisma.chatConversation.findUnique({
       where: { id: conversationId },
     });
 
-    if (!conversation || conversation.userId !== userId) {
+    if (
+      !conversation ||
+      conversation.userId !== userId ||
+      (schoolId && conversation.schoolId && conversation.schoolId !== schoolId)
+    ) {
       throw new BadRequestException('Conversation not found');
     }
 

@@ -2,40 +2,58 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { AiContentGeneratorsService } from './ai-content-generators.service';
 import { AiContextRagService } from './ai-context-rag.service';
-import { AiLlmClientService } from './ai-llm-client.service';
+import { AiInsightsService } from './ai-insights.service';
+import { AgentToolContext, AgentToolResult, toolSource } from './ai-lois-source';
 import { AiSchoolInsightsService } from './ai-school-insights.service';
+import { AiSchoolQueryService } from './ai-school-query.service';
 import { AiStaffPermissionCheckerService } from './ai-staff-permission-checker.service';
 
-export type AgentToolContext = { schoolId?: string; userRole?: string; userId?: string };
+export type { AgentToolContext };
 
 /**
- * Lois agent tool execution: SQL, semantic search, stats, and delegation to content generators.
+ * Lois agent tool execution: typed school queries, semantic search, and content generators.
  */
 @Injectable()
 export class AiAgentToolsService {
   private readonly logger = new Logger(AiAgentToolsService.name);
 
   constructor(
-    private readonly llm: AiLlmClientService,
     private readonly prisma: PrismaService,
     private readonly generators: AiContentGeneratorsService,
     private readonly contextRag: AiContextRagService,
     private readonly schoolInsights: AiSchoolInsightsService,
+    private readonly schoolQuery: AiSchoolQueryService,
+    private readonly insights: AiInsightsService,
     private readonly staffPermissionChecker: AiStaffPermissionCheckerService,
   ) {}
 
   getToolDisplayName(toolName: string): string {
     const names: Record<string, string> = {
-      generate_lesson_plan: '?? Lesson Plan Generator',
-      generate_quiz: '? Quiz Generator',
-      generate_flashcards: '?? Flashcard Creator',
-      generate_summary: '?? Study Summary',
-      generate_assessment: '?? Assessment Builder',
-      grade_essay: '?? Essay Grader',
-      execute_sql: '🔍 Querying School Records',
-      search_semantic: '📖 Checking Knowledge Base',
-      get_school_stats: '📊 Gathering school statistics',
-      get_academic_risk_summary: '📉 Reviewing academic risk indicators',
+      generate_lesson_plan: 'Lesson plan',
+      generate_quiz: 'Quiz generator',
+      generate_flashcards: 'Flashcards',
+      generate_summary: 'Study summary',
+      generate_assessment: 'Assessment builder',
+      grade_essay: 'Essay grader',
+      search_semantic: 'Knowledge base',
+      get_school_stats: 'School snapshot',
+      get_academic_risk_summary: 'Academic risk',
+      list_students: 'Student list',
+      list_classes: 'Classes',
+      get_student_overview: 'Student overview',
+      get_class_performance: 'Class performance',
+      get_scheme_of_work: 'Scheme of work',
+      get_now_in_class: 'Current period',
+      get_timetable: 'Class timetable',
+      list_staff: 'Staff directory',
+      who_teaches: 'Who teaches',
+      get_attendance_summary: 'Attendance',
+      list_fee_debtors: 'Fee debtors',
+      list_admissions: 'Admissions',
+      get_calendar: 'School calendar',
+      get_guardians: 'Guardians',
+      list_lois_insights: 'Lois insights',
+      draft_parent_message: 'Parent message draft',
     };
     return names[toolName] || toolName.replace(/_/g, ' ');
   }
@@ -48,10 +66,25 @@ export class AiAgentToolsService {
       generate_summary: 'Let me prepare a comprehensive study summary...',
       generate_assessment: 'Building formal assessment questions...',
       grade_essay: 'Analyzing the essay for grading...',
-      execute_sql: "I'm searching the school records for the information you requested...",
-      search_semantic: "Let me check the school's knowledge base and policies...",
+      search_semantic: "Checking the school's knowledge base...",
       get_school_stats: 'Gathering the latest school statistics...',
-      get_academic_risk_summary: 'Analyzing published grades for students below the performance threshold...',
+      get_academic_risk_summary: 'Reviewing published grades below the performance threshold...',
+      list_students: 'Looking up enrolled students...',
+      list_classes: 'Looking up classes...',
+      get_student_overview: 'Loading this student record...',
+      get_class_performance: 'Summarising class grades...',
+      get_scheme_of_work: 'Checking the published scheme of work...',
+      get_now_in_class: 'Checking the timetable for right now...',
+      get_timetable: 'Loading the class timetable...',
+      list_staff: 'Looking up staff...',
+      who_teaches: 'Checking who teaches that class...',
+      get_attendance_summary: 'Reviewing recent attendance...',
+      list_fee_debtors: 'Checking outstanding fees...',
+      list_admissions: 'Opening admission applications...',
+      get_calendar: 'Checking the school calendar...',
+      get_guardians: 'Looking up parent contacts...',
+      list_lois_insights: 'Opening what Lois already noticed...',
+      draft_parent_message: 'Drafting a parent update (will not send)...',
     };
     return messages[toolName] || 'Processing your request...';
   }
@@ -60,7 +93,7 @@ export class AiAgentToolsService {
     toolName: string,
     args: any,
     context?: AgentToolContext,
-  ): Promise<{ data: any; usage: any }> {
+  ): Promise<AgentToolResult> {
     await this.staffPermissionChecker.assertLoisToolAllowed({
       toolName,
       userRole: context?.userRole,
@@ -155,21 +188,56 @@ export class AiAgentToolsService {
           maxScore: args.maxScore || 100,
         });
 
-      case 'get_school_stats': {
-        const sid = context?.schoolId || args.schoolId;
-        if (!sid) {
-          return { data: { error: 'School ID context is required for statistics.' }, usage: null };
-        }
-        if (context?.schoolId && args.schoolId && args.schoolId !== context.schoolId) {
-          this.logger.warn(
-            `get_school_stats: model schoolId ${args.schoolId} ignored; using request school ${context.schoolId}`,
-          );
-        }
-        return this.getSchoolStats(sid);
-      }
+      case 'get_school_stats':
+        return this.getSchoolStats(context?.schoolId);
 
-      case 'execute_sql':
-        return this.executeSql(args.sql, context?.schoolId);
+      case 'list_students':
+        return this.schoolQuery.listStudents(args || {}, context);
+
+      case 'list_classes':
+        return this.schoolQuery.listClasses(args || {}, context);
+
+      case 'get_student_overview':
+        return this.schoolQuery.getStudentOverview(args || {}, context);
+
+      case 'get_class_performance':
+        return this.schoolQuery.getClassPerformance(args || {}, context);
+
+      case 'get_scheme_of_work':
+        return this.schoolQuery.getSchemeOfWork(args || {}, context);
+
+      case 'get_now_in_class':
+        return this.schoolQuery.getNowInClass(args || {}, context);
+
+      case 'get_timetable':
+        return this.schoolQuery.getTimetable(args || {}, context);
+
+      case 'list_staff':
+        return this.schoolQuery.listStaff(args || {}, context);
+
+      case 'who_teaches':
+        return this.schoolQuery.whoTeaches(args || {}, context);
+
+      case 'get_attendance_summary':
+        return this.schoolQuery.getAttendanceSummary(args || {}, context);
+
+      case 'list_fee_debtors':
+        return this.schoolQuery.listFeeDebtors(args || {}, context);
+
+      case 'list_admissions':
+        return this.schoolQuery.listAdmissions(args || {}, context);
+
+      case 'get_calendar':
+        return this.schoolQuery.getCalendar(args || {}, context);
+
+      case 'get_guardians':
+        return this.schoolQuery.getGuardians(args || {}, context);
+
+      case 'list_lois_insights':
+        return this.insights.listForTool(args || {}, context);
+
+      case 'draft_parent_message':
+        return this.schoolQuery.draftParentMessage(args || {}, context);
 
       case 'search_semantic':
         return this.searchSemantic(
@@ -188,72 +256,10 @@ export class AiAgentToolsService {
     }
   }
 
-  assertSqlScopedToSchool(sql: string, schoolId: string): { ok: true } | { ok: false; message: string } {
-    const withoutTrailingSemicolons = sql.replace(/;+\s*$/g, '').trim();
-    if (/;\s*\S/.test(withoutTrailingSemicolons)) {
-      return { ok: false, message: 'Only a single SELECT statement is allowed.' };
-    }
-    const escaped = schoolId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const patterns = [
-      new RegExp(`"schoolId"\\s*=\\s*'${escaped}'`, 'i'),
-      new RegExp(`"schoolId"\\s*=\\s*"${escaped}"`, 'i'),
-      new RegExp(`\\bschoolId\\s*=\\s*'${escaped}'`, 'i'),
-      new RegExp(`\\bschoolId\\s*=\\s*"${escaped}"`, 'i'),
-    ];
-    if (!patterns.some((p) => p.test(sql))) {
-      return {
-        ok: false,
-        message: `For security, each query must include this exact tenant filter: "schoolId" = '${schoolId}' on relevant tables (see schema instructions).`,
-      };
-    }
-    return { ok: true };
-  }
-
-  async executeSql(sql: string, schoolId?: string): Promise<{ data: any; usage: any }> {
-    if (!schoolId) {
-      return { data: { error: 'School ID context is required for secure querying.' }, usage: null };
-    }
-
-    const trimmedSql = sql.trim();
-    const lowerSql = trimmedSql.toLowerCase();
-
-    if (!lowerSql.startsWith('select')) {
-      return { data: { error: 'Only read-only SELECT queries are allowed.' }, usage: null };
-    }
-
-    const scopeCheck = this.assertSqlScopedToSchool(trimmedSql, schoolId);
-    if (!scopeCheck.ok) {
-      return { data: { error: (scopeCheck as { ok: false; message: string }).message }, usage: null };
-    }
-
-    try {
-      const readOnlyPrisma = this.llm.getReadOnlyPrisma();
-      const results = await readOnlyPrisma.$transaction(async (tx) => {
-        await tx.$executeRawUnsafe(`SET LOCAL row_security = on;`);
-        await tx.$executeRawUnsafe(`SET LOCAL app.current_school_id = '${schoolId}';`);
-
-        const rows = await tx.$queryRawUnsafe(sql);
-
-        return JSON.parse(
-          JSON.stringify(rows, (_key, value) => (typeof value === 'bigint' ? Number(value) : value)),
-        );
-      });
-
-      return { data: results, usage: null };
-    } catch (error: any) {
-      return {
-        data: {
-          error: `SQL Execution failed: ${error?.message || 'Invalid query'}. Please refine your query.`,
-        },
-        usage: null,
-      };
-    }
-  }
-
   private async getAcademicRiskSummary(
     args: { thresholdPercent?: number; limit?: number },
     context?: AgentToolContext,
-  ): Promise<{ data: any; usage: any }> {
+  ): Promise<AgentToolResult> {
     const schoolId = context?.schoolId;
     if (!schoolId) {
       return { data: { error: 'School context is required.' }, usage: null };
@@ -315,11 +321,18 @@ export class AiAgentToolsService {
         })),
       },
       usage: null,
+      sources: [
+        toolSource(
+          'get_academic_risk_summary',
+          `${students.length} student${students.length === 1 ? '' : 's'} below ${threshold}%`,
+          '/dashboard/school/students',
+        ),
+      ],
     };
   }
 
   async searchSemantic(query: string, limit?: number, schoolId?: string, role?: string, userId?: string) {
-    const effectiveLimit = limit ?? 5;
+    const effectiveLimit = Math.min(limit ?? 5, 8);
     if (schoolId && role) {
       const { text, sources } = await this.contextRag.findRelevantContext(query, schoolId, role, effectiveLimit, {
         userId,
@@ -329,6 +342,12 @@ export class AiAgentToolsService {
           ? { text, sources }
           : { text: 'No relevant knowledge base results found for this query.', sources: [] },
         usage: null,
+        sources: (sources || []).map((s) => ({
+          kind: 'rag' as const,
+          type: s.type,
+          label: s.type.replace(/_/g, ' '),
+          relevance: s.relevance,
+        })),
       };
     }
     return {
@@ -340,13 +359,13 @@ export class AiAgentToolsService {
     };
   }
 
-  async getSchoolStats(schoolId: string): Promise<{ data: any; usage: any }> {
+  async getSchoolStats(schoolId?: string): Promise<AgentToolResult> {
     if (!schoolId) return { data: { error: 'School ID is required' }, usage: null };
 
     const [classCount, teacherCount, studentCount] = await Promise.all([
       this.prisma.class.count({ where: { schoolId } }),
       this.prisma.teacher.count({ where: { schoolId } }),
-      this.prisma.enrollment.count({ where: { schoolId } }),
+      this.prisma.enrollment.count({ where: { schoolId, isActive: true } }),
     ]);
 
     return {
@@ -357,6 +376,7 @@ export class AiAgentToolsService {
         totalPopulation: studentCount + teacherCount,
       },
       usage: null,
+      sources: [toolSource('get_school_stats', 'Live school counts', '/dashboard/school/overview')],
     };
   }
 }

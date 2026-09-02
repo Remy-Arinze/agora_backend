@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { AdminRole } from './create-school.dto';
 
 export class SchoolAdminDto {
@@ -123,6 +123,9 @@ export class SchoolDto {
     availableTypes: ('PRIMARY' | 'SECONDARY' | 'TERTIARY')[];
     primaryType: 'PRIMARY' | 'SECONDARY' | 'TERTIARY' | 'MIXED';
   };
+
+  @ApiPropertyOptional({ description: 'Runtime school policies for UI enforcement' })
+  runtimePolicies?: Record<string, unknown>;
 }
 
 export class TeacherDto {

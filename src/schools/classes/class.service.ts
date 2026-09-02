@@ -13,6 +13,7 @@ import { AssignTeacherToClassDto } from '../dto/assign-teacher-to-class.dto';
 import { ClassDto } from '../dto/class.dto';
 import { SchoolValidatorService } from '../shared/school-validator.service';
 import { NotificationService } from '../../notification/notification.service';
+import { SchoolSettingsService } from '../../school-settings/school-settings.service';
 
 /**
  * Service for managing classes/courses and teacher assignments
@@ -26,6 +27,7 @@ export class ClassService {
     private readonly emailService: EmailService,
     private readonly schoolValidator: SchoolValidatorService,
     private readonly notificationService: NotificationService,
+    private readonly schoolSettingsService: SchoolSettingsService,
   ) { }
 
   // Access Prisma models using bracket notation for reserved keywords
@@ -163,6 +165,18 @@ export class ClassService {
     });
     if (!teacher) {
       throw new NotFoundException('Teacher not found in this school');
+    }
+
+    const structure = await this.schoolSettingsService.getStructureConfig(school.id);
+    if (structure.teacherScope === 'ALL_SCHOOL') {
+      const academicYearAll = this.getCurrentAcademicYear();
+      const [arms, tertiary] = await Promise.all([
+        this.getClasses(schoolId, academicYearAll),
+        this.getClasses(schoolId, academicYearAll, ClassType.TERTIARY),
+      ]);
+      const byId = new Map<string, ClassDto>();
+      for (const cls of [...arms, ...tertiary]) byId.set(cls.id, cls);
+      return [...byId.values()];
     }
 
     // Get current academic year

@@ -1,11 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../database/prisma.service';
-import { NotificationService } from '../notification/notification.service';
-import { AiSchoolInsightsService } from './ai-school-insights.service';
+import { AiInsightsService } from './ai-insights.service';
 
 /**
- * Daily digest: notify connected school admins when students fall below grade threshold.
+ * Daily loops: academic risk, student performance drops, scheme-of-work gaps.
  */
 @Injectable()
 export class AiAcademicRiskDigestScheduler {
@@ -13,8 +12,7 @@ export class AiAcademicRiskDigestScheduler {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly insights: AiSchoolInsightsService,
-    private readonly notifications: NotificationService,
+    private readonly insights: AiInsightsService,
   ) {}
 
   @Cron(CronExpression.EVERY_DAY_AT_7AM)
@@ -26,26 +24,11 @@ export class AiAcademicRiskDigestScheduler {
       });
 
       for (const school of schools) {
-        const termId = await this.insights.getActiveTermId(school.id);
-        const students = await this.insights.findAtRiskStudents(school.id, {
-          termId,
-          thresholdPercent: 45,
-          limit: 20,
-          useActiveTermWhenMissing: false,
-        });
-
-        if (students.length === 0) continue;
-
-        this.notifications.emitAcademicRiskDigest({
-          schoolId: school.id,
-          schoolName: school.name,
-          atRiskCount: students.length,
-          preview: students.slice(0, 8).map((s) => ({
-            studentName: `${s.firstName} ${s.lastName}`.trim(),
-            avgPercent: Math.round(s.avgPercent * 10) / 10,
-          })),
-          timestamp: new Date().toISOString(),
-        });
+        try {
+          await this.insights.runDailyForSchool(school.id, school.name);
+        } catch (inner) {
+          this.logger.error(`Insights failed for school ${school.id}: ${inner}`);
+        }
       }
     } catch (e) {
       this.logger.error(`Academic risk digest failed: ${e}`);

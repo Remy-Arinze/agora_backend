@@ -14,6 +14,7 @@ import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { SubscriptionBillingService } from '../subscriptions/subscription-billing.service';
 import { KnowledgeIndexingService } from './knowledge-indexing.service';
 import { PrismaService } from '../database/prisma.service';
+import { AiInsightsService } from './ai-insights.service';
 import {
     GenerateQuizDto,
     GenerateAssessmentDto,
@@ -39,7 +40,8 @@ export class AiController {
         private readonly subscriptionsService: SubscriptionsService,
         private readonly subscriptionBilling: SubscriptionBillingService,
         private readonly indexingService: KnowledgeIndexingService,
-        private readonly prisma: PrismaService
+        private readonly prisma: PrismaService,
+        private readonly insightsService: AiInsightsService,
     ) { }
 
     /**
@@ -116,12 +118,12 @@ export class AiController {
      */
     @Post('chat/stream')
     @Roles(UserRole.TEACHER, UserRole.SCHOOL_ADMIN, UserRole.STUDENT)
-    @RequirePermission(PermissionResource.ANALYTICS, PermissionType.READ)
+    @RequirePermission(PermissionResource.OVERVIEW, PermissionType.READ)
     @ApiOperation({ summary: 'Stream AI chat with agentic tool-calling via SSE' })
     async chatStream(
         @Request() req: any,
         @Param('schoolId') schoolId: string,
-        @Body() body: { messages: any[]; conversationId?: string },
+        @Body() body: { messages: any[]; conversationId?: string; pageContext?: any },
         @Res() res: Response
     ) {
         let finalUsage = { total_tokens: 0 };
@@ -151,7 +153,8 @@ export class AiController {
                 body.conversationId,
                 schoolId,
                 remainingTokens,
-                abortController.signal
+                abortController.signal,
+                body.pageContext,
             );
         } catch (error: any) {
             const payload = toLoisStreamErrorPayload(error);
@@ -247,7 +250,7 @@ export class AiController {
 
     @Post('chat')
     @Roles(UserRole.TEACHER, UserRole.SCHOOL_ADMIN, UserRole.STUDENT)
-    @RequirePermission(PermissionResource.ANALYTICS, PermissionType.READ)
+    @RequirePermission(PermissionResource.OVERVIEW, PermissionType.READ)
     @ApiOperation({ summary: 'Generic AI assistant chat (legacy, non-streaming)' })
     async chat(
         @Request() req: any,
@@ -262,16 +265,16 @@ export class AiController {
 
     @Get('history')
     @Roles(UserRole.TEACHER, UserRole.SCHOOL_ADMIN, UserRole.STUDENT)
-    @RequirePermission(PermissionResource.ANALYTICS, PermissionType.READ)
+    @RequirePermission(PermissionResource.OVERVIEW, PermissionType.READ)
     @ApiOperation({ summary: 'Get chat history' })
     async getHistory(@Request() req: any, @Param('schoolId') schoolId: string) {
         await this.assertAiBillingForRequest(req, schoolId);
-        return this.aiService.getConversations(req.user.id);
+        return this.aiService.getConversations(req.user.id, schoolId);
     }
 
     @Get('history/:conversationId')
     @Roles(UserRole.TEACHER, UserRole.SCHOOL_ADMIN, UserRole.STUDENT)
-    @RequirePermission(PermissionResource.ANALYTICS, PermissionType.READ)
+    @RequirePermission(PermissionResource.OVERVIEW, PermissionType.READ)
     @ApiOperation({ summary: 'Get messages for a conversation' })
     async getConversationMessages(
         @Request() req: any,
@@ -279,12 +282,12 @@ export class AiController {
         @Param('conversationId') conversationId: string
     ) {
         await this.assertAiBillingForRequest(req, schoolId);
-        return this.aiService.getConversationMessages(conversationId, req.user.id);
+        return this.aiService.getConversationMessages(conversationId, req.user.id, schoolId);
     }
 
     @Delete('history/:conversationId')
     @Roles(UserRole.TEACHER, UserRole.SCHOOL_ADMIN, UserRole.STUDENT)
-    @RequirePermission(PermissionResource.ANALYTICS, PermissionType.READ)
+    @RequirePermission(PermissionResource.OVERVIEW, PermissionType.READ)
     @ApiOperation({ summary: 'Delete a conversation' })
     async deleteConversation(
         @Request() req: any,
@@ -292,7 +295,22 @@ export class AiController {
         @Param('conversationId') conversationId: string
     ) {
         await this.assertAiBillingForRequest(req, schoolId);
-        return this.aiService.deleteConversation(conversationId, req.user.id);
+        return this.aiService.deleteConversation(conversationId, req.user.id, schoolId);
+    }
+
+    @Get('insights')
+    @Roles(UserRole.SCHOOL_ADMIN)
+    @RequirePermission(PermissionResource.OVERVIEW, PermissionType.READ)
+    @ApiOperation({ summary: 'Latest Lois background insights for this school' })
+    async listInsights(
+        @Param('schoolId') schoolId: string,
+        @Query('limit') limit?: string,
+    ) {
+        const insights = await this.insightsService.listForSchool(
+            schoolId,
+            limit ? parseInt(limit, 10) : 8,
+        );
+        return { success: true, data: insights };
     }
 
     @Post('index-school')

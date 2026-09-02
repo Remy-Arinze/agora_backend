@@ -59,17 +59,16 @@ async function seedAgoraSubjects() {
     throw new Error('❌ Could not find agoraSubject or nerdcSubject model on Prisma client');
   }
 
-  console.log('📚 Creating global subjects in bank...');
+  console.log('📚 Creating global subjects in bank (skip if exists)...');
   for (const subject of AGORA_SUBJECTS) {
-    await subjectModel.upsert({
+    const existing = await subjectModel.findUnique({
       where: { code: subject.code },
-      update: {
-        name: subject.name,
-        category: subject.category,
-        schoolTypes: subject.schoolTypes,
-      },
-      create: subject,
     });
+    if (existing) {
+      console.log(`  ⏭️ ${subject.code}: already exists`);
+      continue;
+    }
+    await subjectModel.create({ data: subject });
     console.log(`  ✓ ${subject.code}: ${subject.name}`);
   }
 

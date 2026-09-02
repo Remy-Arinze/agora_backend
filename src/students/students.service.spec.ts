@@ -9,6 +9,7 @@ import { CloudinaryService } from '../storage/cloudinary/cloudinary.service';
 import { ExamTimetableService } from '../exam-timetable/exam-timetable.service';
 import { LiveStatusService } from '../live-status/live-status.service';
 import { NotificationService } from '../notification/notification.service';
+import { SchoolSettingsService } from '../school-settings/school-settings.service';
 import { TestUtils } from '../common/test/test-utils';
 import { UserWithContext } from '../auth/types/user-with-context.type';
 
@@ -63,6 +64,13 @@ describe('StudentsService', () => {
         {
           provide: NotificationService,
           useValue: {},
+        },
+        {
+          provide: SchoolSettingsService,
+          useValue: {
+            getRuntimePolicies: jest.fn().mockResolvedValue({}),
+            getAdmissionPolicy: jest.fn(),
+          },
         },
       ],
     }).compile();

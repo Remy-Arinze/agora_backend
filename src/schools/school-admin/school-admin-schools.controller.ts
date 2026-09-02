@@ -25,7 +25,7 @@ import {
 } from '@nestjs/swagger';
 import { SchoolAdminSchoolsService } from './school-admin-schools.service';
 import { SchoolDto } from '../dto/school.dto';
-import { SchoolDashboardDto } from '../dto/dashboard.dto';
+import { SchoolDashboardDto, SchoolDashboardChartsDto } from '../dto/dashboard.dto';
 import { SchoolSetupProgressDto } from '../dto/setup-progress.dto';
 import { StaffListResponseDto } from '../dto/staff-list.dto';
 import { UpdateSchoolDto } from '../dto/update-school.dto';
@@ -60,6 +60,28 @@ export class SchoolAdminSchoolsController {
   async getMySchool(@Request() req: any): Promise<ResponseDto<SchoolDto>> {
     const data = await this.schoolAdminSchoolsService.getMySchool(req.user);
     return ResponseDto.ok(data, 'School information retrieved successfully');
+  }
+
+  @Get('dashboard/charts')
+  @RequirePermission(PermissionResource.OVERVIEW, PermissionType.READ)
+  @ApiOperation({ summary: 'Get school dashboard charts' })
+  @ApiQuery({
+    name: 'schoolType',
+    required: false,
+    type: String,
+    description: 'Filter by school type (PRIMARY, SECONDARY, TERTIARY)',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Dashboard charts retrieved successfully',
+    type: ResponseDto<SchoolDashboardChartsDto>,
+  })
+  async getDashboardCharts(
+    @Request() req: any,
+    @Query('schoolType') schoolType?: string
+  ): Promise<ResponseDto<SchoolDashboardChartsDto>> {
+    const data = await this.schoolAdminSchoolsService.getDashboardCharts(req.user, schoolType);
+    return ResponseDto.ok(data, 'Dashboard charts retrieved successfully');
   }
 
   @Get('dashboard')

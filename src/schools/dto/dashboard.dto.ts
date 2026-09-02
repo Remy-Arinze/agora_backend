@@ -86,6 +86,11 @@ export class SchoolDashboardDto {
   @ApiProperty({ description: 'Dashboard statistics', type: DashboardStatsDto })
   stats: DashboardStatsDto;
 
+  @ApiProperty({ description: 'Recent students', type: [RecentStudentDto] })
+  recentStudents: RecentStudentDto[];
+}
+
+export class SchoolDashboardChartsDto {
   @ApiProperty({ description: 'Growth trends data', type: [GrowthTrendDataDto] })
   growthTrends: GrowthTrendDataDto[];
 
@@ -94,7 +99,4 @@ export class SchoolDashboardDto {
 
   @ApiProperty({ description: 'Weekly activity data', type: [WeeklyActivityDataDto] })
   weeklyActivity: WeeklyActivityDataDto[];
-
-  @ApiProperty({ description: 'Recent students', type: [RecentStudentDto] })
-  recentStudents: RecentStudentDto[];
 }

@@ -13,6 +13,7 @@ import { OtpService } from './otp.service';
 import { CloudinaryService } from '../storage/cloudinary/cloudinary.service';
 import { PasswordOtpService } from './password-otp.service';
 import { MetricsService } from '../common/metrics/metrics.service';
+import { SchoolSettingsService } from '../school-settings/school-settings.service';
 import { TestUtils } from '../common/test/test-utils';
 
 jest.mock('bcryptjs', () => ({
@@ -76,6 +77,15 @@ describe('AuthService', () => {
             authFailedAttemptsTotal: { inc: jest.fn() },
             authLoginAttemptsTotal: { inc: jest.fn() },
             authTokenRefreshTotal: { inc: jest.fn() },
+          },
+        },
+        {
+          provide: SchoolSettingsService,
+          useValue: {
+            getSecurityPolicy: jest.fn().mockResolvedValue({
+              passwordMinLength: 8,
+              passwordRequireSpecialChar: true,
+            }),
           },
         },
       ],

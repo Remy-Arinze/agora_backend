@@ -302,6 +302,31 @@ export class StudentAdmissionService {
       throw new BadRequestException('The application deadline has passed.');
     }
 
+    const formFields = (admissionPolicy.formFields as Array<{
+      key: string;
+      required?: boolean;
+      visible?: boolean;
+    }> | null) ?? [];
+    const dtoRecord = dto as unknown as Record<string, unknown>;
+    const systemKeys = new Set(['classLevel', 'classArmId', 'academicYear', 'profileImage']);
+    const allowedKeys = new Set([...formFields.map((f) => f.key), ...systemKeys]);
+    if (formFields.length > 0) {
+      for (const [key, value] of Object.entries(dtoRecord)) {
+        if (value == null || String(value).trim() === '') continue;
+        if (!allowedKeys.has(key)) {
+          throw new BadRequestException(`Unexpected field: ${key}`);
+        }
+      }
+    }
+    for (const field of formFields) {
+      if (field.visible === false) continue;
+      if (!field.required) continue;
+      const value = dtoRecord[field.key];
+      if (value == null || String(value).trim() === '') {
+        throw new BadRequestException(`${field.key} is required.`);
+      }
+    }
+
     // Check if student email exists globally
     const existingUser = await this.prisma.user.findUnique({
       where: { email: dto.email },
@@ -323,18 +348,24 @@ export class StudentAdmissionService {
         lastName: dto.lastName,
         email: dto.email,
         phone: dto.phone,
-        dateOfBirth: new Date(dto.dateOfBirth),
-        gender: dto.gender,
+        dateOfBirth: dto.dateOfBirth ? new Date(dto.dateOfBirth) : new Date('1970-01-01'),
+        gender: dto.gender || 'UNSPECIFIED',
         address: dto.address,
-        nationality: dto.nationality,
-        state: dto.state,
+        nationality: dto.nationality || '',
+        state: dto.state || '',
         classLevel: dto.classLevel,
         classArmId: dto.classArmId,
         academicYear: dto.academicYear,
-        parentName: dto.parentName,
-        parentPhone: dto.parentPhone,
+        parentName: dto.parentName || '',
+        parentPhone: dto.parentPhone || '',
         parentEmail: dto.parentEmail,
-        parentRelationship: dto.parentRelationship,
+        parentRelationship: dto.parentRelationship || '',
+        bloodGroup: dto.bloodGroup,
+        allergies: dto.allergies,
+        medications: dto.medications,
+        emergencyContact: dto.emergencyContact,
+        emergencyContactPhone: dto.emergencyContactPhone,
+        medicalNotes: dto.medicalNotes,
         status: AdmissionStatus.PENDING,
       },
     });

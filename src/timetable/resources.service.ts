@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { SchoolRepository } from '../schools/domain/repositories/school.repository';
+import { SchoolSettingsService } from '../school-settings/school-settings.service';
 import {
   ClassLevelDto,
   ClassArmDto,
@@ -25,7 +26,8 @@ import {
 export class ResourcesService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly schoolRepository: SchoolRepository
+    private readonly schoolRepository: SchoolRepository,
+    private readonly schoolSettingsService: SchoolSettingsService,
   ) { }
 
   // Access Prisma models using bracket notation for reserved keywords
@@ -200,6 +202,18 @@ export class ResourcesService {
     }
 
     // Create ClassLevels based on type
+    const structure = await this.schoolSettingsService.getStructureConfig(school.id);
+    if (structure.classLevelNamingMode === 'CUSTOM' && existingLevels.length === 0) {
+      return {
+        created: 0,
+        message:
+          'Custom class naming is enabled. Create class levels and arms individually instead of generating standard templates.',
+      };
+    }
+
+    const armNames =
+      structure.defaultClassArmNames?.length > 0 ? structure.defaultClassArmNames : ['A'];
+
     const levelsToCreate: Array<{ name: string; code: string; level: number; type: string }> = [];
 
     if (schoolType === 'PRIMARY') {
@@ -269,14 +283,16 @@ export class ResourcesService {
     const academicYear = now.getMonth() >= 8 ? `${year}/${year + 1}` : `${year - 1}/${year}`;
 
     for (const level of createdLevels) {
-      await this.classArmModel.create({
-        data: {
-          name: 'A',
-          classLevelId: level.id,
-          academicYear: academicYear,
-          isActive: true,
-        },
-      });
+      for (const armName of armNames) {
+        await this.classArmModel.create({
+          data: {
+            name: armName,
+            classLevelId: level.id,
+            academicYear: academicYear,
+            isActive: true,
+          },
+        });
+      }
     }
 
     return {
@@ -557,6 +573,18 @@ export class ResourcesService {
     const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
+    }
+
+    const structure = await this.schoolSettingsService.getStructureConfig(school.id);
+    if (structure.subjectRegistryMode === 'AGORA_DEFAULT' && !dto.agoraSubjectId && !dto.isAgoraStandard) {
+      throw new BadRequestException(
+        'This school only allows Myschoolbud national curriculum subjects. Link an Agora subject or use auto-generate.',
+      );
+    }
+    if (structure.subjectRegistryMode === 'CUSTOM_ONLY' && (dto.agoraSubjectId || dto.isAgoraStandard)) {
+      throw new BadRequestException(
+        'This school uses custom subjects only. National curriculum subjects cannot be added.',
+      );
     }
 
     // Validate classLevel if provided
@@ -1065,11 +1093,21 @@ export class ResourcesService {
       throw new BadRequestException('School not found');
     }
 
+    const structure = await this.schoolSettingsService.getStructureConfig(school.id);
+    if (structure.subjectRegistryMode === 'CUSTOM_ONLY') {
+      throw new BadRequestException(
+        'Auto-generate from the national curriculum is disabled. This school uses custom subjects only.',
+      );
+    }
+
     // Fetch subjects from the global AgoraSubject bank
     const globalSubjects = await (this.prisma as any).agoraSubject.findMany({
       where: {
         isActive: true,
         schoolTypes: { has: dto.schoolType },
+        ...(structure.defaultAgoraSubjectIds?.length
+          ? { id: { in: structure.defaultAgoraSubjectIds } }
+          : {}),
       },
     });
 

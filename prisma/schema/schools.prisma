@@ -55,6 +55,7 @@ model School {
   admissionApplications AdmissionApplication[]
   subscriptionBillingAuditLogs SubscriptionBillingAuditLog[]
   loisConfig            LoisConfig?
+  loisInsights          LoisInsight[]
   structureConfig       SchoolStructureConfig?
   holidayPresets        SchoolHolidayPreset[]
   gradingPolicy         GradingPolicy?

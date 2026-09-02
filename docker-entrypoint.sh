@@ -13,8 +13,7 @@ until npx prisma migrate deploy --schema=prisma/schema; do
   sleep 2
 done
 
-# Seeds upsert tools/plans/subjects, but seed.ts also resets the super-admin
-# password to Test1234!. Keep RUN_DB_SEED=true only for first deploy.
+# Seeds create tools/plans/subjects/super-admin only if they do not already exist.
 if [ "${RUN_DB_SEED:-false}" = "true" ]; then
   echo "Running seed scripts..."
   npx tsx prisma/seed.ts

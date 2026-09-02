@@ -1,6 +1,7 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma.service';
 import { UserWithContext } from '../../../auth/types/user-with-context.type';
+import { SchoolSettingsService } from '../../../school-settings/school-settings.service';
 
 /**
  * Service for teacher operations scoped to their current/active school
@@ -8,7 +9,10 @@ import { UserWithContext } from '../../../auth/types/user-with-context.type';
  */
 @Injectable()
 export class TeacherCurrentSchoolService {
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly schoolSettingsService: SchoolSettingsService,
+  ) { }
 
   /**
    * Get current teacher profile
@@ -126,7 +130,8 @@ export class TeacherCurrentSchoolService {
       throw new NotFoundException('School not found');
     }
 
-    return school;
+    const runtimePolicies = await this.schoolSettingsService.getRuntimePolicies(school.id);
+    return { ...school, runtimePolicies };
   }
 
   /**

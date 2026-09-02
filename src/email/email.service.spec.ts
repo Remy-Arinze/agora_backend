@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { EmailService } from './email.service';
+import { SchoolSettingsService } from '../school-settings/school-settings.service';
 import * as nodemailer from 'nodemailer';
 
 // Mock nodemailer
@@ -38,6 +39,12 @@ describe('EmailService', () => {
               };
               return config[key];
             }),
+          },
+        },
+        {
+          provide: SchoolSettingsService,
+          useValue: {
+            getNotificationPolicy: jest.fn().mockResolvedValue({ emailSenderName: null }),
           },
         },
       ],
@@ -101,7 +108,7 @@ describe('EmailService', () => {
       expect(mockTransporter.sendMail).toHaveBeenCalledWith(
         expect.objectContaining({
           to: email,
-          subject: expect.stringContaining('Verification'),
+          subject: expect.stringContaining('Myschoolbud verification code'),
           html: expect.stringContaining(otp),
         })
       );

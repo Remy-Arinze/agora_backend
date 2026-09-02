@@ -192,6 +192,32 @@ model SystemPromptConfig {
   createdAt DateTime @default(now())
 }
 
+/// Background findings from Lois skill loops (academic risk, performance drop, SoW gaps).
+model LoisInsight {
+  id          String   @id @default(cuid())
+  schoolId    String
+  type        String
+  severity    String   @default("warning")
+  title       String
+  summary     String   @db.Text
+  evidence    Json
+  studentIds  String[] @default([])
+  classIds    String[] @default([])
+  teacherIds  String[] @default([])
+  href        String?
+  askPrompt   String?  @db.Text
+  fingerprint String
+  seenAt      DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@unique([schoolId, fingerprint])
+  @@index([schoolId, createdAt])
+  @@index([schoolId, type])
+}
+
 /// Per-school Lois configuration.
 /// Allows school admins to customise Lois personality/tone without a code change.
 model LoisConfig {

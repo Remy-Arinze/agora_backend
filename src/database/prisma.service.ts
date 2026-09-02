@@ -2,6 +2,7 @@ import { Injectable, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/commo
 import { PrismaClient } from '@prisma/client';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { KNOWLEDGE_EVENTS, KnowledgeEntityType } from '../ai/knowledge-events.constants';
+import { DASHBOARD_CACHE_INVALIDATE } from '../common/redis/dashboard-cache.events';
 
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
@@ -83,7 +84,30 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
             this.eventEmitter.emit(event, { type: targetType, id });
           }
         }
-        
+
+        const dashboardModels = new Set([
+          'Enrollment',
+          'Teacher',
+          'Class',
+          'AdmissionApplication',
+          'ClassArm',
+          'Student',
+        ]);
+        if (
+          dashboardModels.has(params.model || '') &&
+          ['create', 'update', 'upsert', 'delete', 'updateMany', 'deleteMany'].includes(params.action)
+        ) {
+          const schoolId =
+            (result && typeof result === 'object' && 'schoolId' in result
+              ? (result as { schoolId?: string }).schoolId
+              : undefined) ||
+            params.args?.data?.schoolId ||
+            params.args?.where?.schoolId;
+          if (typeof schoolId === 'string' && schoolId) {
+            this.eventEmitter.emit(DASHBOARD_CACHE_INVALIDATE, { schoolId });
+          }
+        }
+
         return result;
       });
 

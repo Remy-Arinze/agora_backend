@@ -3,6 +3,7 @@ import { PrismaService } from '../database/prisma.service';
 import { AiContextRagService } from './ai-context-rag.service';
 import { SystemPromptConfigService } from './system-prompt-config.service';
 import { LoisSkillsService } from './lois-skills.service';
+import { LoisPageContextInput } from './ai-page-context';
 
 /**
  * Builds the Lois system prompt for each chat turn.
@@ -30,6 +31,7 @@ export class AiChatPromptService {
     messages: { role: string; content: string }[],
     userId?: string,
     schoolId?: string,
+    pageContext?: LoisPageContextInput | null,
   ): Promise<{ systemPrompt: string; contextText: string; userRole: string; schoolName: string }> {
     let contextText = '';
     let userRole = 'USER';
@@ -117,6 +119,11 @@ export class AiChatPromptService {
       // SUPER_ADMIN or unknown — just name
       const name = [user.firstName, user.lastName].filter(Boolean).join(' ') || 'User';
       directContext += `Current User: ${name} (Role: ${userRole}).\n`;
+    }
+
+    const focusBlock = await this.describeVerifiedFocus(pageContext, schoolId, userRole);
+    if (focusBlock) {
+      directContext += `\n${focusBlock}\n`;
     }
 
     // ── RAG context — scoped by role ────────────────────────────────────────
@@ -303,6 +310,92 @@ export class AiChatPromptService {
     return ctx;
   }
 
+  /**
+   * Re-loads the on-screen entity and ignores ids that do not belong to this school.
+   */
+  private async describeVerifiedFocus(
+    pageContext: LoisPageContextInput | null | undefined,
+    schoolId: string,
+    userRole: string,
+  ): Promise<string> {
+    if (!pageContext?.type) return '';
+    if (pageContext.schoolId && pageContext.schoolId !== schoolId) return '';
+
+    try {
+      if (pageContext.type === 'student' && pageContext.studentId) {
+        const enrollment = await this.prisma.enrollment.findFirst({
+          where: { schoolId, studentId: pageContext.studentId, isActive: true },
+          select: {
+            studentId: true,
+            classLevel: true,
+            class: { select: { id: true, name: true } },
+            classArm: { select: { name: true, classLevel: { select: { name: true } } } },
+            student: { select: { firstName: true, lastName: true } },
+          },
+        });
+        if (!enrollment) return '';
+        const name = `${enrollment.student.firstName} ${enrollment.student.lastName}`.trim();
+        const className =
+          enrollment.class?.name ||
+          `${enrollment.classArm?.classLevel?.name || enrollment.classLevel || ''} ${enrollment.classArm?.name || ''}`.trim();
+        return `Current Screen Focus: Student ${name} (studentId=${enrollment.studentId}${className ? `, class=${className}` : ''}). Prefer this student unless the user asks about someone else.`;
+      }
+
+      if ((pageContext.type === 'class' || pageContext.type === 'level') && (pageContext.classId || pageContext.classArmId)) {
+        if (pageContext.classId) {
+          const klass = await this.prisma.class.findFirst({
+            where: { id: pageContext.classId, schoolId },
+            select: { id: true, name: true },
+          });
+          if (klass) {
+            return `Current Screen Focus: Class ${klass.name} (classId=${klass.id}).`;
+          }
+        }
+        if (pageContext.classArmId) {
+          const arm = await this.prisma.classArm.findFirst({
+            where: { id: pageContext.classArmId, classLevel: { schoolId } },
+            select: { id: true, name: true, classLevel: { select: { name: true } } },
+          });
+          if (arm) {
+            return `Current Screen Focus: ${arm.classLevel?.name || ''} ${arm.name} (classArmId=${arm.id}).`.trim();
+          }
+        }
+      }
+
+      if (pageContext.type === 'scheme' && pageContext.schemeId) {
+        const scheme = await this.prisma.schemeOfWork.findFirst({
+          where: { id: pageContext.schemeId, schoolId },
+          select: { id: true, classLevel: { select: { name: true } } },
+        });
+        if (scheme) {
+          const week = pageContext.weekNumber ? ` week ${pageContext.weekNumber}` : '';
+          return `Current Screen Focus: Scheme of work${scheme.classLevel?.name ? ` for ${scheme.classLevel.name}` : ''}${week} (schemeId=${scheme.id}).`;
+        }
+      }
+
+      if (pageContext.type === 'staff' && pageContext.teacherId) {
+        const teacher = await this.prisma.teacher.findFirst({
+          where: { id: pageContext.teacherId, schoolId },
+          select: { id: true, firstName: true, lastName: true },
+        });
+        if (teacher) {
+          return `Current Screen Focus: Staff ${teacher.firstName} ${teacher.lastName} (teacherId=${teacher.id}).`;
+        }
+      }
+
+      if (pageContext.type === 'school' || pageContext.type === 'overview') {
+        return 'Current Screen Focus: School overview (whole school).';
+      }
+
+      if (pageContext.label) {
+        return `Current Screen Focus: ${pageContext.label}${userRole === 'SCHOOL_ADMIN' ? '' : ''}.`;
+      }
+    } catch (err) {
+      this.logger.warn(`Focus verification failed: ${err}`);
+    }
+    return '';
+  }
+
   // ── System prompt assembly ────────────────────────────────────────────────────
   private buildPrompt(
     schoolName: string,
@@ -371,27 +464,33 @@ Core Operational Rules:
 
 ${roleRules}
 ${skillsBlock}
-HYBRID RAG ROUTING:
-- Use execute_sql for quantitative questions: "How many...", "List all...", "Count teachers in SS1".
-- Use search_semantic for qualitative questions: "Tell me about...", "Explain the policy for...", "What are the objectives for...".
-- Use get_academic_risk_summary when the user asks about struggling, at-risk, or below-average students.
-- For complex queries needing both data and context, sequence the tools appropriately.
+TOOL ROUTING (typed tools only — never invent SQL):
+- list_classes: resolve names like "JSS 2A" into classArmId/classId, or list all classes/arms.
+- list_students: find or list students by name or class. Pass classQuery when you only have a class name.
+- get_student_overview: one student's published grades and recent attendance.
+- get_class_performance: class averages and who is below threshold. Pass classQuery if you lack ids.
+- get_academic_risk_summary: school-wide (or teacher roster) students below threshold.
+- get_scheme_of_work: published weeks, delivery status, missing lesson notes.
+- get_now_in_class: what is on the timetable right now (Africa/Lagos).
+- get_timetable: full day for a class (not just now). Pass day (e.g. Thursday) and classQuery.
+- list_staff: teachers and admins by name.
+- who_teaches: who teaches a subject in a class, plus form/class teacher.
+- get_attendance_summary: present/absent/late counts.
+- list_fee_debtors: outstanding school fees (does not take payment).
+- list_admissions: application inbox by status.
+- get_calendar: events and holidays in a date range.
+- get_guardians: parent/guardian contacts for one student. Does not send.
+- get_school_stats: headline counts only.
+- list_lois_insights: issues already flagged in the background.
+- search_semantic: policies, handbooks, qualitative knowledge.
+- draft_parent_message: draft only — never claim you sent it.
+- Do not invent numbers. Quote figures from the latest tool result. If a tool errors, say so.
 
-TIMETABLE AND CLASS TEACHER RESOLUTION (CRITICAL):
-You have access to real-world time in "Current Identity Context".
-When asked "What class is going on in [Class] right now?" or "Who is taking [Class]?":
-1. Primary Schools: ALWAYS inform of the main Class Teacher — do NOT look up subject teachers.
-2. Secondary Schools: FIRST execute_sql on "TimetablePeriod" using the current dayOfWeek and time range, then resolve the teacher for that subject.
-3. Free Period: If no TimetablePeriod record matches the current time, inform the user it is a free period.
-
-SCHEMA CONTEXT FOR SQL (CRITICAL):
-- Tables (MUST use double quotes): "Student", "Teacher", "Class", "ClassLevel", "ClassArm", "ClassTeacher", "Subject", "Enrollment", "Grade", "Attendance", "AcademicSession", "Term", "TimetablePeriod", "Assessment".
-- "TimetablePeriod" columns: "termId", "dayOfWeek", "startTime", "endTime", "classId", "classArmId", "teacherId", "subjectId". Join "Term" → "AcademicSession" and filter "AcademicSession"."schoolId" = '${schoolId}'.
-- Relationships: "ClassTeacher" links "Teacher" to "Class" (tertiary) or "ClassArm" (secondary). "ClassArm" links to "ClassLevel" (e.g., JSS 1) with a "name" (e.g., A).
-- camelCase columns MUST use double quotes: "schoolId", "firstName", "lastName", "classId", "classArmId", "teacherId", "maxScore", "gradeType".
-- Grade types: CA, ASSIGNMENT, EXAM. Attendance status: PRESENT, ABSENT, LATE.
-- ALWAYS filter by "schoolId" = '${schoolId}' on every table that has it.
-- Example: SELECT count(*) FROM "Teacher" WHERE "schoolId" = '${schoolId}';
+SCREEN FOCUS:
+If "Current Screen Focus" is set, prefer that student/class/scheme unless the user clearly asks about someone else.
+When asked who is teaching a class right now, call get_now_in_class (primary returns the class teacher).
+When asked who teaches a subject, or who the form teacher is, call who_teaches.
+If the user names a class without an id, call list_classes or pass classQuery — never guess ids.
     `.trim();
   }
 
@@ -413,9 +512,11 @@ TEACHER-SPECIFIC RULES:
         return sysConfig?.adminRulesOverride?.trim() || `
 SCHOOL ADMIN-SPECIFIC RULES:
 - Tone: Be a high-level strategic assistant to the school leadership.
-- You have school-wide data access. Do not restrict queries to specific classes or teachers.
-- You can help with: school statistics, student performance overviews, staff analytics, subscription and billing status, curriculum oversight.
-- For sensitive actions (e.g. suspending a student), remind the admin to use the dashboard — you are advisory only.`;
+- Tool access follows this admin's staff permissions. If a tool returns a permission error, explain they do not have access — do not invent the data.
+- You can help with: school statistics, classes, staff coverage, student performance, attendance, fees outstanding, admissions, calendar, scheme of work, timetable, guardians, and the Lois insights inbox.
+- For sensitive actions (e.g. suspending a student, emailing parents, taking a fee payment), you may draft text but MUST say it was not sent. They use the dashboard to send.
+- Never invent student ids. Use list_students or the Current Screen Focus first.
+- Never invent class ids. Use list_classes or classQuery first.`;
 
       case 'STUDENT':
         return sysConfig?.studentRulesOverride?.trim() || `

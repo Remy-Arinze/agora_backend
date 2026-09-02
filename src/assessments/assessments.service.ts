@@ -15,6 +15,7 @@ import {
     isPastDueDate,
 } from './assessment-deadline.util';
 import { ExamTimetableService } from '../exam-timetable/exam-timetable.service';
+import { SchoolSettingsService } from '../school-settings/school-settings.service';
 
 @Injectable()
 export class AssessmentsService {
@@ -27,6 +28,7 @@ export class AssessmentsService {
         private readonly metricsService: MetricsService,
         private readonly subscriptionBilling: SubscriptionBillingService,
         private readonly examTimetableService: ExamTimetableService,
+        private readonly schoolSettingsService: SchoolSettingsService,
     ) { }
 
     async createAssessment(schoolId: string, dto: CreateAssessmentDto, user: UserWithContext) {
@@ -99,6 +101,8 @@ export class AssessmentsService {
             }
         }
 
+        const grading = await this.schoolSettingsService.getGradingPolicy(schoolId);
+
         // Logic to create assessment and its questions
         const assessment = await this.prisma.assessment.create({
             data: {
@@ -116,14 +120,14 @@ export class AssessmentsService {
                 maxScore: dto.maxScore,
                 isTimed: dto.isTimed || false,
                 duration: dto.duration || null,
-                allowLateSubmissionAfterDue: dto.allowLateSubmissionAfterDue ?? false,
-                allowLateSubmissionAfterTimer: dto.allowLateSubmissionAfterTimer ?? false,
-                lateDuePenaltyPoints: dto.lateDuePenaltyPoints ?? 0,
-                lateTimerPenaltyPoints: dto.lateTimerPenaltyPoints ?? 0,
-                hasIntegrity: dto.hasIntegrity || false,
+                allowLateSubmissionAfterDue: dto.allowLateSubmissionAfterDue ?? grading.defaultAllowLateSubmissionAfterDue,
+                allowLateSubmissionAfterTimer: dto.allowLateSubmissionAfterTimer ?? grading.defaultAllowLateSubmissionAfterTimer,
+                lateDuePenaltyPoints: dto.lateDuePenaltyPoints ?? Number(grading.defaultLateDuePenalty) ?? 0,
+                lateTimerPenaltyPoints: dto.lateTimerPenaltyPoints ?? Number(grading.defaultLateTimerPenalty) ?? 0,
+                hasIntegrity: dto.hasIntegrity ?? grading.defaultIntegrityEnabled,
                 autoSubmitOnTimeout: dto.autoSubmitOnTimeout !== undefined ? dto.autoSubmitOnTimeout : true,
-                violationThreshold: dto.violationThreshold !== undefined ? dto.violationThreshold : 1,
-                pointsPerViolation: dto.pointsPerViolation || 0,
+                violationThreshold: dto.violationThreshold !== undefined ? dto.violationThreshold : grading.defaultViolationThreshold,
+                pointsPerViolation: dto.pointsPerViolation ?? Number(grading.defaultPointsPerViolation) ?? 0,
                 questions: {
                     create: dto.questions.map(q => ({
                         text: q.text,

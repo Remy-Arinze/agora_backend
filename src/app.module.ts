@@ -43,6 +43,7 @@ import { MetricsModule } from './common/metrics/metrics.module';
 import { HttpMetricsInterceptor } from './common/metrics/http-metrics.interceptor';
 import { EngagementModule } from './engagement/engagement.module';
 import { LoggerModule } from './common/logger/logger.module';
+import { RedisModule } from './common/redis/redis.module';
 import { SchoolSettingsModule } from './school-settings/school-settings.module';
 import { ExportModule } from './export/export.module';
 import { BackupModule } from './backup/backup.module';
@@ -111,6 +112,7 @@ import { BackupModule } from './backup/backup.module';
     MetricsModule,
     EngagementModule,
     LoggerModule,
+    RedisModule,
     SchoolSettingsModule,
     ExportModule,
     BackupModule,

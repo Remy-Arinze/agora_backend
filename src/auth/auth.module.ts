@@ -11,6 +11,7 @@ import { ShadowUserGuard } from './guards/shadow-user.guard';
 import { DatabaseModule } from '../database/database.module';
 import { EmailModule } from '../email/email.module';
 import { CloudinaryModule } from '../storage/cloudinary/cloudinary.module';
+import { SchoolSettingsModule } from '../school-settings/school-settings.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { CloudinaryModule } from '../storage/cloudinary/cloudinary.module';
     DatabaseModule,
     EmailModule,
     CloudinaryModule,
+    SchoolSettingsModule,
   ],
   controllers: [AuthController],
   providers: [AuthService, OtpService, PasswordOtpService, JwtStrategy, ShadowUserGuard],
