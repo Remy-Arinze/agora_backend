@@ -278,6 +278,34 @@ export class AutoGenerateSubjectsDto {
   @IsEnum(['PRIMARY', 'SECONDARY'])
   @IsNotEmpty()
   schoolType: 'PRIMARY' | 'SECONDARY';
+
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'Agora subject ids to create. Omit to generate the full standard set.',
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  agoraSubjectIds?: string[];
+}
+
+export class AutoGenerateSubjectPreviewDto {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty()
+  name: string;
+
+  @ApiProperty({ required: false })
+  code?: string;
+
+  @ApiProperty({ required: false })
+  category?: string;
+}
+
+export class AutoGenerateSubjectsPreviewDto {
+  @ApiProperty({ type: [AutoGenerateSubjectPreviewDto] })
+  subjects: AutoGenerateSubjectPreviewDto[];
 }
 
 export class AutoGenerateSubjectsResponseDto {
@@ -289,6 +317,22 @@ export class AutoGenerateSubjectsResponseDto {
 
   @ApiProperty({ type: [SubjectDto] })
   subjects: SubjectDto[];
+}
+
+export class GenerateDefaultClassesDto {
+  @ApiProperty({ enum: ['PRIMARY', 'SECONDARY', 'TERTIARY'] })
+  @IsEnum(['PRIMARY', 'SECONDARY', 'TERTIARY'])
+  @IsNotEmpty()
+  schoolType: 'PRIMARY' | 'SECONDARY' | 'TERTIARY';
+
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'Class arm names applied to every generated class level (e.g. A, B, C).',
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  armNames?: string[];
 }
 
 // ============================================

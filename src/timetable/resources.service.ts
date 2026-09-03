@@ -150,7 +150,8 @@ export class ResourcesService {
    */
   async generateDefaultClasses(
     schoolId: string,
-    schoolType: 'PRIMARY' | 'SECONDARY' | 'TERTIARY'
+    schoolType: 'PRIMARY' | 'SECONDARY' | 'TERTIARY',
+    requestedArmNames?: string[],
   ): Promise<{ created: number; message: string }> {
     const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
@@ -211,8 +212,10 @@ export class ResourcesService {
       };
     }
 
-    const armNames =
-      structure.defaultClassArmNames?.length > 0 ? structure.defaultClassArmNames : ['A'];
+    const armNames = this.resolveArmNames(
+      requestedArmNames,
+      structure.defaultClassArmNames,
+    );
 
     const levelsToCreate: Array<{ name: string; code: string; level: number; type: string }> = [];
 
@@ -297,8 +300,31 @@ export class ResourcesService {
 
     return {
       created: createdLevels.length,
-      message: `Successfully created ${createdLevels.length} ${schoolType.toLowerCase()} classes`,
+      message: `Successfully created ${createdLevels.length} ${schoolType.toLowerCase()} class levels with ${armNames.length} arm${armNames.length === 1 ? '' : 's'} each`,
     };
+  }
+
+  private resolveArmNames(requested?: string[], fallback?: string[]): string[] {
+    const source = requested?.length ? requested : fallback?.length ? fallback : ['A'];
+    const names = source.map((n) => n.trim()).filter(Boolean);
+    if (names.length === 0) {
+      throw new BadRequestException('Provide at least one class arm name.');
+    }
+    if (names.length > 12) {
+      throw new BadRequestException('You can create at most 12 arms per class.');
+    }
+    const seen = new Set<string>();
+    for (const name of names) {
+      if (name.length > 40) {
+        throw new BadRequestException(`Arm name "${name}" is too long.`);
+      }
+      const key = name.toLowerCase();
+      if (seen.has(key)) {
+        throw new BadRequestException(`Duplicate arm name "${name}".`);
+      }
+      seen.add(key);
+    }
+    return names;
   }
 
   async createClassArm(schoolId: string, dto: CreateClassArmDto): Promise<ClassArmDto> {
@@ -1084,10 +1110,10 @@ export class ResourcesService {
     { name: 'Accounting', code: 'ACCT', color: '#4ADE80' },
   ];
 
-  async autoGenerateSubjects(
+  private async loadAutoGenerateCatalog(
     schoolId: string,
-    dto: AutoGenerateSubjectsDto
-  ): Promise<AutoGenerateSubjectsResponseDto> {
+    schoolType: 'PRIMARY' | 'SECONDARY',
+  ) {
     const school = await this.schoolRepository.findById(schoolId);
     if (!school) {
       throw new BadRequestException('School not found');
@@ -1100,41 +1126,87 @@ export class ResourcesService {
       );
     }
 
-    // Fetch subjects from the global AgoraSubject bank
     const globalSubjects = await (this.prisma as any).agoraSubject.findMany({
       where: {
         isActive: true,
-        schoolTypes: { has: dto.schoolType },
+        schoolTypes: { has: schoolType },
         ...(structure.defaultAgoraSubjectIds?.length
           ? { id: { in: structure.defaultAgoraSubjectIds } }
           : {}),
       },
+      orderBy: { name: 'asc' },
     });
 
-    // Get existing subjects for this school and schoolType
     const existingSubjects = await this.subjectModel.findMany({
       where: {
         schoolId: school.id,
-        schoolType: dto.schoolType,
+        schoolType,
       },
     });
 
     const existingNames = new Set(existingSubjects.map((s: any) => s.name.toLowerCase()));
-    const existingCodes = new Set(existingSubjects.map((s: any) => s.code?.toLowerCase()));
+    const existingCodes = new Set(existingSubjects.map((s: any) => s.code?.toLowerCase()).filter(Boolean));
     const linkedAgoraIds = new Set(
-      existingSubjects.map((s: any) => s.agoraSubjectId).filter(Boolean)
+      existingSubjects.map((s: any) => s.agoraSubjectId).filter(Boolean),
     );
+
+    const isExisting = (globalSub: { id: string; name: string; code: string }) =>
+      existingNames.has(globalSub.name.toLowerCase()) ||
+      existingCodes.has(globalSub.code.toLowerCase()) ||
+      linkedAgoraIds.has(globalSub.id);
+
+    return { school, globalSubjects, isExisting };
+  }
+
+  async previewAutoGenerateSubjects(
+    schoolId: string,
+    schoolType: 'PRIMARY' | 'SECONDARY',
+  ): Promise<{ subjects: { id: string; name: string; code?: string; category?: string }[] }> {
+    const { globalSubjects, isExisting } = await this.loadAutoGenerateCatalog(schoolId, schoolType);
+    return {
+      subjects: globalSubjects
+        .filter((s: any) => !isExisting(s))
+        .map((s: any) => ({
+          id: s.id,
+          name: s.name,
+          code: s.code || undefined,
+          category: s.category || undefined,
+        })),
+    };
+  }
+
+  async autoGenerateSubjects(
+    schoolId: string,
+    dto: AutoGenerateSubjectsDto
+  ): Promise<AutoGenerateSubjectsResponseDto> {
+    const { school, globalSubjects, isExisting } = await this.loadAutoGenerateCatalog(
+      schoolId,
+      dto.schoolType,
+    );
+
+    let pool = globalSubjects as Array<{
+      id: string;
+      name: string;
+      code: string;
+      category?: string | null;
+    }>;
+
+    if (dto.agoraSubjectIds) {
+      if (dto.agoraSubjectIds.length === 0) {
+        throw new BadRequestException('Select at least one subject to generate.');
+      }
+      const allowed = new Set(dto.agoraSubjectIds);
+      pool = pool.filter((s) => allowed.has(s.id));
+      if (pool.length === 0) {
+        throw new BadRequestException('None of the selected subjects are available for this school type.');
+      }
+    }
 
     const createdSubjects: SubjectDto[] = [];
     let skipped = 0;
 
-    for (const globalSub of globalSubjects) {
-      // Skip if subject with same name, code, or already linked ID exists
-      if (
-        existingNames.has(globalSub.name.toLowerCase()) ||
-        existingCodes.has(globalSub.code.toLowerCase()) ||
-        linkedAgoraIds.has(globalSub.id)
-      ) {
+    for (const globalSub of pool) {
+      if (isExisting(globalSub)) {
         skipped++;
         continue;
       }
@@ -1145,9 +1217,9 @@ export class ResourcesService {
           code: globalSub.code,
           schoolId: school.id,
           schoolType: dto.schoolType,
-          agoraSubjectId: globalSub.id, // Link to global bank
-          isAgoraStandard: true, // Fix: Mark as standard
-          category: globalSub.category, // Copy category
+          agoraSubjectId: globalSub.id,
+          isAgoraStandard: true,
+          category: globalSub.category,
           isActive: true,
         },
       });

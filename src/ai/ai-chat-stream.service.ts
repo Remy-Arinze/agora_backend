@@ -138,8 +138,10 @@ export class AiChatStreamService {
       }
     }
 
-    const abortSignalOpt =
-      abortSignal && !this.llm.chatClientRejectsAbortSignal() ? { signal: abortSignal } : {};
+    // AbortSignal is a client RequestOption, not a chat-completion field.
+    // Spreading `signal` into the first argument serializes it into the JSON body
+    // and the provider returns 400 Unrecognized request argument supplied: signal.
+    const requestOpts = abortSignal ? { signal: abortSignal } : undefined;
 
     try {
       const currentMessages: any[] = [{ role: 'system', content: systemPrompt }, ...messages];
@@ -155,14 +157,16 @@ export class AiChatStreamService {
         }
 
         turn++;
-        const response = await openai.chat.completions.create({
-          model,
-          messages: currentMessages,
-          tools: AGORA_TOOLS as OpenAI.Chat.Completions.ChatCompletionTool[],
-          tool_choice: 'auto',
-          temperature: 0.7,
-          ...abortSignalOpt,
-        });
+        const response = await openai.chat.completions.create(
+          {
+            model,
+            messages: currentMessages,
+            tools: AGORA_TOOLS as OpenAI.Chat.Completions.ChatCompletionTool[],
+            tool_choice: 'auto',
+            temperature: 0.7,
+          },
+          requestOpts,
+        );
 
         const choice = response.choices[0];
         totalUsage = response.usage || totalUsage;
@@ -172,13 +176,15 @@ export class AiChatStreamService {
         );
 
         if (!toolCalls || toolCalls.length === 0) {
-          const finalStream = await openai.chat.completions.create({
-            model,
-            messages: currentMessages,
-            stream: true,
-            temperature: 0.7,
-            ...abortSignalOpt,
-          });
+          const finalStream = await openai.chat.completions.create(
+            {
+              model,
+              messages: currentMessages,
+              stream: true,
+              temperature: 0.7,
+            },
+            requestOpts,
+          );
 
           for await (const chunk of finalStream as any) {
             if (abortSignal?.aborted) {

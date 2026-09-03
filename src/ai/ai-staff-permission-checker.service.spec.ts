@@ -116,6 +116,28 @@ describe('AiStaffPermissionCheckerService', () => {
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
+  it('allows school admins to list insights (results are filtered separately)', async () => {
+    prisma.schoolAdmin.findFirst.mockResolvedValue({ id: 'a1', role: 'bursar' });
+    await expect(
+      checker.assertLoisToolAllowed({
+        toolName: 'list_lois_insights',
+        userRole: 'SCHOOL_ADMIN',
+        userId: 'u1',
+        schoolId: 's1',
+      }),
+    ).resolves.toBeUndefined();
+    expect(prisma.staffPermission.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('gives principals every insight type', async () => {
+    prisma.schoolAdmin.findFirst.mockResolvedValue({ id: 'a1', role: 'principal' });
+    const types = await checker.allowedInsightTypes('u1', 's1', 'SCHOOL_ADMIN');
+    expect(types).toEqual(
+      expect.arrayContaining(['ACADEMIC_RISK', 'STUDENT_DROP', 'SOW_GAP', 'ATTENDANCE_RISK', 'FEE_ARREARS', 'ADMISSIONS_BACKLOG']),
+    );
+    expect(prisma.staffPermission.findFirst).not.toHaveBeenCalled();
+  });
+
   it('requires Admissions read for bursar-like admins', async () => {
     prisma.schoolAdmin.findFirst.mockResolvedValue({ id: 'a1', role: 'bursar' });
     prisma.staffPermission.findFirst.mockResolvedValue(null);

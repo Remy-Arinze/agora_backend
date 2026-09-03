@@ -4,7 +4,7 @@ import { PrismaService } from '../database/prisma.service';
 import { AiInsightsService } from './ai-insights.service';
 
 /**
- * Daily loops: academic risk, student performance drops, scheme-of-work gaps.
+ * Daily loops: academic risk, drops, SoW gaps, attendance, fees, and admissions backlog.
  */
 @Injectable()
 export class AiAcademicRiskDigestScheduler {

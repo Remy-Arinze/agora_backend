@@ -9,6 +9,7 @@ import {
   Param,
   Query,
   UseGuards,
+  BadRequestException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { TimetableService } from './timetable.service';
@@ -32,6 +33,8 @@ import {
   AssignTeacherToSubjectDto,
   AutoGenerateSubjectsDto,
   AutoGenerateSubjectsResponseDto,
+  AutoGenerateSubjectsPreviewDto,
+  GenerateDefaultClassesDto,
   SubjectClassAssignmentsDto,
   BulkClassSubjectAssignmentDto,
 } from './dto/resource.dto';
@@ -250,9 +253,13 @@ export class TimetableController {
   @ApiResponse({ status: 409, description: 'Classes already exist for this type' })
   async generateDefaultClasses(
     @Param('schoolId') schoolId: string,
-    @Body() dto: { schoolType: 'PRIMARY' | 'SECONDARY' | 'TERTIARY' }
+    @Body() dto: GenerateDefaultClassesDto
   ): Promise<ResponseDto<{ created: number; message: string }>> {
-    const data = await this.resourcesService.generateDefaultClasses(schoolId, dto.schoolType);
+    const data = await this.resourcesService.generateDefaultClasses(
+      schoolId,
+      dto.schoolType,
+      dto.armNames,
+    );
     return ResponseDto.ok(data, data.message);
   }
 
@@ -438,6 +445,21 @@ export class TimetableController {
       teacherId
     );
     return ResponseDto.ok(data, 'Teacher removed successfully');
+  }
+
+  @Get('subjects/auto-generate/preview')
+  @RequirePermission(PermissionResource.SUBJECTS, PermissionType.READ)
+  @ApiOperation({ summary: 'Preview standard subjects that would be auto-generated' })
+  @ApiQuery({ name: 'schoolType', enum: ['PRIMARY', 'SECONDARY'] })
+  async previewAutoGenerateSubjects(
+    @Param('schoolId') schoolId: string,
+    @Query('schoolType') schoolType: 'PRIMARY' | 'SECONDARY',
+  ): Promise<ResponseDto<AutoGenerateSubjectsPreviewDto>> {
+    if (schoolType !== 'PRIMARY' && schoolType !== 'SECONDARY') {
+      throw new BadRequestException('schoolType must be PRIMARY or SECONDARY');
+    }
+    const data = await this.resourcesService.previewAutoGenerateSubjects(schoolId, schoolType);
+    return ResponseDto.ok(data, 'Subject preview ready');
   }
 
   @Post('subjects/auto-generate')

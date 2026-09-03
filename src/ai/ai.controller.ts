@@ -15,6 +15,7 @@ import { SubscriptionBillingService } from '../subscriptions/subscription-billin
 import { KnowledgeIndexingService } from './knowledge-indexing.service';
 import { PrismaService } from '../database/prisma.service';
 import { AiInsightsService } from './ai-insights.service';
+import { AiStaffPermissionCheckerService } from './ai-staff-permission-checker.service';
 import {
     GenerateQuizDto,
     GenerateAssessmentDto,
@@ -42,6 +43,7 @@ export class AiController {
         private readonly indexingService: KnowledgeIndexingService,
         private readonly prisma: PrismaService,
         private readonly insightsService: AiInsightsService,
+        private readonly staffPermissions: AiStaffPermissionCheckerService,
     ) { }
 
     /**
@@ -300,17 +302,40 @@ export class AiController {
 
     @Get('insights')
     @Roles(UserRole.SCHOOL_ADMIN)
-    @RequirePermission(PermissionResource.OVERVIEW, PermissionType.READ)
-    @ApiOperation({ summary: 'Latest Lois background insights for this school' })
+    @ApiOperation({ summary: 'Latest Lois background insights this admin is allowed to see' })
     async listInsights(
+        @Request() req: any,
         @Param('schoolId') schoolId: string,
         @Query('limit') limit?: string,
     ) {
+        const types = await this.staffPermissions.allowedInsightTypes(
+            req.user?.id,
+            schoolId,
+            req.user?.role,
+        );
         const insights = await this.insightsService.listForSchool(
             schoolId,
             limit ? parseInt(limit, 10) : 8,
+            types,
         );
         return { success: true, data: insights };
+    }
+
+    @Get('insights/:insightId')
+    @Roles(UserRole.SCHOOL_ADMIN)
+    @ApiOperation({ summary: 'One Lois insight, if this admin has access to its type' })
+    async getInsight(
+        @Request() req: any,
+        @Param('schoolId') schoolId: string,
+        @Param('insightId') insightId: string,
+    ) {
+        const types = await this.staffPermissions.allowedInsightTypes(
+            req.user?.id,
+            schoolId,
+            req.user?.role,
+        );
+        const insight = await this.insightsService.getById(schoolId, insightId, types);
+        return { success: true, data: insight };
     }
 
     @Post('index-school')

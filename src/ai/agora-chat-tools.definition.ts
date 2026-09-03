@@ -303,7 +303,7 @@ export const AGORA_TOOLS: Array<{
     function: {
       name: 'list_lois_insights',
       description:
-        'Background issues Lois already flagged for this school (academic risk, performance drops, scheme-of-work gaps). Use when the user asks what Lois noticed, or to explain the Overview card.',
+        'Background issues Lois already flagged for this school (academic risk, performance drops, scheme-of-work gaps, attendance, overdue fees, admissions backlog). Results are limited to what this admin is allowed to see. Use when the user asks what Lois noticed, or to explain the Overview card.',
       parameters: {
         type: 'object',
         properties: {

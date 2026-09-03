@@ -192,7 +192,7 @@ model SystemPromptConfig {
   createdAt DateTime @default(now())
 }
 
-/// Background findings from Lois skill loops (academic risk, performance drop, SoW gaps).
+/// Background findings from Lois skill loops (academic risk, drops, SoW gaps, attendance, fees, admissions).
 model LoisInsight {
   id          String   @id @default(cuid())
   schoolId    String

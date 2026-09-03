@@ -5,6 +5,12 @@ import {
   isPrincipalRole,
 } from '../schools/dto/permission.dto';
 import { PrismaService } from '../database/prisma.service';
+import {
+  ALL_LOIS_INSIGHT_TYPES,
+  INSIGHT_ACCESS,
+  isLoisInsightType,
+  type LoisInsightType,
+} from './lois-insight-access';
 
 const STUDENT_BLOCKED_TOOLS = [
   'get_school_stats',
@@ -93,7 +99,6 @@ export class AiStaffPermissionCheckerService {
         }
         return;
       case 'get_school_stats':
-      case 'list_lois_insights':
         if (
           !(await this.schoolAdminHasAny(id, [
             { resource: PermissionResource.OVERVIEW, type: PermissionType.READ },
@@ -101,9 +106,12 @@ export class AiStaffPermissionCheckerService {
           ]))
         ) {
           throw new ForbiddenException(
-            'You need Overview or Analytics (read) access to view school statistics and insights.',
+            'You need Overview or Analytics (read) access to view school statistics.',
           );
         }
+        return;
+      case 'list_lois_insights':
+        // Any school admin may call this; results are filtered to types they can see.
         return;
       case 'list_students':
       case 'get_student_overview':
@@ -266,5 +274,61 @@ export class AiStaffPermissionCheckerService {
       }
     }
     return false;
+  }
+
+  async canSeeInsightType(adminId: string, role: string | null | undefined, type: string): Promise<boolean> {
+    if (!isLoisInsightType(type)) return false;
+    if (isPrincipalRole(role)) return true;
+    return this.schoolAdminHasAny(adminId, INSIGHT_ACCESS[type]);
+  }
+
+  /**
+   * Insight types this user is allowed to see for a school.
+   * Principals and super admins see every type; others match staff permissions.
+   */
+  async allowedInsightTypes(
+    userId: string | undefined,
+    schoolId: string | undefined,
+    userRole?: string,
+  ): Promise<LoisInsightType[]> {
+    if (userRole === 'SUPER_ADMIN') {
+      return [...ALL_LOIS_INSIGHT_TYPES];
+    }
+    if (userRole !== 'SCHOOL_ADMIN' || !userId || !schoolId) {
+      return [];
+    }
+
+    const admin = await this.prisma.schoolAdmin.findFirst({
+      where: { userId, schoolId },
+      select: { id: true, role: true },
+    });
+    if (!admin) return [];
+    if (isPrincipalRole(admin.role)) {
+      return [...ALL_LOIS_INSIGHT_TYPES];
+    }
+
+    const allowed: LoisInsightType[] = [];
+    for (const type of ALL_LOIS_INSIGHT_TYPES) {
+      if (await this.schoolAdminHasAny(admin.id, INSIGHT_ACCESS[type])) {
+        allowed.push(type);
+      }
+    }
+    return allowed;
+  }
+
+  /** School-admin user ids who should be notified for a given insight type. */
+  async getAdminUserIdsForInsightType(schoolId: string, type: LoisInsightType): Promise<string[]> {
+    const admins = await this.prisma.schoolAdmin.findMany({
+      where: { schoolId },
+      select: { id: true, userId: true, role: true },
+    });
+
+    const userIds: string[] = [];
+    for (const admin of admins) {
+      if (await this.canSeeInsightType(admin.id, admin.role, type)) {
+        userIds.push(admin.userId);
+      }
+    }
+    return userIds;
   }
 }

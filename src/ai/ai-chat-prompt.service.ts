@@ -481,7 +481,7 @@ TOOL ROUTING (typed tools only — never invent SQL):
 - get_calendar: events and holidays in a date range.
 - get_guardians: parent/guardian contacts for one student. Does not send.
 - get_school_stats: headline counts only.
-- list_lois_insights: issues already flagged in the background.
+- list_lois_insights: issues already flagged in the background (academic risk, drops, SoW gaps, attendance, fees, admissions) — only types this admin can see.
 - search_semantic: policies, handbooks, qualitative knowledge.
 - draft_parent_message: draft only — never claim you sent it.
 - Do not invent numbers. Quote figures from the latest tool result. If a tool errors, say so.

@@ -1,17 +1,15 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { Prisma, SchemeOfWorkStatus } from '@prisma/client';
+import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { AdmissionStatus, Prisma, SchemeOfWorkStatus } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 import { NotificationService } from '../notification/notification.service';
 import { AiSchoolInsightsService } from './ai-school-insights.service';
 import { AgentToolContext, AgentToolResult, toolSource } from './ai-lois-source';
+import { AiStaffPermissionCheckerService } from './ai-staff-permission-checker.service';
+import { LOIS_INSIGHT_TYPES, isLoisInsightType, type LoisInsightType } from './lois-insight-access';
 
-export const LOIS_INSIGHT_TYPES = {
-  ACADEMIC_RISK: 'ACADEMIC_RISK',
-  STUDENT_DROP: 'STUDENT_DROP',
-  SOW_GAP: 'SOW_GAP',
-} as const;
+export { LOIS_INSIGHT_TYPES, type LoisInsightType } from './lois-insight-access';
 
-export type LoisInsightType = (typeof LOIS_INSIGHT_TYPES)[keyof typeof LOIS_INSIGHT_TYPES];
+const MAX_DAILY_NOTIFICATIONS = 8;
 
 type InsightInput = {
   type: LoisInsightType;
@@ -27,8 +25,44 @@ type InsightInput = {
   fingerprint: string;
 };
 
+type CreatedInsight = {
+  id: string;
+  type: LoisInsightType;
+  title: string;
+  summary: string;
+  askPrompt: string | null;
+};
+
+export type LoisInsightDto = {
+  id: string;
+  type: string;
+  severity: string;
+  title: string;
+  summary: string;
+  evidence: unknown;
+  href: string | null;
+  askPrompt: string | null;
+  createdAt: Date;
+};
+
+function weekStartYmd(d = new Date()): string {
+  const x = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  const day = x.getUTCDay() || 7;
+  x.setUTCDate(x.getUTCDate() - (day - 1));
+  return x.toISOString().slice(0, 10);
+}
+
+function todayYmd(d = new Date()): string {
+  return d.toISOString().slice(0, 10);
+}
+
+function insightDeepLink(id: string): string {
+  return `/dashboard/school/overview?loisInsight=${encodeURIComponent(id)}`;
+}
+
 /**
  * Persistent Lois insights (background loops) + query for the Overview inbox.
+ * Recipients and list results are scoped to staff permissions for each type.
  */
 @Injectable()
 export class AiInsightsService {
@@ -38,40 +72,38 @@ export class AiInsightsService {
     private readonly prisma: PrismaService,
     private readonly schoolInsights: AiSchoolInsightsService,
     private readonly notifications: NotificationService,
+    private readonly permissionChecker: AiStaffPermissionCheckerService,
   ) {}
 
   async listForSchool(
     schoolId: string,
     limit = 8,
-  ): Promise<
-    {
-      id: string;
-      type: string;
-      severity: string;
-      title: string;
-      summary: string;
-      evidence: unknown;
-      href: string | null;
-      askPrompt: string | null;
-      createdAt: Date;
-    }[]
-  > {
+    types?: string[],
+  ): Promise<LoisInsightDto[]> {
+    if (types && types.length === 0) return [];
+
     const rows = await this.prisma.loisInsight.findMany({
-      where: { schoolId },
+      where: {
+        schoolId,
+        ...(types ? { type: { in: types } } : {}),
+      },
       orderBy: { createdAt: 'desc' },
       take: Math.min(Math.max(limit, 1), 15),
     });
-    return rows.map((r) => ({
-      id: r.id,
-      type: r.type,
-      severity: r.severity,
-      title: r.title,
-      summary: r.summary,
-      evidence: r.evidence,
-      href: r.href,
-      askPrompt: r.askPrompt,
-      createdAt: r.createdAt,
-    }));
+    return rows.map((r) => this.toDto(r));
+  }
+
+  async getById(schoolId: string, insightId: string, allowedTypes: string[]): Promise<LoisInsightDto> {
+    const row = await this.prisma.loisInsight.findFirst({
+      where: { id: insightId, schoolId },
+    });
+    if (!row) {
+      throw new NotFoundException('Insight not found.');
+    }
+    if (!allowedTypes.includes(row.type)) {
+      throw new ForbiddenException('You do not have access to this insight.');
+    }
+    return this.toDto(row);
   }
 
   async listForTool(args: { limit?: number }, context?: AgentToolContext): Promise<AgentToolResult> {
@@ -79,7 +111,12 @@ export class AiInsightsService {
     if (!schoolId) {
       return { data: { error: 'School context is required.' }, usage: null };
     }
-    const insights = await this.listForSchool(schoolId, args.limit ?? 8);
+    const types = await this.permissionChecker.allowedInsightTypes(
+      context?.userId,
+      schoolId,
+      context?.userRole,
+    );
+    const insights = await this.listForSchool(schoolId, args.limit ?? 8, types);
     return {
       data: { count: insights.length, insights },
       usage: null,
@@ -133,30 +170,88 @@ export class AiInsightsService {
   }
 
   async runDailyForSchool(schoolId: string, schoolName: string): Promise<void> {
-    const created: { type: string; title: string }[] = [];
+    const created: CreatedInsight[] = [];
 
     const risk = await this.captureAcademicRisk(schoolId, schoolName);
     if (risk) created.push(risk);
 
     created.push(...(await this.captureStudentDrops(schoolId)));
     created.push(...(await this.captureSowGaps(schoolId)));
+    created.push(...(await this.captureAttendanceRisk(schoolId)));
+    created.push(...(await this.captureFeeArrears(schoolId)));
+    created.push(...(await this.captureAdmissionsBacklog(schoolId)));
 
-    if (created.length > 0) {
-      const preview = created.slice(0, 5).map((c) => c.title).join('; ');
-      await this.notifications.notifySchoolAdmins(schoolId, {
-        type: 'LOIS_INSIGHT',
-        title: 'Lois noticed',
-        body: preview || `${created.length} new school insight(s)`,
-        link: '/dashboard/school/overview',
-        metadata: { count: created.length, types: created.map((c) => c.type) },
-      });
+    await this.notifyCreated(schoolId, created);
+  }
+
+  private async notifyCreated(schoolId: string, created: CreatedInsight[]): Promise<void> {
+    for (const item of created.slice(0, MAX_DAILY_NOTIFICATIONS)) {
+      if (!isLoisInsightType(item.type)) continue;
+      try {
+        const userIds = await this.permissionChecker.getAdminUserIdsForInsightType(schoolId, item.type);
+        if (userIds.length === 0) continue;
+        await this.notifications.notifyUsers(userIds, {
+          schoolId,
+          role: 'SCHOOL_ADMIN',
+          type: 'LOIS_INSIGHT',
+          title: item.title,
+          body: item.summary.slice(0, 240),
+          link: insightDeepLink(item.id),
+          metadata: {
+            insightId: item.id,
+            type: item.type,
+            askPrompt: item.askPrompt,
+          },
+        });
+      } catch (err) {
+        this.logger.warn(`Failed to notify for insight ${item.id}: ${err}`);
+      }
     }
+  }
+
+  private toDto(r: {
+    id: string;
+    type: string;
+    severity: string;
+    title: string;
+    summary: string;
+    evidence: unknown;
+    href: string | null;
+    askPrompt: string | null;
+    createdAt: Date;
+  }): LoisInsightDto {
+    return {
+      id: r.id,
+      type: r.type,
+      severity: r.severity,
+      title: r.title,
+      summary: r.summary,
+      evidence: r.evidence,
+      href: r.href,
+      askPrompt: r.askPrompt,
+      createdAt: r.createdAt,
+    };
+  }
+
+  private async ifCreated(
+    schoolId: string,
+    input: InsightInput,
+  ): Promise<CreatedInsight | null> {
+    const { created, id } = await this.upsertInsight(schoolId, input);
+    if (!created) return null;
+    return {
+      id,
+      type: input.type,
+      title: input.title,
+      summary: input.summary,
+      askPrompt: input.askPrompt ?? null,
+    };
   }
 
   private async captureAcademicRisk(
     schoolId: string,
-    schoolName: string,
-  ): Promise<{ type: string; title: string } | null> {
+    _schoolName: string,
+  ): Promise<CreatedInsight | null> {
     const termId = await this.schoolInsights.getActiveTermId(schoolId);
     const students = await this.schoolInsights.findAtRiskStudents(schoolId, {
       termId,
@@ -172,16 +267,8 @@ export class AiInsightsService {
       avgPercent: Math.round(s.avgPercent * 10) / 10,
     }));
 
-    this.notifications.emitAcademicRiskDigest({
-      schoolId,
-      schoolName,
-      atRiskCount: students.length,
-      preview: preview.map((p) => ({ studentName: p.studentName, avgPercent: p.avgPercent })),
-      timestamp: new Date().toISOString(),
-    });
-
-    const day = new Date().toISOString().slice(0, 10);
-    const { created } = await this.upsertInsight(schoolId, {
+    const day = todayYmd();
+    return this.ifCreated(schoolId, {
       type: LOIS_INSIGHT_TYPES.ACADEMIC_RISK,
       severity: students.length >= 10 ? 'critical' : 'warning',
       title: `${students.length} student${students.length === 1 ? '' : 's'} below 45% this term`,
@@ -192,11 +279,9 @@ export class AiInsightsService {
       askPrompt: 'Explain the academic risk digest for today and what we should do this week.',
       fingerprint: `ACADEMIC_RISK:${termId || 'none'}:${day}`,
     });
-
-    return created ? { type: LOIS_INSIGHT_TYPES.ACADEMIC_RISK, title: `${students.length} students below 45%` } : null;
   }
 
-  private async captureStudentDrops(schoolId: string): Promise<{ type: string; title: string }[]> {
+  private async captureStudentDrops(schoolId: string): Promise<CreatedInsight[]> {
     const termId = await this.schoolInsights.getActiveTermId(schoolId);
     if (!termId) return [];
 
@@ -244,10 +329,9 @@ export class AiInsightsService {
       b.percents.push(pct);
     }
 
-    const created: { type: string; title: string }[] = [];
-    let emitted = 0;
+    const created: CreatedInsight[] = [];
     for (const [key, b] of buckets) {
-      if (emitted >= 15) break;
+      if (created.length >= 15) break;
       if (b.percents.length < 3) continue;
       const last = b.percents[b.percents.length - 1];
       const prior = b.percents.slice(0, -1);
@@ -257,7 +341,7 @@ export class AiInsightsService {
 
       const subject = key.split('::')[1] || 'Subject';
       const title = `${b.name} dropped ${Math.round(drop)} pts in ${subject}`;
-      const { created: isNew } = await this.upsertInsight(schoolId, {
+      const row = await this.ifCreated(schoolId, {
         type: LOIS_INSIGHT_TYPES.STUDENT_DROP,
         severity: drop >= 25 ? 'critical' : 'warning',
         title,
@@ -276,15 +360,12 @@ export class AiInsightsService {
         askPrompt: `Why did ${b.name}'s ${subject} performance drop, and what should we do?`,
         fingerprint: `STUDENT_DROP:${b.studentId}:${subject}:${termId}`,
       });
-      if (isNew) {
-        created.push({ type: LOIS_INSIGHT_TYPES.STUDENT_DROP, title });
-        emitted += 1;
-      }
+      if (row) created.push(row);
     }
     return created;
   }
 
-  private async captureSowGaps(schoolId: string): Promise<{ type: string; title: string }[]> {
+  private async captureSowGaps(schoolId: string): Promise<CreatedInsight[]> {
     const termId = await this.schoolInsights.getActiveTermId(schoolId);
     if (!termId) return [];
 
@@ -323,21 +404,17 @@ export class AiInsightsService {
       : [];
     const subjectName = new Map(subjects.map((s) => [s.id, s.name]));
 
-    const created: { type: string; title: string }[] = [];
-    let emitted = 0;
+    const created: CreatedInsight[] = [];
     for (const scheme of schemes) {
       for (const week of scheme.weeks) {
-        if (emitted >= 15) return created;
-        const ended =
-          week.calendarEndDate != null
-            ? week.calendarEndDate < today
-            : false;
+        if (created.length >= 15) return created;
+        const ended = week.calendarEndDate != null ? week.calendarEndDate < today : false;
         if (!ended) continue;
 
         const subject = subjectName.get(scheme.subjectId) || 'Subject';
         const classLabel = scheme.classLevel?.name || 'class';
         const title = `${classLabel} ${subject} · week ${week.weekNumber} not delivered`;
-        const { created: isNew } = await this.upsertInsight(schoolId, {
+        const row = await this.ifCreated(schoolId, {
           type: LOIS_INSIGHT_TYPES.SOW_GAP,
           severity: 'warning',
           title,
@@ -354,12 +431,238 @@ export class AiInsightsService {
           askPrompt: `The scheme of work for ${classLabel} ${subject} is missing week ${week.weekNumber}. What is outstanding and who should follow up?`,
           fingerprint: `SOW_GAP:${scheme.id}:${week.weekNumber}`,
         });
-        if (isNew) {
-          created.push({ type: LOIS_INSIGHT_TYPES.SOW_GAP, title });
-          emitted += 1;
-        }
+        if (row) created.push(row);
       }
     }
     return created;
+  }
+
+  private async captureAttendanceRisk(schoolId: string): Promise<CreatedInsight[]> {
+    const since = new Date();
+    since.setUTCDate(since.getUTCDate() - 14);
+    since.setUTCHours(0, 0, 0, 0);
+    const week = weekStartYmd();
+
+    const grouped = await this.prisma.attendance.groupBy({
+      by: ['enrollmentId'],
+      where: {
+        date: { gte: since },
+        status: 'ABSENT',
+        enrollment: { schoolId, isActive: true },
+      },
+      _count: { _all: true },
+      orderBy: { _count: { enrollmentId: 'desc' } },
+      take: 25,
+    });
+
+    const atRisk = grouped.filter((r) => r._count._all >= 4);
+    if (atRisk.length === 0) return [];
+
+    const enrollmentIds = atRisk.map((r) => r.enrollmentId);
+    const enrollments = await this.prisma.enrollment.findMany({
+      where: { id: { in: enrollmentIds } },
+      select: {
+        id: true,
+        studentId: true,
+        classId: true,
+        student: { select: { firstName: true, lastName: true } },
+      },
+    });
+    const byEnr = new Map(enrollments.map((e) => [e.id, e]));
+
+    const preview = atRisk.slice(0, 8).map((r) => {
+      const e = byEnr.get(r.enrollmentId);
+      return {
+        studentId: e?.studentId,
+        studentName: e ? `${e.student.firstName} ${e.student.lastName}`.trim() : 'Student',
+        absentDays: r._count._all,
+      };
+    });
+
+    const created: CreatedInsight[] = [];
+    if (atRisk.length >= 3) {
+      const digest = await this.ifCreated(schoolId, {
+        type: LOIS_INSIGHT_TYPES.ATTENDANCE_RISK,
+        severity: atRisk.length >= 8 ? 'critical' : 'warning',
+        title: `${atRisk.length} students with 4+ absences in 14 days`,
+        summary: preview.map((p) => `${p.studentName} (${p.absentDays} days)`).join(', '),
+        evidence: { since: since.toISOString().slice(0, 10), thresholdDays: 4, students: preview },
+        studentIds: preview.map((p) => p.studentId).filter((id): id is string => !!id),
+        href: '/dashboard/school/students',
+        askPrompt:
+          'Which students have concerning attendance in the last two weeks, and what should we do?',
+        fingerprint: `ATTENDANCE_RISK:DIGEST:${week}`,
+      });
+      if (digest) created.push(digest);
+    }
+
+    for (const row of atRisk.slice(0, 5)) {
+      const e = byEnr.get(row.enrollmentId);
+      if (!e) continue;
+      const name = `${e.student.firstName} ${e.student.lastName}`.trim();
+      const item = await this.ifCreated(schoolId, {
+        type: LOIS_INSIGHT_TYPES.ATTENDANCE_RISK,
+        severity: row._count._all >= 7 ? 'critical' : 'warning',
+        title: `${name} missed ${row._count._all} days in 14 days`,
+        summary: `${name} has ${row._count._all} recorded absences in the last two weeks.`,
+        evidence: {
+          studentId: e.studentId,
+          absentDays: row._count._all,
+          since: since.toISOString().slice(0, 10),
+        },
+        studentIds: [e.studentId],
+        classIds: e.classId ? [e.classId] : [],
+        href: `/dashboard/school/students/${e.studentId}`,
+        askPrompt: `Why is ${name}'s attendance a concern, and what should we do?`,
+        fingerprint: `ATTENDANCE_RISK:${e.studentId}:${week}`,
+      });
+      if (item) created.push(item);
+    }
+
+    return created;
+  }
+
+  private async captureFeeArrears(schoolId: string): Promise<CreatedInsight[]> {
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+    const week = weekStartYmd();
+
+    const overdue = await this.prisma.fee.findMany({
+      where: {
+        schoolId,
+        paidDate: null,
+        dueDate: { lt: today },
+        status: { notIn: ['PAID', 'WAIVED', 'CANCELLED'] },
+        enrollment: { schoolId, isActive: true },
+      },
+      take: 80,
+      select: {
+        amount: true,
+        description: true,
+        dueDate: true,
+        enrollment: {
+          select: {
+            studentId: true,
+            student: { select: { firstName: true, lastName: true } },
+          },
+        },
+      },
+    });
+
+    if (overdue.length === 0) return [];
+
+    let total = 0;
+    const byStudent = new Map<string, { studentId: string; name: string; count: number; amount: number }>();
+    for (const fee of overdue) {
+      const amount = Number(fee.amount) || 0;
+      total += amount;
+      const id = fee.enrollment.studentId;
+      const existing = byStudent.get(id);
+      if (existing) {
+        existing.count += 1;
+        existing.amount += amount;
+      } else {
+        byStudent.set(id, {
+          studentId: id,
+          name: `${fee.enrollment.student.firstName} ${fee.enrollment.student.lastName}`.trim(),
+          count: 1,
+          amount,
+        });
+      }
+    }
+
+    const families = [...byStudent.values()].sort((a, b) => b.amount - a.amount);
+    const preview = families.slice(0, 8).map((f) => ({
+      studentId: f.studentId,
+      studentName: f.name,
+      unpaidCount: f.count,
+      unpaidAmount: Math.round(f.amount * 100) / 100,
+    }));
+
+    const roundedTotal = Math.round(total * 100) / 100;
+    const row = await this.ifCreated(schoolId, {
+      type: LOIS_INSIGHT_TYPES.FEE_ARREARS,
+      severity: families.length >= 10 ? 'critical' : 'warning',
+      title: `${families.length} student${families.length === 1 ? '' : 's'} with overdue fees`,
+      summary: `${overdue.length} overdue invoice${overdue.length === 1 ? '' : 's'} totalling ${roundedTotal}. ${preview
+        .slice(0, 5)
+        .map((p) => p.studentName)
+        .join(', ')}`,
+      evidence: {
+        overdueCount: overdue.length,
+        studentCount: families.length,
+        totalAmount: roundedTotal,
+        students: preview,
+      },
+      studentIds: preview.map((p) => p.studentId),
+      href: '/dashboard/school/students',
+      askPrompt: 'Who has overdue school fees, and what should we follow up on this week?',
+      fingerprint: `FEE_ARREARS:${week}`,
+    });
+
+    return row ? [row] : [];
+  }
+
+  private async captureAdmissionsBacklog(schoolId: string): Promise<CreatedInsight[]> {
+    const week = weekStartYmd();
+    const staleSince = new Date();
+    staleSince.setUTCDate(staleSince.getUTCDate() - 7);
+    staleSince.setUTCHours(0, 0, 0, 0);
+
+    const [pendingTotal, staleRows] = await Promise.all([
+      this.prisma.admissionApplication.count({
+        where: { schoolId, status: AdmissionStatus.PENDING },
+      }),
+      this.prisma.admissionApplication.findMany({
+        where: {
+          schoolId,
+          status: AdmissionStatus.PENDING,
+          createdAt: { lt: staleSince },
+        },
+        orderBy: { createdAt: 'asc' },
+        take: 12,
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          classLevel: true,
+          createdAt: true,
+        },
+      }),
+    ]);
+
+    if (staleRows.length < 3 && pendingTotal < 8) return [];
+
+    const preview = staleRows.map((a) => ({
+      applicationId: a.id,
+      name: `${a.firstName} ${a.lastName}`.trim(),
+      classLevel: a.classLevel,
+      submittedAt: a.createdAt.toISOString().slice(0, 10),
+    }));
+
+    const title =
+      staleRows.length >= 3
+        ? `${staleRows.length}+ admission applications waiting over a week`
+        : `${pendingTotal} pending admission applications`;
+
+    const row = await this.ifCreated(schoolId, {
+      type: LOIS_INSIGHT_TYPES.ADMISSIONS_BACKLOG,
+      severity: staleRows.length >= 8 ? 'critical' : 'warning',
+      title,
+      summary: preview.length
+        ? preview.map((p) => `${p.name} (${p.submittedAt})`).join(', ')
+        : `${pendingTotal} applications still pending review.`,
+      evidence: {
+        pendingTotal,
+        staleCount: staleRows.length,
+        staleSince: staleSince.toISOString().slice(0, 10),
+        applications: preview,
+      },
+      href: '/dashboard/school/applications',
+      askPrompt: 'What is outstanding in the admissions inbox, and who should we review first?',
+      fingerprint: `ADMISSIONS_BACKLOG:${week}`,
+    });
+
+    return row ? [row] : [];
   }
 }

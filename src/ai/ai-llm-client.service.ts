@@ -31,9 +31,6 @@ export class AiLlmClientService {
   private readonly model: string;
   private readonly readOnlyPrisma: PrismaClient;
 
-  /** Azure chat API rejects the `signal` field — callers must check this. */
-  private readonly mainChatUsesAzureOpenAi: boolean = false;
-
   /** Which provider is active — for log messages only. */
   private readonly chatProviderName: string = 'none';
   private readonly embeddingsProviderName: string = 'none';
@@ -93,7 +90,6 @@ export class AiLlmClientService {
       this.logger.log(`Chat provider: OpenRouter (model: ${this.model})`);
 
     } else if (azureApiKey && azureEndpoint && azureDeployment) {
-      (this as any).mainChatUsesAzureOpenAi = true;
       this.openai = new AzureOpenAI({
         apiKey: azureApiKey,
         endpoint: azureEndpoint,
@@ -183,11 +179,11 @@ export class AiLlmClientService {
   }
 
   /**
-   * Azure rejects passing `signal` to chat.completions.create (returns 400).
-   * Callers use this to conditionally omit the signal field.
+   * @deprecated AbortSignal must be passed as create()'s second argument (RequestOptions),
+   * never as a chat body field. Do not use this to decide whether cancellation is supported.
    */
   chatClientRejectsAbortSignal(): boolean {
-    return this.mainChatUsesAzureOpenAi;
+    return false;
   }
 
   getReadOnlyPrisma(): PrismaClient {
