@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { AdminRole } from './create-school.dto';
+import type { RuntimePolicies } from '../../school-settings/school-settings.service';
 
 export class SchoolAdminDto {
   @ApiProperty()
@@ -125,7 +126,7 @@ export class SchoolDto {
   };
 
   @ApiPropertyOptional({ description: 'Runtime school policies for UI enforcement' })
-  runtimePolicies?: Record<string, unknown>;
+  runtimePolicies?: RuntimePolicies;
 }
 
 export class TeacherDto {

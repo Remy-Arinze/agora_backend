@@ -471,6 +471,7 @@ export class SchemeOfWorkService {
         status: true,
         halfTermStart: true,
         halfTermEnd: true,
+        academicSession: { select: { schoolId: true } },
       },
     });
     if (!term?.startDate || !term?.endDate) {
@@ -481,7 +482,10 @@ export class SchemeOfWorkService {
     const termStart = new Date(term.startDate);
     const termEnd = new Date(term.endDate);
     const halfTerm = buildHalfTermRange(term.halfTermStart, term.halfTermEnd);
-    const days = await this.schoolSettingsService.getWorkingDays(schoolId);
+    const schoolId = term.academicSession?.schoolId;
+    const days = schoolId
+      ? await this.schoolSettingsService.getWorkingDays(schoolId)
+      : null;
     const teaching = getTeachingWeekInfo(termStart, termEnd, now, {
       workingDays: days?.length ? days : DEFAULT_WORKING_DAYS,
       nonInstructionalRanges: halfTerm ? [halfTerm] : [],

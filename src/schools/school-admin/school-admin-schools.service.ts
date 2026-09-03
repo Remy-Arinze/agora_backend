@@ -67,7 +67,7 @@ export class SchoolAdminSchoolsService {
    */
   async getMySchool(
     user: UserWithContext
-  ): Promise<SchoolDto & { currentAdmin?: { id: string; role: string }; runtimePolicies?: unknown }> {
+  ): Promise<SchoolDto & { currentAdmin?: { id: string; role: string } }> {
     const schoolId = user.currentSchoolId;
     const profileId = user.currentProfileId;
 

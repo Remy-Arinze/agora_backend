@@ -1280,7 +1280,7 @@ export class SessionService {
     this.logger.log(`Term ${term.name} reactivated for school ${school.id}`);
 
     return {
-      term: await this.toTermDto(updatedTerm, activeTerm.academicSessionId ? activeTerm.academicSession?.schoolId : undefined),
+      term: await this.toTermDto(updatedTerm, school.id),
     };
   }
 
