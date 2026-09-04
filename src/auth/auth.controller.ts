@@ -102,7 +102,8 @@ export class AuthController {
     try {
       const ip = req.ip || req.headers['x-forwarded-for'] as string || 'unknown';
       const userAgent = req.headers['user-agent'] || 'unknown';
-      const data = await this.authService.login(loginDto, ip, userAgent);
+      const portalSchoolId = (req.headers['x-portal-school-id'] as string | undefined) || null;
+      const data = await this.authService.login(loginDto, ip, userAgent, portalSchoolId);
       
       // Verify that we're returning the correct response structure
       if (!data.requiresOtp || !data.sessionId) {
@@ -139,11 +140,14 @@ export class AuthController {
     description: 'Too many OTP verification attempts. Please try again later.',
   })
   async verifyLoginOtp(
+    @Req() req: Request,
     @Body() verifyOtpDto: VerifyLoginOtpDto,
     @Res({ passthrough: true }) res: Response
   ): Promise<ResponseDto<Omit<AuthTokensDto, 'refreshToken'> & { refreshToken?: string }>> {
     try {
-      const data = await this.authService.verifyLoginOtp(verifyOtpDto);
+      const portalSchoolId = (req.headers['x-portal-school-id'] as string | undefined) || null;
+      const userAgent = req.headers['user-agent'] || 'unknown';
+      const data = await this.authService.verifyLoginOtp(verifyOtpDto, portalSchoolId, userAgent);
 
       // Set refresh token as httpOnly cookie
       this.setRefreshTokenCookie(res, data.refreshToken);
@@ -153,6 +157,9 @@ export class AuthController {
           accessToken: data.accessToken,
           refreshToken: data.refreshToken,
           user: data.user,
+          transferCode: data.transferCode,
+          portalUrl: data.portalUrl,
+          slug: data.slug,
         },
         'Login successful'
       );
@@ -160,6 +167,32 @@ export class AuthController {
       this.logger.error('Verify login OTP error:', error instanceof Error ? error.stack : error);
       throw error;
     }
+  }
+
+  @Post('exchange-portal-code')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ standard: { ttl: 60000, limit: 30 } })
+  @ApiOperation({ summary: 'Exchange a one-time portal transfer code for tokens on the school origin' })
+  async exchangePortalCode(
+    @Req() req: Request,
+    @Body('code') code: string,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<ResponseDto<Omit<AuthTokensDto, 'refreshToken'> & { refreshToken?: string }>> {
+    if (!code) {
+      throw new BadRequestException('code is required');
+    }
+    const data = await this.authService.exchangePortalCode(code, req.headers['user-agent'] || 'unknown');
+    this.setRefreshTokenCookie(res, data.refreshToken);
+    return ResponseDto.ok(
+      {
+        accessToken: data.accessToken,
+        refreshToken: data.refreshToken,
+        user: data.user,
+        portalUrl: data.portalUrl,
+        slug: data.slug,
+      },
+      'Login successful',
+    );
   }
 
   @Post('verify-otp')

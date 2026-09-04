@@ -51,6 +51,25 @@ export class SchoolDto {
   @ApiProperty()
   name: string;
 
+  @ApiPropertyOptional()
+  slug?: string | null;
+
+  @ApiPropertyOptional()
+  portalUrl?: string | null;
+
+  @ApiPropertyOptional()
+  customDomain?: string | null;
+
+  @ApiPropertyOptional()
+  customDomainStatus?: string | null;
+
+  @ApiPropertyOptional()
+  branding?: {
+    accentColor: string | null;
+    faviconUrl: string | null;
+    loginTagline: string | null;
+    hidePlatformMark: boolean;
+  } | null;
 
   @ApiProperty()
   domain: string | null;

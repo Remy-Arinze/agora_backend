@@ -61,6 +61,7 @@ import { StaffValidatorService } from './shared/staff-validator.service';
 import { CloudinaryModule } from '../storage/cloudinary/cloudinary.module';
 import { NotificationModule } from '../notification/notification.module';
 import { SchoolSettingsModule } from '../school-settings/school-settings.module';
+import { PortalsModule } from '../portals/portals.module';
 
 @Module({
   imports: [
@@ -74,6 +75,7 @@ import { SchoolSettingsModule } from '../school-settings/school-settings.module'
     LiveStatusModule,
     NotificationModule,
     SchoolSettingsModule,
+    PortalsModule,
   ],
   controllers: [
     // New architecture controllers

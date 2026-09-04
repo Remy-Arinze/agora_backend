@@ -128,6 +128,16 @@ export class SuperAdminSchoolsController {
     return ResponseDto.ok(data, 'School rejected successfully');
   }
 
+  @Patch(':id/slug')
+  @ApiOperation({ summary: 'Rename a school portal slug (Super Admin only)' })
+  async renameSlug(
+    @Param('id') id: string,
+    @Body('slug') slug: string,
+  ): Promise<ResponseDto<SchoolDto>> {
+    const data = await this.superAdminSchoolsService.renameSlug(id, slug);
+    return ResponseDto.ok(data, 'Portal address updated');
+  }
+
   @Patch(':id/activate')
   @ApiOperation({ summary: 'Activate a school (Super Admin only)' })
   @ApiResponse({

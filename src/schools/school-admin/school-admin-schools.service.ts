@@ -3,6 +3,7 @@ import {
   BadRequestException,
   NotFoundException,
   UnauthorizedException,
+  ForbiddenException,
   Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -36,6 +37,8 @@ import { Prisma, SessionStatus, TermStatus, SchemeOfWorkStatus } from '@prisma/c
 import { RedisService } from '../../common/redis/redis.service';
 import { dashboardCacheKey } from '../../common/redis/dashboard-cache.events';
 import { SchoolSettingsService } from '../../school-settings/school-settings.service';
+import { PortalsService } from '../../portals/portals.service';
+import * as dns from 'dns/promises';
 
 /** Max staff records fetched per type (admins + teachers) to avoid unbounded memory; full server-side pagination would require a union query. */
 const STAFF_FETCH_CAP = 500;
@@ -60,7 +63,19 @@ export class SchoolAdminSchoolsService {
     private readonly liveStatusService: LiveStatusService,
     private readonly redis: RedisService,
     private readonly schoolSettingsService: SchoolSettingsService,
+    private readonly portals: PortalsService,
   ) { }
+
+  private async assertPaidPortalFeature(schoolId: string): Promise<void> {
+    const sub = await this.prisma.subscription.findUnique({
+      where: { schoolId },
+      select: { tier: true, isActive: true },
+    });
+    const tier = sub?.tier || 'FREE';
+    if (tier !== 'PRO_PLUS' && tier !== 'CUSTOM') {
+      throw new ForbiddenException('Custom domains and hiding the platform mark require Pro Plus or a custom plan.');
+    }
+  }
 
   /**
    * Get school admin's own school
@@ -89,6 +104,7 @@ export class SchoolAdminSchoolsService {
             include: { user: true },
             orderBy: { role: 'asc' },
           },
+          branding: true,
         },
       }),
       this.prisma.teacher.count({ where: { schoolId } }),
@@ -115,7 +131,143 @@ export class SchoolAdminSchoolsService {
       }
     }
 
-    return { ...schoolDto, currentAdmin, runtimePolicies };
+    const portalUrl = this.portals.buildPortalUrl(completeSchool);
+    return { ...schoolDto, portalUrl, currentAdmin, runtimePolicies };
+  }
+
+  async updateBranding(
+    user: UserWithContext,
+    body: {
+      accentColor?: string | null;
+      loginTagline?: string | null;
+      hidePlatformMark?: boolean;
+    },
+  ) {
+    const schoolId = user.currentSchoolId;
+    if (!schoolId) throw new BadRequestException('You are not associated with any school');
+
+    if (body.hidePlatformMark) {
+      await this.assertPaidPortalFeature(schoolId);
+    }
+
+    if (body.accentColor) {
+      const hex = body.accentColor.trim();
+      if (!/^#([0-9a-fA-F]{6})$/.test(hex)) {
+        throw new BadRequestException('Accent color must be a 6-digit hex value, e.g. #0B3D91');
+      }
+    }
+
+    const branding = await this.prisma.schoolBranding.upsert({
+      where: { schoolId },
+      create: {
+        schoolId,
+        accentColor: body.accentColor ?? null,
+        loginTagline: body.loginTagline ?? null,
+        hidePlatformMark: !!body.hidePlatformMark,
+      },
+      update: {
+        ...(body.accentColor !== undefined ? { accentColor: body.accentColor } : {}),
+        ...(body.loginTagline !== undefined ? { loginTagline: body.loginTagline } : {}),
+        ...(body.hidePlatformMark !== undefined ? { hidePlatformMark: body.hidePlatformMark } : {}),
+      },
+    });
+    return branding;
+  }
+
+  async uploadFavicon(user: UserWithContext, file: Express.Multer.File) {
+    const schoolId = user.currentSchoolId;
+    if (!schoolId) throw new BadRequestException('You are not associated with any school');
+    if (!file) throw new BadRequestException('No file provided');
+    const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/x-icon', 'image/vnd.microsoft.icon'];
+    if (!allowedMimeTypes.includes(file.mimetype)) {
+      throw new BadRequestException('Invalid file type for favicon');
+    }
+    const { url } = await this.cloudinaryService.uploadImage(
+      file,
+      `schools/${schoolId}/favicon`,
+      `school-${schoolId}-favicon`,
+    );
+    return this.prisma.schoolBranding.upsert({
+      where: { schoolId },
+      create: { schoolId, faviconUrl: url },
+      update: { faviconUrl: url },
+    });
+  }
+
+  async requestCustomDomain(user: UserWithContext, host: string) {
+    const schoolId = user.currentSchoolId;
+    if (!schoolId) throw new BadRequestException('You are not associated with any school');
+    await this.assertPaidPortalFeature(schoolId);
+
+    const clean = host.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '').split(':')[0];
+    if (!clean || clean.includes(' ') || !clean.includes('.')) {
+      throw new BadRequestException('Enter a valid hostname such as portal.yourschool.edu.ng');
+    }
+    const taken = await this.prisma.school.findFirst({
+      where: { customDomain: clean, NOT: { id: schoolId } },
+    });
+    if (taken) throw new BadRequestException('That domain is already in use.');
+
+    const txt = `msb-verify=${randomBytes(16).toString('hex')}`;
+    const school = await this.prisma.school.update({
+      where: { id: schoolId },
+      data: {
+        customDomain: clean,
+        customDomainStatus: 'PENDING',
+        customDomainTxt: txt,
+        customDomainVerifiedAt: null,
+      },
+    });
+    return {
+      customDomain: school.customDomain,
+      customDomainStatus: school.customDomainStatus,
+      txtRecord: txt,
+      cnameTarget: 'cname.myschoolbud.com',
+    };
+  }
+
+  async verifyCustomDomain(user: UserWithContext) {
+    const schoolId = user.currentSchoolId;
+    if (!schoolId) throw new BadRequestException('You are not associated with any school');
+    const school = await this.prisma.school.findUnique({ where: { id: schoolId } });
+    if (!school?.customDomain || !school.customDomainTxt) {
+      throw new BadRequestException('No custom domain is pending verification.');
+    }
+
+    await this.prisma.school.update({
+      where: { id: schoolId },
+      data: { customDomainStatus: 'VERIFYING' },
+    });
+
+    try {
+      const records = await dns.resolveTxt(school.customDomain);
+      const flat = records.flat().join(' ');
+      if (!flat.includes(school.customDomainTxt)) {
+        await this.prisma.school.update({
+          where: { id: schoolId },
+          data: { customDomainStatus: 'FAILED' },
+        });
+        throw new BadRequestException('TXT record not found yet. Add the verification record and try again.');
+      }
+      const updated = await this.prisma.school.update({
+        where: { id: schoolId },
+        data: {
+          customDomainStatus: 'ACTIVE',
+          customDomainVerifiedAt: new Date(),
+        },
+      });
+      return {
+        customDomain: updated.customDomain,
+        customDomainStatus: updated.customDomainStatus,
+      };
+    } catch (err) {
+      if (err instanceof BadRequestException) throw err;
+      await this.prisma.school.update({
+        where: { id: schoolId },
+        data: { customDomainStatus: 'FAILED' },
+      });
+      throw new BadRequestException('Could not verify DNS yet. Check the CNAME and TXT records.');
+    }
   }
 
   /**
@@ -1452,15 +1604,8 @@ export class SchoolAdminSchoolsService {
       },
     });
 
-    // Send verification email
-    // Auto-detect frontend URL based on NODE_ENV
-    const explicitFrontendUrl = this.configService.get<string>('FRONTEND_URL');
-    const nodeEnv = this.configService.get<string>('NODE_ENV') || 'development';
-    const frontendUrl = explicitFrontendUrl ||
-      (nodeEnv === 'production' ? 'https://myschoolbud.com' : 'http://localhost:3000');
-    // Normalize URL - remove trailing slash if present to prevent double slashes
-    const normalizedUrl = frontendUrl.replace(/\/+$/, '');
-    const verificationUrl = `${normalizedUrl}/dashboard/school/settings/profile?token=${token}`;
+    const frontendUrl = (await this.portals.getSchoolFrontendUrl(school.id)).replace(/\/+$/, '');
+    const verificationUrl = `${frontendUrl}/dashboard/school/settings/profile?token=${token}`;
 
     await this.emailService.sendSchoolProfileEditVerificationEmail(
       principal.user.email,

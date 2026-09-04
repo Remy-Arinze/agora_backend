@@ -24,6 +24,7 @@ import * as bcrypt from 'bcryptjs';
 import { randomBytes } from 'crypto';
 import { generateSecurePasswordHash } from '../common/utils/password.utils';
 import { SchoolSettingsService } from '../school-settings/school-settings.service';
+import { PortalsService } from '../portals/portals.service';
 
 @Injectable()
 export class AuthService {
@@ -38,7 +39,80 @@ export class AuthService {
     private readonly cloudinaryService: CloudinaryService,
     private readonly metricsService: MetricsService,
     private readonly schoolSettingsService: SchoolSettingsService,
+    private readonly portals: PortalsService,
   ) { }
+
+  private applyPortalSchoolHint(
+    user: any,
+    current: {
+      currentSchoolId: string | null;
+      currentPublicId: string | null;
+      currentProfileId: string | null;
+    },
+    portalSchoolId?: string | null,
+  ) {
+    if (!portalSchoolId) return current;
+    if (user.role === 'SUPER_ADMIN') {
+      throw new BadRequestException('Use the main Myschoolbud login for this account.');
+    }
+    if (user.role === 'SCHOOL_ADMIN') {
+      const admin = (user.schoolAdmins || []).find((a: any) => a.schoolId === portalSchoolId);
+      if (!admin) {
+        throw new UnauthorizedException('This account belongs to another school.');
+      }
+      return {
+        currentSchoolId: admin.schoolId,
+        currentPublicId: admin.publicId,
+        currentProfileId: admin.id,
+      };
+    }
+    if (user.role === 'TEACHER') {
+      const teacher = (user.teacherProfiles || []).find((t: any) => t.schoolId === portalSchoolId);
+      if (!teacher) {
+        throw new UnauthorizedException('This account belongs to another school.');
+      }
+      return {
+        currentSchoolId: teacher.schoolId,
+        currentPublicId: teacher.publicId,
+        currentProfileId: teacher.id,
+      };
+    }
+    if (user.role === 'STUDENT') {
+      const enrollment = user.studentProfile?.enrollments?.find((e: any) => e.schoolId === portalSchoolId);
+      if (!enrollment) {
+        throw new UnauthorizedException('This account belongs to another school.');
+      }
+      return {
+        currentSchoolId: enrollment.schoolId,
+        currentPublicId: user.studentProfile?.publicId || null,
+        currentProfileId: current.currentProfileId,
+      };
+    }
+    return current;
+  }
+
+  private async attachPortalPayload(
+    result: AuthTokensDto,
+    schoolId: string | null,
+    userAgent?: string,
+  ): Promise<AuthTokensDto> {
+    if (!schoolId || result.user.role === 'SUPER_ADMIN') {
+      return result;
+    }
+    const slug = await this.portals.ensureSlug(schoolId);
+    const portalUrl = await this.portals.getSchoolFrontendUrl(schoolId);
+    const transferCode = await this.portals.createTransferCode(
+      result.user.id,
+      schoolId,
+      userAgent,
+    );
+    result.user.slug = slug;
+    result.user.portalUrl = portalUrl;
+    result.slug = slug;
+    result.portalUrl = portalUrl;
+    result.transferCode = transferCode;
+    return result;
+  }
 
   /**
    * Validate user credentials and return user with school context
@@ -47,6 +121,7 @@ export class AuthService {
   private async validateCredentials(
     emailOrPublicId: string,
     password: string,
+    portalSchoolId?: string | null,
   ): Promise<{
     user: any;
     currentSchoolId: string | null;
@@ -72,7 +147,6 @@ export class AuthService {
               enrollments: {
                 where: { isActive: true },
                 orderBy: { enrollmentDate: 'desc' },
-                take: 1,
                 include: { school: true },
               },
             },
@@ -192,6 +266,15 @@ export class AuthService {
       }
     }
 
+    const hinted = this.applyPortalSchoolHint(
+      user,
+      { currentSchoolId, currentPublicId, currentProfileId },
+      portalSchoolId,
+    );
+    currentSchoolId = hinted.currentSchoolId;
+    currentPublicId = hinted.currentPublicId;
+    currentProfileId = hinted.currentProfileId;
+
     // Check school verification status
     if (currentSchoolId) {
       const school = await this.prisma.school.findUnique({
@@ -235,7 +318,8 @@ export class AuthService {
   async login(
     loginDto: LoginDto,
     ipAddress?: string,
-    userAgent?: string
+    userAgent?: string,
+    portalSchoolId?: string | null,
   ): Promise<LoginResponseDto> {
     this.logger.log(`[AUTH] Login attempt for: ${loginDto.emailOrPublicId}`);
     this.metricsService.authLoginAttemptsTotal.inc({ status: 'attempt' });
@@ -244,7 +328,7 @@ export class AuthService {
       const { emailOrPublicId, password } = loginDto;
 
       // Validate credentials
-      const { user } = await this.validateCredentials(emailOrPublicId, password);
+      const { user } = await this.validateCredentials(emailOrPublicId, password, portalSchoolId);
       this.logger.log(`[AUTH] Credentials validated for user: ${user.id}, role: ${user.role}. IP: ${ipAddress}, UA: ${userAgent}`);
 
       // Ensure user has an email (required for OTP)
@@ -319,6 +403,8 @@ export class AuthService {
    */
   async verifyLoginOtp(
     verifyOtpDto: VerifyLoginOtpDto,
+    portalSchoolId?: string | null,
+    userAgent?: string,
   ): Promise<AuthTokensDto> {
     try {
       const { sessionId, code } = verifyOtpDto;
@@ -336,7 +422,6 @@ export class AuthService {
               enrollments: {
                 where: { isActive: true },
                 orderBy: { enrollmentDate: 'desc' },
-                take: 1,
                 include: { school: true },
               },
             },
@@ -392,6 +477,20 @@ export class AuthService {
         currentProfileId = teacherProf.id;
       }
 
+      const hinted = this.applyPortalSchoolHint(
+        user,
+        { currentSchoolId, currentPublicId, currentProfileId },
+        portalSchoolId,
+      );
+      currentSchoolId = hinted.currentSchoolId;
+      currentPublicId = hinted.currentPublicId;
+      currentProfileId = hinted.currentProfileId;
+      if (user.role === 'SCHOOL_ADMIN' && currentProfileId) {
+        const adminProfile = (user.schoolAdmins || []).find((a: any) => a.id === currentProfileId);
+        adminRole = adminProfile?.role || null;
+        adminSchoolType = adminProfile?.schoolType || null;
+      }
+
       // Generate tokens with school context
       const tokens = await this.generateTokens(
         user.id,
@@ -402,7 +501,7 @@ export class AuthService {
         adminRole
       );
 
-      return {
+      const payload: AuthTokensDto = {
         ...tokens,
         user: {
           id: user.id,
@@ -420,6 +519,7 @@ export class AuthService {
           adminSchoolType,
         },
       };
+      return this.attachPortalPayload(payload, currentSchoolId, userAgent);
     } catch (error) {
       this.logger.error(
         'AuthService.verifyLoginOtp error:',
@@ -554,6 +654,67 @@ export class AuthService {
         accountStatus: updatedUser.accountStatus,
         profileId: profileId,
       },
+    };
+  }
+
+  async exchangePortalCode(code: string, userAgent?: string): Promise<AuthTokensDto> {
+    const { userId, schoolId } = await this.portals.consumeTransferCode(code, userAgent);
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        studentProfile: {
+          include: {
+            enrollments: { where: { isActive: true }, orderBy: { enrollmentDate: 'desc' } },
+          },
+        },
+        teacherProfiles: true,
+        schoolAdmins: true,
+      },
+    });
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+    const hinted = this.applyPortalSchoolHint(
+      user,
+      { currentSchoolId: schoolId, currentPublicId: null, currentProfileId: null },
+      schoolId,
+    );
+    let adminRole: string | null = null;
+    let adminSchoolType: string | null = null;
+    if (user.role === 'SCHOOL_ADMIN' && hinted.currentProfileId) {
+      const admin = (user.schoolAdmins || []).find((a: any) => a.id === hinted.currentProfileId);
+      adminRole = admin?.role || null;
+      adminSchoolType = admin?.schoolType || null;
+    }
+    const tokens = await this.generateTokens(
+      user.id,
+      user.role,
+      hinted.currentSchoolId,
+      hinted.currentPublicId,
+      hinted.currentProfileId,
+      adminRole,
+    );
+    return {
+      ...tokens,
+      user: {
+        id: user.id,
+        email: user.email,
+        phone: user.phone,
+        role: user.role,
+        accountStatus: user.accountStatus,
+        firstName: user.firstName || null,
+        lastName: user.lastName || null,
+        profileId: hinted.currentProfileId,
+        publicId: hinted.currentPublicId,
+        schoolId: hinted.currentSchoolId,
+        tenantId: hinted.currentSchoolId,
+        adminRole,
+        adminSchoolType,
+        slug: (await this.portals.ensureSlug(schoolId)),
+        portalUrl: await this.portals.getSchoolFrontendUrl(schoolId),
+      },
+      slug: await this.portals.ensureSlug(schoolId),
+      portalUrl: await this.portals.getSchoolFrontendUrl(schoolId),
     };
   }
 
@@ -862,7 +1023,8 @@ export class AuthService {
     role: string,
     publicId?: string,
     schoolName?: string,
-    studentUid?: string // For students: show in signup email for their records
+    studentUid?: string, // For students: show in signup email for their records
+    schoolId?: string | null,
   ): Promise<void> {
     // Generate reset token
     const token = randomBytes(32).toString('hex');
@@ -888,7 +1050,8 @@ export class AuthService {
         undefined, // schools array (not used in this context)
         publicId || undefined, // legacy publicId parameter
         schoolName, // legacy schoolName parameter
-        studentUid // for students: UID shown in signup email
+        studentUid, // for students: UID shown in signup email
+        schoolId,
       );
     } catch (error) {
       // Log error but don't fail the request

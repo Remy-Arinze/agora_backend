@@ -11,6 +11,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { AuthService } from '../../auth/auth.service';
 import { EmailService } from '../../email/email.service';
 import { TestUtils } from '../../common/test/test-utils';
+import { PortalsService } from '../../portals/portals.service';
 
 describe('SuperAdminSchoolsService', () => {
   let service: SuperAdminSchoolsService;
@@ -88,6 +89,19 @@ describe('SuperAdminSchoolsService', () => {
         {
           provide: EmailService,
           useValue: TestUtils.createMockEmailService(),
+        },
+        {
+          provide: PortalsService,
+          useValue: {
+            ensureSlug: jest.fn().mockResolvedValue('test-school'),
+            lockSlug: jest.fn().mockResolvedValue(undefined),
+            holdSlugOnReject: jest.fn().mockResolvedValue(undefined),
+            renameSlug: jest.fn().mockResolvedValue('test-school'),
+            reserveSlug: jest.fn().mockResolvedValue('test-school'),
+            assignSlugFromName: jest.fn().mockResolvedValue('test-school'),
+            getSchoolFrontendUrl: jest.fn().mockResolvedValue('http://test-school.localhost:3000'),
+            buildPortalUrl: jest.fn().mockReturnValue('http://test-school.localhost:3000'),
+          },
         },
       ],
     }).compile();

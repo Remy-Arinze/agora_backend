@@ -123,6 +123,10 @@ export class TeacherCurrentSchoolService {
         hasSecondary: true,
         hasTertiary: true,
         schoolId: true,
+        slug: true,
+        customDomain: true,
+        customDomainStatus: true,
+        branding: true,
       },
     });
 

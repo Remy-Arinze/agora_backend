@@ -47,6 +47,7 @@ import { RedisModule } from './common/redis/redis.module';
 import { SchoolSettingsModule } from './school-settings/school-settings.module';
 import { ExportModule } from './export/export.module';
 import { BackupModule } from './backup/backup.module';
+import { PortalsModule } from './portals/portals.module';
 
 @Module({
   imports: [
@@ -102,6 +103,7 @@ import { BackupModule } from './backup/backup.module';
     GoogleCalendarModule,
     CloudinaryModule,
     PublicModule,
+    PortalsModule,
     SubscriptionsModule,
     AiModule,
     PaymentsModule,

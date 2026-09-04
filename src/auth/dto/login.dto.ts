@@ -114,5 +114,10 @@ export class AuthTokensDto {
     tenantId?: string | null; // SchoolId UUID — same as schoolId (JWT-first model)
     adminRole?: string | null; // ✅ Admin-specific role (e.g., 'principal', 'school_owner', 'headmistress')
     adminSchoolType?: string | null; // ✅ School type this admin is scoped to (e.g., 'PRIMARY', 'SECONDARY')
+    slug?: string | null;
+    portalUrl?: string | null;
   };
+  transferCode?: string;
+  portalUrl?: string;
+  slug?: string;
 }

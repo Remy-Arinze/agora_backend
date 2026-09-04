@@ -87,12 +87,19 @@ async function bootstrap() {
 
       const isLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
       const isProductionDomain =
-        origin.endsWith('.myschoolbud.com') || origin === 'https://myschoolbud.com';
-      const isConfiguredOrigin = allowedOrigins.some(
+        origin.endsWith('.myschoolbud.com') ||
+        origin === 'https://myschoolbud.com' ||
+        origin === 'https://www.myschoolbud.com';
+      const extraPortalOrigins = (process.env.PORTAL_EXTRA_ORIGINS || '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const isConfiguredOrigin = [...allowedOrigins, ...extraPortalOrigins].some(
         (allowed) => origin === allowed || origin.startsWith(allowed),
       );
+      const isLocalPortal = /^https?:\/\/[a-z0-9-]+\.localhost(:\d+)?$/.test(origin);
 
-      if (isLocalhost || isProductionDomain || isConfiguredOrigin) {
+      if (isLocalhost || isLocalPortal || isProductionDomain || isConfiguredOrigin) {
         callback(null, true);
       } else {
         logger.warn(`CORS blocked for origin: ${origin}`);
@@ -101,7 +108,7 @@ async function bootstrap() {
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'x-tenant-id'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-tenant-id', 'x-portal-school-id', 'x-msb-slug'],
   });
 
   // Swagger/OpenAPI configuration - ONLY enabled in non-production environments

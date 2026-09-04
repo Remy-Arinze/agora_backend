@@ -24,6 +24,7 @@ const ADMIN_PHONE = '+2347018800001';
 const SCHOOL_PHONE = '+2347018800000';
 const PASSWORD = 'Test1234!';
 const ACADEMIC_YEAR = '2026/2027';
+const EMAIL_ALIAS_BASE = 'remyarinze';
 
 const CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
@@ -172,8 +173,12 @@ function secondaryTeacherName(index: number): { firstName: string; lastName: str
   };
 }
 
+function slugify(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
 function teacherEmail(slug: string): string {
-  return `beulah.t.${slug.toLowerCase()}@agora.test`;
+  return `${EMAIL_ALIAS_BASE}+beulah-teacher-${slug.toLowerCase()}@gmail.com`;
 }
 
 function studentDob(classCode: string): Date {
@@ -184,8 +189,8 @@ function studentDob(classCode: string): Date {
 }
 
 function studentEmail(s: StudentSeed): string {
-  const slug = `${s.firstName}.${s.lastName}.${s.classCode}`.toLowerCase();
-  return `beulah.${slug}@agora.test`;
+  const slug = `${slugify(s.firstName)}-${slugify(s.lastName)}-${s.classCode.toLowerCase()}`;
+  return `${EMAIL_ALIAS_BASE}+beulah-student-${slug}@gmail.com`;
 }
 
 async function uniquePublicId(schoolName: string): Promise<string> {
@@ -559,6 +564,69 @@ async function ensureStudents(
 
 let teacherPhoneSeq = 1;
 
+async function migrateExistingBeulahEmails(schoolId: string, passwordHash: string) {
+  // Teachers
+  const teachers = await prisma.teacher.findMany({
+    where: { schoolId },
+    include: { user: true },
+    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+  });
+
+  for (const teacher of teachers) {
+    if (!teacher.user) continue;
+    const slug = `${slugify(teacher.firstName)}-${slugify(teacher.lastName)}-${teacher.userId.slice(-6)}`;
+    const email = teacherEmail(slug);
+
+    await prisma.user.update({
+      where: { id: teacher.userId },
+      data: {
+        email,
+        passwordHash,
+        accountStatus: 'ACTIVE',
+      },
+    });
+
+    if (teacher.email !== email) {
+      await prisma.teacher.update({
+        where: { id: teacher.id },
+        data: { email },
+      });
+    }
+  }
+
+  // Students (all active/inactive enrollments in Beulah)
+  const enrollments = await prisma.enrollment.findMany({
+    where: { schoolId },
+    include: {
+      student: {
+        include: { user: true },
+      },
+    },
+  });
+
+  const seenStudentIds = new Set<string>();
+  for (const enr of enrollments) {
+    const st = enr.student;
+    if (!st?.user || seenStudentIds.has(st.id)) continue;
+    seenStudentIds.add(st.id);
+
+    const classCode =
+      LEVELS.find((l) => l.name.toLowerCase() === enr.classLevel.toLowerCase())?.code.toLowerCase() ||
+      'class';
+    const slug = `${slugify(st.firstName)}-${slugify(st.lastName)}-${classCode}-${st.userId.slice(-6)}`;
+    const email = `${EMAIL_ALIAS_BASE}+beulah-student-${slug}@gmail.com`;
+
+    await prisma.user.update({
+      where: { id: st.userId },
+      data: {
+        email,
+        passwordHash,
+        accountStatus: 'ACTIVE',
+      },
+    });
+  }
+}
+
 async function uniqueTeacherPhone(): Promise<string> {
   for (let i = 0; i < 80; i++) {
     const phone = `+2348094${String(teacherPhoneSeq++).padStart(6, '0')}`;
@@ -783,6 +851,8 @@ async function main() {
   console.log(`Seeding ${SCHOOL_NAME}...`);
   const school = await ensureSchool();
   await ensureAdmin(school.id);
+  const sharedPasswordHash = await bcrypt.hash(PASSWORD, 10);
+  await migrateExistingBeulahEmails(school.id, sharedPasswordHash);
   const primarySession = await ensureSession(school.id, 'PRIMARY');
   const secondarySession = await ensureSession(school.id, 'SECONDARY');
   const levels = await ensureLevelsAndArms(school.id);
@@ -791,7 +861,7 @@ async function main() {
     SECONDARY: secondarySession.term,
   });
 
-  const passwordHash = await bcrypt.hash(PASSWORD, 10);
+  const passwordHash = sharedPasswordHash;
   const primaryTeachers = await ensurePrimaryTeachers(
     school.id,
     levels.filter((l) => l.type === 'PRIMARY'),
@@ -811,6 +881,20 @@ async function main() {
     where: { schoolId: school.id, isActive: true },
   });
   const teacherCount = await prisma.teacher.count({ where: { schoolId: school.id } });
+  const sampleTeachers = await prisma.teacher.findMany({
+    where: { schoolId: school.id },
+    select: { firstName: true, lastName: true, email: true, subject: true },
+    orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }],
+    take: 6,
+  });
+  const sampleStudents = await prisma.enrollment.findMany({
+    where: { schoolId: school.id, isActive: true },
+    include: {
+      student: { include: { user: { select: { email: true } } } },
+    },
+    orderBy: [{ classLevel: 'asc' }, { createdAt: 'asc' }],
+    take: 6,
+  });
 
   console.log('\n=== Beulah High School ===');
   console.log(`School ID: ${school.id}`);
@@ -823,6 +907,16 @@ async function main() {
   console.log(`Secondary subject teachers created: ${secondaryTeachers.created}`);
   console.log(`Total teachers: ${teacherCount}`);
   console.log(`Teacher login password: ${PASSWORD}`);
+  console.log('\nSample teacher logins:');
+  sampleTeachers.forEach((t) => {
+    console.log(`- ${t.firstName} ${t.lastName} (${t.subject || 'Teacher'}): ${t.email} / ${PASSWORD}`);
+  });
+  console.log('\nSample student logins:');
+  sampleStudents.forEach((e) => {
+    console.log(
+      `- ${e.student.firstName} ${e.student.lastName} (${e.classLevel}): ${e.student.user?.email || 'no-email'} / ${PASSWORD}`,
+    );
+  });
 }
 
 main()

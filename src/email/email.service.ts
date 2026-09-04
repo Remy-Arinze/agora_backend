@@ -1,6 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SchoolSettingsService } from '../school-settings/school-settings.service';
+import { PortalsService } from '../portals/portals.service';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as nodemailer from 'nodemailer';
@@ -22,6 +23,7 @@ export class EmailService {
   constructor(
     private configService: ConfigService,
     private readonly schoolSettingsService: SchoolSettingsService,
+    @Optional() private readonly portals?: PortalsService,
   ) {
     const rawDriver = (this.configService.get<string>('EMAIL_DRIVER') || 'gmail')
       .trim()
@@ -231,6 +233,9 @@ export class EmailService {
    * In production, defaults to production URL unless FRONTEND_URL is explicitly set
    */
   private getFrontendUrl(): string {
+    if (this.portals) {
+      return this.portals.getApexFrontendUrl();
+    }
     const explicitFrontendUrl = this.configService.get<string>('FRONTEND_URL');
     const nodeEnv = this.configService.get<string>('NODE_ENV') || 'development';
 
@@ -243,6 +248,13 @@ export class EmailService {
     return nodeEnv === 'production'
       ? 'https://myschoolbud.com'
       : 'http://localhost:3000';
+  }
+
+  private async resolveFrontendUrl(schoolId?: string | null): Promise<string> {
+    if (this.portals && schoolId) {
+      return this.portals.getSchoolFrontendUrl(schoolId);
+    }
+    return this.getFrontendUrl();
   }
 
   /**
@@ -269,9 +281,10 @@ export class EmailService {
     schools?: Array<{ name: string; publicId: string; role: string }>,
     publicId?: string, // Legacy parameter for backward compatibility
     schoolName?: string, // Legacy parameter for backward compatibility
-    studentUid?: string // For students: show UID in signup email (for their records)
+    studentUid?: string, // For students: show UID in signup email (for their records)
+    schoolId?: string | null,
   ): Promise<void> {
-    const frontendUrl = this.getFrontendUrl();
+    const frontendUrl = await this.resolveFrontendUrl(schoolId);
     // Normalize URL - remove trailing slash if present to prevent double slashes
     const normalizedUrl = frontendUrl.replace(/\/+$/, '');
     const resetUrl = `${normalizedUrl}/auth/reset-password?token=${resetToken}`;

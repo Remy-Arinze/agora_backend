@@ -74,10 +74,61 @@ model School {
   studentRecordAudits   StudentRecordAudit[]
   schoolCloudBackups    SchoolCloudBackup[]
 
+  slug                   String?   @unique
+  slugLockedAt           DateTime?
+  slugHoldUntil          DateTime?
+  customDomain           String?   @unique
+  customDomainStatus     String? // PENDING | VERIFYING | ACTIVE | FAILED
+  customDomainTxt        String?
+  customDomainVerifiedAt DateTime?
+
+  branding            SchoolBranding?
+  slugRedirects       SchoolSlugRedirect[]
+  portalTransferCodes PortalTransferCode[]
+
   @@index([schoolId])
   @@index([isActive])
   @@index([isActive, createdAt])
   @@index([registrationStatus])
+  @@index([customDomainStatus])
+}
+
+model SchoolSlugRedirect {
+  id        String   @id @default(cuid())
+  fromSlug  String   @unique
+  schoolId  String
+  school    School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@index([schoolId])
+}
+
+model SchoolBranding {
+  id               String   @id @default(cuid())
+  schoolId         String   @unique
+  school           School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  accentColor      String?
+  faviconUrl       String?
+  loginTagline     String?
+  hidePlatformMark Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+model PortalTransferCode {
+  id            String    @id @default(cuid())
+  codeHash      String    @unique
+  userId        String
+  schoolId      String
+  school        School    @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  expiresAt     DateTime
+  usedAt        DateTime?
+  userAgentHash String?
+  createdAt     DateTime  @default(now())
+
+  @@index([schoolId])
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 model SchoolProfileEditToken {

@@ -205,6 +205,44 @@ export class SchoolAdminSchoolsController {
     return ResponseDto.ok(data, 'Logo uploaded successfully');
   }
 
+  @Patch('school/branding')
+  @RequirePermission(PermissionResource.OVERVIEW, PermissionType.WRITE)
+  @ApiOperation({ summary: 'Update school portal branding' })
+  async updateBranding(@Request() req: any, @Body() body: any) {
+    const data = await this.schoolAdminSchoolsService.updateBranding(req.user, body);
+    return ResponseDto.ok(data, 'Branding updated');
+  }
+
+  @Post('school/favicon')
+  @RequirePermission(PermissionResource.OVERVIEW, PermissionType.WRITE)
+  @UseInterceptors(
+    FileInterceptor('favicon', {
+      storage: memoryStorage(),
+      limits: { fileSize: 2 * 1024 * 1024 },
+    }),
+  )
+  @ApiConsumes('multipart/form-data')
+  async uploadFavicon(@Request() req: any, @UploadedFile() file: Express.Multer.File) {
+    const data = await this.schoolAdminSchoolsService.uploadFavicon(req.user, file);
+    return ResponseDto.ok(data, 'Favicon uploaded');
+  }
+
+  @Post('school/custom-domain')
+  @RequirePermission(PermissionResource.OVERVIEW, PermissionType.ADMIN)
+  @ApiOperation({ summary: 'Request a custom domain for the school portal' })
+  async requestCustomDomain(@Request() req: any, @Body('host') host: string) {
+    const data = await this.schoolAdminSchoolsService.requestCustomDomain(req.user, host);
+    return ResponseDto.ok(data, 'Custom domain saved. Add the DNS records to verify.');
+  }
+
+  @Post('school/custom-domain/verify')
+  @RequirePermission(PermissionResource.OVERVIEW, PermissionType.ADMIN)
+  @ApiOperation({ summary: 'Verify custom domain DNS' })
+  async verifyCustomDomain(@Request() req: any) {
+    const data = await this.schoolAdminSchoolsService.verifyCustomDomain(req.user);
+    return ResponseDto.ok(data, 'Custom domain verified');
+  }
+
   @Patch('school')
   @RequirePermission(PermissionResource.OVERVIEW, PermissionType.ADMIN)
   @ApiOperation({ summary: 'Update school information' })

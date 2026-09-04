@@ -53,9 +53,9 @@ export class NotificationInboxService {
   }
 
   private configureVapid() {
-    const publicKey = this.config.get<string>('VAPID_PUBLIC_KEY');
-    const privateKey = this.config.get<string>('VAPID_PRIVATE_KEY');
-    const subject = this.config.get<string>('VAPID_SUBJECT') || 'mailto:support@myschoolbud.com';
+    const publicKey = this.config.get<string>('VAPID_PUBLIC_KEY')?.trim();
+    const privateKey = this.config.get<string>('VAPID_PRIVATE_KEY')?.trim();
+    const subject = this.config.get<string>('VAPID_SUBJECT')?.trim() || 'mailto:support@myschoolbud.com';
     if (publicKey && privateKey) {
       try {
         webpush.setVapidDetails(subject, publicKey, privateKey);
@@ -69,7 +69,7 @@ export class NotificationInboxService {
   }
 
   getVapidPublicKey(): string | null {
-    return this.config.get<string>('VAPID_PUBLIC_KEY') || null;
+    return this.config.get<string>('VAPID_PUBLIC_KEY')?.trim() || null;
   }
 
   private mapEventTriggerKey(type: string): string | null {

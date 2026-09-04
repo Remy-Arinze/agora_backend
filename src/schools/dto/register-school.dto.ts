@@ -119,6 +119,13 @@ export class RegisterSchoolDto {
     @MaxLength(1000)
     @Transform(({ value }) => sanitizeOptionalString(value, 1000))
     registrationNote?: string;
+
+    @ApiPropertyOptional({ description: 'Optional portal slug, e.g. beulah for beulah.myschoolbud.com' })
+    @IsOptional()
+    @IsString()
+    @MaxLength(32)
+    @Transform(({ value }) => sanitizeOptionalString(value, 32))
+    slug?: string;
 }
 
 export class RegisterSchoolResponseDto {

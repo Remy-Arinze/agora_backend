@@ -13,6 +13,7 @@ import { SchoolDto } from '../dto/school.dto';
 import { generateSecurePasswordHash } from '../../common/utils/password.utils';
 import { isPrincipalRole } from '../dto/permission.dto';
 import { EmailService } from '../../email/email.service';
+import { PortalsService } from '../../portals/portals.service';
 
 /**
  * Service for super admin school management operations
@@ -29,7 +30,8 @@ export class SuperAdminSchoolsService {
     private readonly idGenerator: IdGeneratorService,
     private readonly schoolValidator: SchoolValidatorService,
     private readonly staffValidator: StaffValidatorService,
-    private readonly emailService: EmailService
+    private readonly emailService: EmailService,
+    private readonly portals: PortalsService,
   ) { }
 
   /**
@@ -214,6 +216,9 @@ export class SuperAdminSchoolsService {
 
         return { school: newSchool, admins: createdAdmins, emailQueue };
       });
+
+      await this.portals.ensureSlug(result.school.id);
+      await this.portals.lockSlug(result.school.id);
 
       // Send password reset emails (outside transaction)
       for (const emailData of result.emailQueue) {
@@ -568,6 +573,8 @@ export class SuperAdminSchoolsService {
     }
     if (school.registrationStatus === 'VERIFIED') throw new BadRequestException('School is already verified');
 
+    const slug = await this.portals.ensureSlug(schoolId);
+
     const result = await this.prisma.$transaction(async (tx) => {
       // 1. Mark school as verified and active
       const updatedSchool = await tx.school.update({
@@ -596,13 +603,23 @@ export class SuperAdminSchoolsService {
           'School Owner',
           principalAdmin.publicId!,
           updatedSchool.name,
+          undefined,
+          updatedSchool.id,
         );
       }
 
       return updatedSchool;
     });
 
+    await this.portals.lockSlug(result.id);
+
     return this.findOne(result.id);
+  }
+
+  async renameSlug(schoolId: string, slug: string): Promise<SchoolDto> {
+    await this.schoolValidator.validateSchoolExists(schoolId);
+    await this.portals.renameSlug(schoolId, slug);
+    return this.findOne(schoolId);
   }
 
   /**
@@ -662,6 +679,7 @@ export class SuperAdminSchoolsService {
         rejectionReason: reason,
       },
     });
+    await this.portals.holdSlugOnReject(schoolId);
 
     // Notify the school
     const principalAdmin = school.admins[0];

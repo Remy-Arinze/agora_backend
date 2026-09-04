@@ -14,6 +14,7 @@ import { CloudinaryService } from '../storage/cloudinary/cloudinary.service';
 import { PasswordOtpService } from './password-otp.service';
 import { MetricsService } from '../common/metrics/metrics.service';
 import { SchoolSettingsService } from '../school-settings/school-settings.service';
+import { PortalsService } from '../portals/portals.service';
 import { TestUtils } from '../common/test/test-utils';
 
 jest.mock('bcryptjs', () => ({
@@ -86,6 +87,15 @@ describe('AuthService', () => {
               passwordMinLength: 8,
               passwordRequireSpecialChar: true,
             }),
+          },
+        },
+        {
+          provide: PortalsService,
+          useValue: {
+            ensureSlug: jest.fn().mockResolvedValue('test-school'),
+            getSchoolFrontendUrl: jest.fn().mockResolvedValue('http://test-school.localhost:3000'),
+            createTransferCode: jest.fn().mockResolvedValue('transfer-code'),
+            consumeTransferCode: jest.fn(),
           },
         },
       ],

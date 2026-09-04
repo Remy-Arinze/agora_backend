@@ -37,6 +37,17 @@ export class SchoolMapper {
       id: school.id,
       schoolId: school.schoolId || '',
       name: school.name,
+      slug: (school as any).slug ?? null,
+      customDomain: (school as any).customDomain ?? null,
+      customDomainStatus: (school as any).customDomainStatus ?? null,
+      branding: (school as any).branding
+        ? {
+            accentColor: (school as any).branding.accentColor ?? null,
+            faviconUrl: (school as any).branding.faviconUrl ?? null,
+            loginTagline: (school as any).branding.loginTagline ?? null,
+            hidePlatformMark: !!(school as any).branding.hidePlatformMark,
+          }
+        : null,
       domain: school.domain,
       address: school.address,
       city: school.city,

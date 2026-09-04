@@ -2333,12 +2333,15 @@ export class StudentsService {
               select: {
                 id: true,
                 name: true,
-                
                 logo: true,
                 hasPrimary: true,
                 hasSecondary: true,
                 hasTertiary: true,
                 schoolId: true,
+                slug: true,
+                customDomain: true,
+                customDomainStatus: true,
+                branding: true,
               },
             },
           },

@@ -5,6 +5,7 @@ import { IdGeneratorService } from '../shared/id-generator.service';
 import { SchoolValidatorService } from '../shared/school-validator.service';
 import { RegisterSchoolDto, RegisterSchoolResponseDto } from '../dto/register-school.dto';
 import { generateSecurePasswordHash } from '../../common/utils/password.utils';
+import { PortalsService } from '../../portals/portals.service';
 
 @Injectable()
 export class SchoolRegistrationService {
@@ -15,6 +16,7 @@ export class SchoolRegistrationService {
         private readonly emailService: EmailService,
         private readonly idGenerator: IdGeneratorService,
         private readonly schoolValidator: SchoolValidatorService,
+        private readonly portals: PortalsService,
     ) { }
 
     /**
@@ -34,6 +36,7 @@ export class SchoolRegistrationService {
             levels,
             owner,
             registrationNote,
+            slug: requestedSlug,
         } = dto;
 
         // 1. Sanitize inputs
@@ -69,6 +72,11 @@ export class SchoolRegistrationService {
             );
         }
 
+        let reservedSlug: string | null = null;
+        if (requestedSlug && requestedSlug.trim()) {
+            reservedSlug = await this.portals.reserveSlug(requestedSlug);
+        }
+
         // 5. Generate IDs
         const schoolId = await this.idGenerator.generateSchoolId();
         const ownerAdminId = await this.idGenerator.generatePrincipalId();
@@ -97,6 +105,7 @@ export class SchoolRegistrationService {
                         isActive: false, // Not active until verified
                         registrationStatus: 'UNAPPROVED',
                         registrationNote: registrationNote?.trim() || null,
+                        slug: reservedSlug,
                     },
                 });
 

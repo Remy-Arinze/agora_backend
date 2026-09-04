@@ -12,6 +12,7 @@ import { DatabaseModule } from '../database/database.module';
 import { EmailModule } from '../email/email.module';
 import { CloudinaryModule } from '../storage/cloudinary/cloudinary.module';
 import { SchoolSettingsModule } from '../school-settings/school-settings.module';
+import { PortalsModule } from '../portals/portals.module';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { SchoolSettingsModule } from '../school-settings/school-settings.module'
     EmailModule,
     CloudinaryModule,
     SchoolSettingsModule,
+    PortalsModule,
   ],
   controllers: [AuthController],
   providers: [AuthService, OtpService, PasswordOtpService, JwtStrategy, ShadowUserGuard],
