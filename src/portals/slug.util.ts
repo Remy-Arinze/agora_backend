@@ -10,6 +10,7 @@ export const RESERVED_SLUGS = new Set([
   'help',
   'docs',
   'staging',
+  'dev',
   'cdn',
   'static',
   'public',
@@ -19,6 +20,14 @@ export const RESERVED_SLUGS = new Set([
   'super-admin',
   'superadmin',
 ]);
+
+export const DEFAULT_PORTAL_ROOTS = ['dev.myschoolbud.com', 'myschoolbud.com'];
+
+export function sortRootsLongestFirst(roots: string[]): string[] {
+  return Array.from(new Set(roots.map((r) => r.trim().toLowerCase()).filter(Boolean))).sort(
+    (a, b) => b.length - a.length,
+  );
+}
 
 const SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9])$/;
 
@@ -58,7 +67,7 @@ export function extractSubdomain(host: string, rootDomains: string[]): string | 
     const sub = hostname.slice(0, -'.localhost'.length);
     return sub && !sub.includes('.') ? sub : null;
   }
-  for (const root of rootDomains) {
+  for (const root of sortRootsLongestFirst(rootDomains)) {
     const suffix = `.${root}`;
     if (hostname === root || hostname === `www.${root}`) {
       return null;
@@ -77,5 +86,5 @@ export function extractSubdomain(host: string, rootDomains: string[]): string | 
 export function isApexHost(host: string, rootDomains: string[]): boolean {
   const hostname = host.split(':')[0].toLowerCase();
   if (hostname === 'localhost' || hostname === '127.0.0.1') return true;
-  return rootDomains.some((root) => hostname === root || hostname === `www.${root}`);
+  return sortRootsLongestFirst(rootDomains).some((root) => hostname === root || hostname === `www.${root}`);
 }

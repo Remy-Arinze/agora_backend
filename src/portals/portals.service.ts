@@ -13,6 +13,8 @@ import {
   validateSlugFormat,
   extractSubdomain,
   isApexHost,
+  DEFAULT_PORTAL_ROOTS,
+  sortRootsLongestFirst,
   type SlugUnavailableReason,
 } from './slug.util';
 
@@ -46,11 +48,11 @@ export class PortalsService {
   ) {}
 
   rootDomains(): string[] {
-    const extra = (this.config.get<string>('PORTAL_ROOT_DOMAINS') || 'myschoolbud.com')
+    const extra = (this.config.get<string>('PORTAL_ROOT_DOMAINS') || '')
       .split(',')
       .map((s) => s.trim().toLowerCase())
       .filter(Boolean);
-    return Array.from(new Set(extra));
+    return sortRootsLongestFirst([...DEFAULT_PORTAL_ROOTS, ...extra]);
   }
 
   getApexFrontendUrl(): string {
