@@ -27,6 +27,8 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { UserWithContext } from '../auth/types/user-with-context.type';
 import { ResponseDto } from '../common/dto/response.dto';
 import { StudentsService } from './students.service';
+import { TransfersService } from '../transfers/transfers.service';
+import { AuthService } from '../auth/auth.service';
 import { Response } from 'express';
 
 @ApiTags('students')
@@ -34,7 +36,11 @@ import { Response } from 'express';
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth('JWT-auth')
 export class StudentMeController {
-  constructor(private readonly studentsService: StudentsService) {}
+  constructor(
+    private readonly studentsService: StudentsService,
+    private readonly transfersService: TransfersService,
+    private readonly authService: AuthService,
+  ) {}
 
   @Get('me')
   @ApiOperation({ summary: 'Get current student profile' })
@@ -81,6 +87,44 @@ export class StudentMeController {
   async getMyEnrollments(@CurrentUser() user: UserWithContext): Promise<ResponseDto<any[]>> {
     const data = await this.studentsService.getMyEnrollments(user);
     return ResponseDto.ok(data, 'Enrollments retrieved successfully');
+  }
+
+  @Post('me/closure-tac')
+  @ApiOperation({ summary: 'Get or create a never-expiring transfer code after school close' })
+  async getClosureTac(@CurrentUser() user: UserWithContext): Promise<ResponseDto<any>> {
+    if (user.role !== 'STUDENT') {
+      throw new BadRequestException('Only students can request a closure transfer code.');
+    }
+    if (!user.currentSchoolId) {
+      throw new BadRequestException('No current school context.');
+    }
+    const student = await this.studentsService.getMyProfile(user);
+    const data = await this.transfersService.ensureClosureTacForStudent(
+      student.id,
+      user.currentSchoolId,
+    );
+    return ResponseDto.ok(data, 'Transfer code ready');
+  }
+
+  @Post('me/switch-school')
+  @ApiOperation({ summary: 'Switch to another live school enrollment' })
+  async switchSchool(
+    @CurrentUser() user: UserWithContext,
+    @Body('schoolId') schoolId: string,
+  ): Promise<ResponseDto<any>> {
+    if (!schoolId) throw new BadRequestException('schoolId is required');
+    const data = await this.authService.switchSchoolContext(user.id, schoolId);
+    return ResponseDto.ok(
+      {
+        accessToken: data.accessToken,
+        refreshToken: data.refreshToken,
+        user: data.user,
+        transferCode: data.transferCode,
+        portalUrl: data.portalUrl,
+        slug: data.slug,
+      },
+      'Switched school',
+    );
   }
 
   @Get('me/timetable')

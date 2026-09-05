@@ -111,7 +111,102 @@ export class AuthService {
     result.slug = slug;
     result.portalUrl = portalUrl;
     result.transferCode = transferCode;
+    await this.attachLifecycle(result, schoolId);
     return result;
+  }
+
+  private async attachLifecycle(result: AuthTokensDto, schoolId: string | null): Promise<void> {
+    if (!schoolId) return;
+    const school = await this.prisma.school.findUnique({
+      where: { id: schoolId },
+      select: {
+        lifecycleStatus: true,
+        isActive: true,
+        deactivatesAt: true,
+        deactivationReason: true,
+        deactivatedAt: true,
+      },
+    });
+    if (!school) return;
+    result.user.lifecycleStatus =
+      school.lifecycleStatus || (school.isActive ? 'ACTIVE' : 'DEACTIVATED');
+    result.user.deactivatesAt = school.deactivatesAt?.toISOString() || null;
+    result.user.deactivationReason = school.deactivationReason || null;
+    result.user.deactivatedAt = school.deactivatedAt?.toISOString() || null;
+  }
+
+  async switchSchoolContext(userId: string, targetSchoolId: string, userAgent?: string): Promise<AuthTokensDto> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        schoolAdmins: true,
+        teacherProfiles: true,
+        studentProfile: { include: { enrollments: true } },
+      },
+    });
+    if (!user) throw new UnauthorizedException('User not found');
+
+    if (user.role === 'STUDENT') {
+      const enrollment = user.studentProfile?.enrollments?.find(
+        (e) => e.schoolId === targetSchoolId && e.isActive,
+      );
+      if (!enrollment) throw new ForbiddenException('You are not enrolled at that school.');
+      const target = await this.prisma.school.findUnique({
+        where: { id: targetSchoolId },
+        select: { isActive: true, lifecycleStatus: true },
+      });
+      if (!target || !target.isActive || target.lifecycleStatus === 'DEACTIVATED') {
+        throw new ForbiddenException('That school is not available.');
+      }
+    } else if (user.role === 'TEACHER') {
+      if (!(user.teacherProfiles || []).some((t) => t.schoolId === targetSchoolId)) {
+        throw new ForbiddenException('You do not belong to that school.');
+      }
+    } else if (user.role === 'SCHOOL_ADMIN') {
+      if (!(user.schoolAdmins || []).some((a) => a.schoolId === targetSchoolId)) {
+        throw new ForbiddenException('You do not belong to that school.');
+      }
+    } else {
+      throw new ForbiddenException('Cannot switch school for this account.');
+    }
+
+    const hinted = this.applyPortalSchoolHint(
+      user,
+      { currentSchoolId: targetSchoolId, currentPublicId: null, currentProfileId: null },
+      targetSchoolId,
+    );
+    let adminRole: string | null = null;
+    if (user.role === 'SCHOOL_ADMIN' && hinted.currentProfileId) {
+      adminRole = (user.schoolAdmins || []).find((a) => a.id === hinted.currentProfileId)?.role || null;
+    }
+    const tokens = await this.generateTokens(
+      user.id,
+      user.role,
+      hinted.currentSchoolId,
+      hinted.currentPublicId,
+      hinted.currentProfileId,
+      adminRole,
+    );
+    const payload: AuthTokensDto = {
+      ...tokens,
+      user: {
+        id: user.id,
+        email: user.email,
+        phone: user.phone,
+        role: user.role,
+        accountStatus: user.accountStatus,
+        firstName: user.firstName || null,
+        lastName: user.lastName || null,
+        profileId: hinted.currentProfileId,
+        publicId: hinted.currentPublicId,
+        schoolId: hinted.currentSchoolId,
+        tenantId: hinted.currentSchoolId,
+        adminRole,
+        slug: null,
+        portalUrl: null,
+      },
+    };
+    return this.attachPortalPayload(payload, hinted.currentSchoolId, userAgent);
   }
 
   /**
@@ -694,7 +789,7 @@ export class AuthService {
       hinted.currentProfileId,
       adminRole,
     );
-    return {
+    const payload: AuthTokensDto = {
       ...tokens,
       user: {
         id: user.id,
@@ -716,6 +811,8 @@ export class AuthService {
       slug: await this.portals.ensureSlug(schoolId),
       portalUrl: await this.portals.getSchoolFrontendUrl(schoolId),
     };
+    await this.attachLifecycle(payload, schoolId);
+    return payload;
   }
 
   private async generateTokens(

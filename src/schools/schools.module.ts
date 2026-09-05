@@ -62,6 +62,7 @@ import { CloudinaryModule } from '../storage/cloudinary/cloudinary.module';
 import { NotificationModule } from '../notification/notification.module';
 import { SchoolSettingsModule } from '../school-settings/school-settings.module';
 import { PortalsModule } from '../portals/portals.module';
+import { SchoolLifecycleModule } from './lifecycle/school-lifecycle.module';
 
 @Module({
   imports: [
@@ -76,6 +77,7 @@ import { PortalsModule } from '../portals/portals.module';
     NotificationModule,
     SchoolSettingsModule,
     PortalsModule,
+    SchoolLifecycleModule,
   ],
   controllers: [
     // New architecture controllers
@@ -133,6 +135,7 @@ import { PortalsModule } from '../portals/portals.module';
     IdGeneratorService,
     SchoolValidatorService,
     StaffValidatorService,
+    SchoolLifecycleModule,
   ],
 })
 export class SchoolsModule { }

@@ -532,7 +532,9 @@ export class StudentsService {
               select: {
                 id: true,
                 name: true,
-                
+                isActive: true,
+                lifecycleStatus: true,
+                deactivationReason: true,
               },
             },
             class: {

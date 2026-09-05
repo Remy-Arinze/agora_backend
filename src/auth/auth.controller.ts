@@ -169,6 +169,38 @@ export class AuthController {
     }
   }
 
+  @Post('switch-school')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Switch the current school context and issue new tokens' })
+  async switchSchool(
+    @Req() req: Request,
+    @Body('schoolId') schoolId: string,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<ResponseDto<Omit<AuthTokensDto, 'refreshToken'> & { refreshToken?: string }>> {
+    const userId = (req.user as any)?.id || (req.user as any)?.sub;
+    if (!userId) throw new UnauthorizedException('User not authenticated');
+    if (!schoolId) throw new BadRequestException('schoolId is required');
+    const data = await this.authService.switchSchoolContext(
+      userId,
+      schoolId,
+      req.headers['user-agent'] || 'unknown',
+    );
+    this.setRefreshTokenCookie(res, data.refreshToken);
+    return ResponseDto.ok(
+      {
+        accessToken: data.accessToken,
+        refreshToken: data.refreshToken,
+        user: data.user,
+        transferCode: data.transferCode,
+        portalUrl: data.portalUrl,
+        slug: data.slug,
+      },
+      'School context updated',
+    );
+  }
+
   @Post('exchange-portal-code')
   @HttpCode(HttpStatus.OK)
   @Throttle({ standard: { ttl: 60000, limit: 30 } })

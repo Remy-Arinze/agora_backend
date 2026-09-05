@@ -18,6 +18,7 @@ import { CloudinaryModule } from '../storage/cloudinary/cloudinary.module';
 import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
 import { NotificationModule } from '../notification/notification.module';
 import { SchoolSettingsModule } from '../school-settings/school-settings.module';
+import { TransfersModule } from '../transfers/transfers.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { SchoolSettingsModule } from '../school-settings/school-settings.module'
     SubscriptionsModule,
     NotificationModule,
     SchoolSettingsModule,
+    forwardRef(() => TransfersModule),
   ],
   controllers: [
     StudentMeController,

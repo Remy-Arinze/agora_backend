@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Delete, Patch, Body, Param, UseGuards, Query, Req } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Body, Param, UseGuards, Query, Req } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { SuperAdminSchoolsService } from './super-admin-schools.service';
 import { CreateSchoolDto } from '../dto/create-school.dto';
@@ -11,6 +11,7 @@ import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Throttle } from '@nestjs/throttler';
 import { PrismaService } from '../../database/prisma.service';
+import { ScheduleCloseDto } from '../dto/schedule-close.dto';
 
 /**
  * standard tier: Super Admin management of school entities.
@@ -139,27 +140,38 @@ export class SuperAdminSchoolsController {
   }
 
   @Patch(':id/activate')
-  @ApiOperation({ summary: 'Activate a school (Super Admin only)' })
+  @ApiOperation({ summary: 'Reactivate a deactivated school (Super Admin only)' })
   @ApiResponse({
     status: 200,
-    description: 'School activated successfully',
+    description: 'School reactivated successfully',
     type: ResponseDto<SchoolDto>,
   })
   async activateSchool(@Param('id') id: string): Promise<ResponseDto<SchoolDto>> {
     const data = await this.superAdminSchoolsService.activateSchool(id);
-    return ResponseDto.ok(data, 'School activated successfully');
+    return ResponseDto.ok(data, 'School reactivated successfully');
   }
 
   @Patch(':id/deactivate')
-  @ApiOperation({ summary: 'Deactivate a school (Super Admin only)' })
+  @ApiOperation({ summary: 'Schedule a school close with a 7-day delay (Super Admin only)' })
   @ApiResponse({
     status: 200,
-    description: 'School deactivated successfully',
+    description: 'School close scheduled',
     type: ResponseDto<SchoolDto>,
   })
-  async deactivateSchool(@Param('id') id: string): Promise<ResponseDto<SchoolDto>> {
-    const data = await this.superAdminSchoolsService.deactivateSchool(id);
-    return ResponseDto.ok(data, 'School deactivated successfully');
+  async deactivateSchool(
+    @Param('id') id: string,
+    @Body() body: ScheduleCloseDto,
+    @Req() req: any,
+  ): Promise<ResponseDto<SchoolDto>> {
+    const data = await this.superAdminSchoolsService.deactivateSchool(id, body.reason, req.user.id);
+    return ResponseDto.ok(data, 'School close scheduled. The school stays available for 7 days.');
+  }
+
+  @Post(':id/close/cancel')
+  @ApiOperation({ summary: 'Cancel a scheduled school close (Super Admin only)' })
+  async cancelClose(@Param('id') id: string): Promise<ResponseDto<SchoolDto>> {
+    const data = await this.superAdminSchoolsService.cancelClose(id);
+    return ResponseDto.ok(data, 'School close cancelled');
   }
 
   @Patch(':id')
@@ -179,15 +191,4 @@ export class SuperAdminSchoolsController {
     return ResponseDto.ok(data, 'School updated successfully');
   }
 
-  @Delete(':id')
-  @ApiOperation({ summary: 'Delete a school (Super Admin only)' })
-  @ApiResponse({
-    status: 200,
-    description: 'School deleted successfully',
-  })
-  @ApiResponse({ status: 404, description: 'School not found' })
-  async deleteSchool(@Param('id') id: string): Promise<ResponseDto<void>> {
-    await this.superAdminSchoolsService.deleteSchool(id);
-    return ResponseDto.ok(undefined, 'School deleted successfully');
-  }
 }

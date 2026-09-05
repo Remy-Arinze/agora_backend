@@ -35,8 +35,9 @@ export class SchoolValidatorService {
       throw new BadRequestException('School not found');
     }
 
-    if (!school.isActive) {
-      throw new ForbiddenException('School is inactive. Please contact system administrator.');
+    const lifecycle = (school as { lifecycleStatus?: string }).lifecycleStatus;
+    if (!school.isActive || lifecycle === 'DEACTIVATED') {
+      throw new ForbiddenException('This school is deactivated. An administrator can reactivate it.');
     }
 
     if (school.registrationStatus === 'UNAPPROVED') {

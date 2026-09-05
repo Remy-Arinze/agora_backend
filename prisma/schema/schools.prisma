@@ -26,6 +26,15 @@ model School {
   verifiedBy         String? // Super admin user ID who verified
   rejectionReason    String? // If rejected, why
 
+  /// ACTIVE | CLOSING | DEACTIVATED — keep isActive true only while ACTIVE
+  lifecycleStatus              String    @default("ACTIVE")
+  deactivationReason           String?
+  deactivationRequestedAt      DateTime?
+  deactivatesAt                DateTime?
+  deactivatedAt                DateTime?
+  deactivationRequestedByUserId String?
+  deactivationRequestedByRole  String? // SCHOOL_OWNER | SUPER_ADMIN
+
   admins              SchoolAdmin[]
   teachers            Teacher[]
   classes             Class[]
@@ -91,6 +100,8 @@ model School {
   @@index([isActive, createdAt])
   @@index([registrationStatus])
   @@index([customDomainStatus])
+  @@index([lifecycleStatus])
+  @@index([deactivatesAt])
 }
 
 model SchoolSlugRedirect {

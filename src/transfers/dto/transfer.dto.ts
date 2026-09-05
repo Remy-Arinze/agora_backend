@@ -172,8 +172,8 @@ export class GenerateTacResponseDto {
   @ApiProperty()
   studentName: string;
 
-  @ApiProperty()
-  expiresAt: string;
+  @ApiProperty({ nullable: true, description: 'ISO expiry, or null if the TAC does not expire' })
+  expiresAt: string | null;
 
   @ApiProperty()
   message: string;

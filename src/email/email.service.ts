@@ -644,7 +644,7 @@ export class EmailService {
     tac: string,
     studentId: string,
     schoolName: string,
-    expiresAt: Date
+    expiresAt?: Date | null
   ): Promise<void> {
     const fromEmail =
       this.configService.get<string>('MAIL_FROM') ||
@@ -696,7 +696,7 @@ export class EmailService {
             </p>
             <ul style="color: #4b5563; padding-left: 20px;">
               <li>Share this TAC and your Student ID with the receiving school</li>
-              <li>This TAC will expire on <strong>${expiresAt.toLocaleString()}</strong></li>
+              <li>${expiresAt ? `This TAC will expire on <strong>${expiresAt.toLocaleString()}</strong>` : 'This TAC does not expire'}</li>
               <li>The TAC can only be used once</li>
               <li>Do not share this code with anyone other than the receiving school</li>
             </ul>
@@ -2037,5 +2037,58 @@ If you didn't request this code, please ignore this email or contact support imm
       html,
     });
     this.logger.log(`New registration notification sent to ${adminEmail} for school: ${schoolName} (${schoolId || 'no ID'})`);
+  }
+
+  async sendSchoolLifecycleEmail(
+    email: string,
+    schoolName: string,
+    kind: 'scheduled' | 'cancelled' | 'deactivated' | 'reactivated',
+    reason?: string,
+    deactivatesAt?: Date,
+  ): Promise<void> {
+    const copy = {
+      scheduled: {
+        subject: `${schoolName} is scheduled to close`,
+        title: 'School close scheduled',
+        body: `A close has been scheduled for <strong>${schoolName}</strong>. The school stays fully available until ${deactivatesAt ? deactivatesAt.toUTCString() : 'the scheduled date'} (7 days). You can cancel the close from settings before then.`,
+      },
+      cancelled: {
+        subject: `${schoolName} close was cancelled`,
+        title: 'School close cancelled',
+        body: `The scheduled close for <strong>${schoolName}</strong> was cancelled. The school remains active.`,
+      },
+      deactivated: {
+        subject: `${schoolName} has been deactivated`,
+        title: 'School deactivated',
+        body: `<strong>${schoolName}</strong> is now deactivated. Student records are kept. Teachers have read-only access. Students can transfer to another school with a transfer code. An authorised admin can reactivate from sign-in.`,
+      },
+      reactivated: {
+        subject: `${schoolName} has been reactivated`,
+        title: 'School reactivated',
+        body: `<strong>${schoolName}</strong> is active again. Students who already transferred stay at their new school.`,
+      },
+    }[kind];
+
+    const reasonHtml = reason
+      ? `<p><strong>Reason:</strong> ${reason.replace(/</g, '&lt;')}</p>`
+      : '';
+
+    await this.dispatchMail({
+      from: this.getFormattedFrom(),
+      replyTo: this.getReplyTo(),
+      to: email,
+      subject: copy.subject,
+      headers: this.getEmailHeaders(),
+      html: `
+        <!DOCTYPE html><html><body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          ${this.getEmailHeaderHtml(copy.title)}
+          <div style="background:#f9fafb;padding:24px;border-radius:0 0 8px 8px;">
+            <p>${copy.body}</p>
+            ${reasonHtml}
+            <p style="color:#9ca3af;font-size:12px;text-align:center;">© ${new Date().getFullYear()} Myschoolbud</p>
+          </div>
+        </body></html>
+      `,
+    });
   }
 }

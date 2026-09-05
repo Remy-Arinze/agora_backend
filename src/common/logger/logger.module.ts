@@ -17,6 +17,7 @@ import { JobEventsService } from './job-events.service';
       { name: 'curriculum-processing' },
       { name: 'curriculum-consolidation' },
       { name: 'retention-queue' },
+      { name: 'school-lifecycle-queue' },
     ),
   ],
   providers: [

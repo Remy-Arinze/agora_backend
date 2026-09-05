@@ -24,6 +24,8 @@ import {
   ApiConsumes,
 } from '@nestjs/swagger';
 import { SchoolAdminSchoolsService } from './school-admin-schools.service';
+import { SchoolLifecycleService } from '../lifecycle/school-lifecycle.service';
+import { ScheduleCloseDto } from '../dto/schedule-close.dto';
 import { SchoolDto } from '../dto/school.dto';
 import { SchoolDashboardDto, SchoolDashboardChartsDto } from '../dto/dashboard.dto';
 import { SchoolSetupProgressDto } from '../dto/setup-progress.dto';
@@ -46,7 +48,10 @@ import { PermissionResource, PermissionType } from '../dto/permission.dto';
 @ApiBearerAuth()
 @Throttle({ standard: {} })
 export class SchoolAdminSchoolsController {
-  constructor(private readonly schoolAdminSchoolsService: SchoolAdminSchoolsService) {}
+  constructor(
+    private readonly schoolAdminSchoolsService: SchoolAdminSchoolsService,
+    private readonly lifecycle: SchoolLifecycleService,
+  ) {}
 
   // Note: No @RequirePermission on this endpoint - it's needed for the permission system to bootstrap
   // Access is still controlled by JwtAuthGuard and SchoolDataAccessGuard
@@ -332,5 +337,35 @@ export class SchoolAdminSchoolsController {
     }
     const count = await this.schoolAdminSchoolsService.cleanupExpiredTokens();
     return ResponseDto.ok({ count }, `Cleaned up ${count} expired tokens`);
+  }
+
+  @Post('school/close')
+  @ApiOperation({ summary: 'Schedule a school close (owner or principal only, 7-day delay)' })
+  async scheduleClose(
+    @Request() req: any,
+    @Body() body: ScheduleCloseDto,
+  ): Promise<ResponseDto<SchoolDto>> {
+    await this.lifecycle.assertOwnerOrPrincipal(req.user.id, req.user.currentSchoolId);
+    const data = await this.lifecycle.scheduleClose(req.user.currentSchoolId, body.reason, {
+      userId: req.user.id,
+      role: 'SCHOOL_OWNER',
+    });
+    return ResponseDto.ok(data, 'School close scheduled. The school stays available for 7 days.');
+  }
+
+  @Post('school/close/cancel')
+  @ApiOperation({ summary: 'Cancel a scheduled school close (owner or principal only)' })
+  async cancelClose(@Request() req: any): Promise<ResponseDto<SchoolDto>> {
+    await this.lifecycle.assertOwnerOrPrincipal(req.user.id, req.user.currentSchoolId);
+    const data = await this.lifecycle.cancelClose(req.user.currentSchoolId);
+    return ResponseDto.ok(data, 'School close cancelled');
+  }
+
+  @Post('school/reactivate')
+  @ApiOperation({ summary: 'Reactivate a deactivated school (owner or principal only)' })
+  async reactivate(@Request() req: any): Promise<ResponseDto<SchoolDto>> {
+    await this.lifecycle.assertOwnerOrPrincipal(req.user.id, req.user.currentSchoolId);
+    const data = await this.lifecycle.reactivate(req.user.currentSchoolId);
+    return ResponseDto.ok(data, 'School reactivated');
   }
 }

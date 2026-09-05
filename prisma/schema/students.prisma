@@ -6,6 +6,11 @@ enum TransferStatus {
   COMPLETED
 }
 
+enum TransferKind {
+  NORMAL
+  SCHOOL_CLOSURE
+}
+
 enum AdmissionStatus {
   PENDING
   ACCEPTED
@@ -128,6 +133,7 @@ model Transfer {
   fromSchoolId String
   toSchoolId   String?
   status       TransferStatus @default(PENDING)
+  kind         TransferKind   @default(NORMAL)
 
   // TAC fields
   tac            String?   @unique // Transfer Access Code

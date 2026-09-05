@@ -14,6 +14,7 @@ import { generateSecurePasswordHash } from '../../common/utils/password.utils';
 import { isPrincipalRole } from '../dto/permission.dto';
 import { EmailService } from '../../email/email.service';
 import { PortalsService } from '../../portals/portals.service';
+import { SchoolLifecycleService } from '../lifecycle/school-lifecycle.service';
 
 /**
  * Service for super admin school management operations
@@ -32,6 +33,7 @@ export class SuperAdminSchoolsService {
     private readonly staffValidator: StaffValidatorService,
     private readonly emailService: EmailService,
     private readonly portals: PortalsService,
+    private readonly lifecycle: SchoolLifecycleService,
   ) { }
 
   /**
@@ -529,11 +531,24 @@ export class SuperAdminSchoolsService {
   }
 
   /**
-   * Delete a school
+   * Activate a school
    */
-  async deleteSchool(id: string): Promise<void> {
-    await this.schoolValidator.validateSchoolExists(id);
-    await this.schoolRepository.delete(id);
+  async activateSchool(schoolId: string): Promise<SchoolDto> {
+    return this.lifecycle.reactivate(schoolId);
+  }
+
+  /**
+   * Schedule a school close (7-day delay). Never hard-deletes.
+   */
+  async deactivateSchool(schoolId: string, reason: string, actorUserId: string): Promise<SchoolDto> {
+    return this.lifecycle.scheduleClose(schoolId, reason, {
+      userId: actorUserId,
+      role: 'SUPER_ADMIN',
+    });
+  }
+
+  async cancelClose(schoolId: string): Promise<SchoolDto> {
+    return this.lifecycle.cancelClose(schoolId);
   }
 
   /**
@@ -582,6 +597,7 @@ export class SuperAdminSchoolsService {
         data: {
           registrationStatus: 'VERIFIED',
           isActive: true,
+          lifecycleStatus: 'ACTIVE',
           verifiedAt: new Date(),
           verifiedBy: adminId,
         },
@@ -622,33 +638,6 @@ export class SuperAdminSchoolsService {
     return this.findOne(schoolId);
   }
 
-  /**
-   * Activate a school
-   */
-  async activateSchool(schoolId: string): Promise<SchoolDto> {
-    await this.schoolValidator.validateSchoolExists(schoolId);
-
-    const school = await this.prisma.school.update({
-      where: { id: schoolId },
-      data: { isActive: true },
-    });
-
-    return this.findOne(school.id);
-  }
-
-  /**
-   * Deactivate a school
-   */
-  async deactivateSchool(schoolId: string): Promise<SchoolDto> {
-    await this.schoolValidator.validateSchoolExists(schoolId);
-
-    const school = await this.prisma.school.update({
-      where: { id: schoolId },
-      data: { isActive: false },
-    });
-
-    return this.findOne(school.id);
-  }
 
   /**
    * Reject a pending school registration

@@ -100,9 +100,7 @@ export class TransfersService {
     });
 
     if (existingTransfer && existingTransfer.tac && !existingTransfer.tacUsedAt) {
-      // Return existing TAC if still valid
-      const expiresAt =
-        existingTransfer.tacExpiresAt || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+      const expiresAt = existingTransfer.tacExpiresAt;
 
       // Send email if student has email
       const studentEmail = student.user?.email;
@@ -134,8 +132,10 @@ export class TransfersService {
         tac: existingTransfer.tac,
         studentId: student.id,
         studentName: `${student.firstName} ${student.lastName}`,
-        expiresAt: expiresAt.toISOString(),
-        message: 'Share this TAC with the receiving school',
+        expiresAt: expiresAt ? expiresAt.toISOString() : null,
+        message: existingTransfer.kind === 'SCHOOL_CLOSURE'
+          ? 'This transfer code does not expire'
+          : 'Share this TAC with the receiving school',
       };
     }
 
@@ -249,6 +249,120 @@ export class TransfersService {
   }
 
   /**
+   * Issue never-expiring SCHOOL_CLOSURE TACs after deactivate.
+   * Failures are logged; they must never block school deactivation.
+   */
+  async issueClosureTacsForSchool(schoolId: string): Promise<void> {
+    const enrollments = await this.prisma.enrollment.findMany({
+      where: { schoolId, isActive: true },
+      include: {
+        student: { include: { user: { select: { email: true, firstName: true } } } },
+      },
+    });
+
+    for (const enrollment of enrollments) {
+      try {
+        await this.ensureClosureTac(enrollment.studentId, schoolId, enrollment);
+      } catch (err: any) {
+        this.logger.error(
+          `Closure TAC failed for student ${enrollment.studentId}: ${err?.message || err}`,
+        );
+      }
+    }
+  }
+
+  async ensureClosureTacForStudent(studentId: string, schoolId: string) {
+    const school = await this.prisma.school.findUnique({
+      where: { id: schoolId },
+      select: { lifecycleStatus: true, isActive: true },
+    });
+    if (!school || (school.lifecycleStatus !== 'DEACTIVATED' && school.isActive)) {
+      throw new BadRequestException('Closure transfer codes are only available after a school is deactivated.');
+    }
+
+    const enrollment = await this.prisma.enrollment.findFirst({
+      where: { studentId, schoolId, isActive: true },
+      include: {
+        student: { include: { user: { select: { email: true, firstName: true } } } },
+      },
+    });
+    if (!enrollment) {
+      throw new NotFoundException('No active enrollment at this school.');
+    }
+    return this.ensureClosureTac(studentId, schoolId, enrollment);
+  }
+
+  private async ensureClosureTac(
+    studentId: string,
+    schoolId: string,
+    enrollment: {
+      id: string;
+      student: { user: { email: string | null; firstName: string | null } | null } | null;
+    },
+  ) {
+    const existing = await this.prisma.transfer.findFirst({
+      where: {
+        studentId,
+        fromSchoolId: schoolId,
+        kind: 'SCHOOL_CLOSURE',
+        tacUsedAt: null,
+        status: { in: ['PENDING', 'APPROVED'] },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (existing) {
+      return {
+        id: existing.id,
+        tac: existing.tac,
+        status: existing.status,
+        kind: existing.kind,
+        createdAt: existing.createdAt,
+      };
+    }
+
+    const tac = await this.generateUniqueTac();
+    const school = await this.prisma.school.findUnique({
+      where: { id: schoolId },
+      select: { name: true },
+    });
+    const transfer = await this.prisma.transfer.create({
+      data: {
+        studentId,
+        fromSchoolId: schoolId,
+        kind: 'SCHOOL_CLOSURE',
+        tac,
+        tacGeneratedAt: new Date(),
+        tacExpiresAt: null,
+        status: 'PENDING',
+      },
+    });
+
+    const email = enrollment.student?.user?.email;
+    if (email && school) {
+      try {
+        await this.emailService.sendTransferInitiationEmail(
+          email,
+          enrollment.student?.user?.firstName || 'Student',
+          tac,
+          studentId,
+          school.name,
+          null,
+        );
+      } catch (err: any) {
+        this.logger.warn(`Closure TAC email failed for ${email}: ${err?.message || err}`);
+      }
+    }
+
+    return {
+      id: transfer.id,
+      tac: transfer.tac,
+      status: transfer.status,
+      kind: transfer.kind,
+      createdAt: transfer.createdAt,
+    };
+  }
+
+  /**
    * Validate TAC and initiate transfer
    */
   async initiateTransfer(schoolId: string, dto: InitiateTransferDto) {
@@ -283,11 +397,13 @@ export class TransfersService {
       );
     }
 
-    // Check if TAC has already been initiated by another school
+    // Another school initiated but did not complete — release so this school can take over.
     if (transfer.toSchoolId && transfer.toSchoolId !== schoolId) {
-      throw new ConflictException(
-        `This TAC has already been initiated by another school. Please request a new TAC from the source school.`
-      );
+      if (transfer.status === TransferStatus.COMPLETED) {
+        throw new ConflictException(
+          `This TAC has already been used by ${transfer.tacUsedBy ? 'another school' : 'a school'}.`
+        );
+      }
     }
 
     if (transfer.tacExpiresAt && transfer.tacExpiresAt < new Date()) {
@@ -617,24 +733,6 @@ export class TransfersService {
       },
     });
 
-    // Create new enrollment in destination school
-    const newEnrollment = await this.prisma.enrollment.create({
-      data: {
-        studentId: student.id,
-        schoolId,
-        classArmId: enrollmentClassArmId,
-        classId: enrollmentClassId || dto.classId || null,
-        classLevel: enrollmentClassLevel,
-        academicYear: dto.academicYear,
-        enrollmentDate: new Date(),
-        isActive: true,
-        termId: activeTerm?.id || null, // Link to active term if exists
-      },
-    });
-
-    // Copy all historical grades to new enrollment
-    // Note: We need a teacherId for grades. For transfers, we'll use the first available teacher
-    // or the school admin. In practice, you might want to map teachers or use a system teacher.
     const defaultTeacher = await this.prisma.teacher.findFirst({
       where: { schoolId },
       select: { id: true },
@@ -646,75 +744,91 @@ export class TransfersService {
       );
     }
 
-    for (const grade of studentData.grades) {
-      await this.prisma.grade.create({
+    const newEnrollment = await this.prisma.$transaction(async (tx) => {
+      const enrollment = await tx.enrollment.create({
         data: {
-          enrollmentId: newEnrollment.id,
-          teacherId: defaultTeacher.id, // Use default teacher for transferred grades
-          subject: grade.subject,
-          gradeType: grade.gradeType || 'CA', // Default to CA if not specified
-          assessmentName: grade.assessmentName,
-          sequence: grade.sequence,
-          assessmentDate: grade.assessmentDate ? new Date(grade.assessmentDate) : null,
-          score: grade.score,
-          maxScore: grade.maxScore,
-          term: grade.term,
-          academicYear: grade.academicYear,
-          remarks: grade.remarks,
-          signedAt: grade.signedAt ? new Date(grade.signedAt) : undefined,
-          createdAt: new Date(grade.createdAt), // Preserve original date
-          // Note: grade field doesn't exist in schema, so we don't store it
+          studentId: student.id,
+          schoolId,
+          classArmId: enrollmentClassArmId,
+          classId: enrollmentClassId || dto.classId || null,
+          classLevel: enrollmentClassLevel,
+          academicYear: dto.academicYear,
+          enrollmentDate: new Date(),
+          isActive: true,
+          termId: activeTerm?.id || null,
         },
       });
-    }
 
-    // Update student health records if provided
-    const hasHealthInfo =
-      studentData.student.bloodGroup ||
-      studentData.student.allergies ||
-      studentData.student.medications ||
-      studentData.student.emergencyContact ||
-      studentData.student.emergencyContactPhone ||
-      studentData.student.medicalNotes;
+      for (const grade of studentData.grades) {
+        await tx.grade.create({
+          data: {
+            enrollmentId: enrollment.id,
+            teacherId: defaultTeacher.id,
+            subject: grade.subject,
+            gradeType: grade.gradeType || 'CA',
+            assessmentName: grade.assessmentName,
+            sequence: grade.sequence,
+            assessmentDate: grade.assessmentDate ? new Date(grade.assessmentDate) : null,
+            score: grade.score,
+            maxScore: grade.maxScore,
+            term: grade.term,
+            academicYear: grade.academicYear,
+            remarks: grade.remarks,
+            signedAt: grade.signedAt ? new Date(grade.signedAt) : undefined,
+            createdAt: new Date(grade.createdAt),
+          },
+        });
+      }
 
-    if (hasHealthInfo) {
-      // Get current healthInfo or initialize empty object
-      const currentHealthInfo = (student.healthInfo as any) || {};
-      
-      // Merge new health info with existing
-      const updatedHealthInfo = {
-        ...currentHealthInfo,
-        ...(studentData.student.bloodGroup && { bloodGroup: studentData.student.bloodGroup }),
-        ...(studentData.student.allergies && { allergies: studentData.student.allergies }),
-        ...(studentData.student.medications && { medications: studentData.student.medications }),
-        ...(studentData.student.emergencyContact && { emergencyContact: studentData.student.emergencyContact }),
-        ...(studentData.student.emergencyContactPhone && { emergencyContactPhone: studentData.student.emergencyContactPhone }),
-        ...(studentData.student.medicalNotes && { medicalNotes: studentData.student.medicalNotes }),
-      };
+      const hasHealthInfo =
+        studentData.student.bloodGroup ||
+        studentData.student.allergies ||
+        studentData.student.medications ||
+        studentData.student.emergencyContact ||
+        studentData.student.emergencyContactPhone ||
+        studentData.student.medicalNotes;
 
-      await this.prisma.student.update({
-        where: { id: student.id },
+      if (hasHealthInfo) {
+        const currentHealthInfo = (student.healthInfo as any) || {};
+        const updatedHealthInfo = {
+          ...currentHealthInfo,
+          ...(studentData.student.bloodGroup && { bloodGroup: studentData.student.bloodGroup }),
+          ...(studentData.student.allergies && { allergies: studentData.student.allergies }),
+          ...(studentData.student.medications && { medications: studentData.student.medications }),
+          ...(studentData.student.emergencyContact && { emergencyContact: studentData.student.emergencyContact }),
+          ...(studentData.student.emergencyContactPhone && { emergencyContactPhone: studentData.student.emergencyContactPhone }),
+          ...(studentData.student.medicalNotes && { medicalNotes: studentData.student.medicalNotes }),
+        };
+        await tx.student.update({
+          where: { id: student.id },
+          data: { healthInfo: updatedHealthInfo },
+        });
+      }
+
+      await tx.enrollment.update({
+        where: { id: studentData.enrollment.id },
+        data: { isActive: false },
+      });
+
+      const completed = await tx.enrollment.findUnique({
+        where: { id: enrollment.id },
+        select: { id: true, isActive: true },
+      });
+      if (!completed?.isActive) {
+        throw new BadRequestException('Transfer could not create an active enrollment.');
+      }
+
+      await tx.transfer.update({
+        where: { id: transferId },
         data: {
-          healthInfo: updatedHealthInfo,
+          status: TransferStatus.COMPLETED,
+          completedAt: new Date(),
+          tacUsedAt: new Date(),
+          tacUsedBy: schoolId,
         },
       });
-    }
 
-    // Mark old enrollment as inactive
-    await this.prisma.enrollment.update({
-      where: { id: studentData.enrollment.id },
-      data: { isActive: false },
-    });
-
-    // Update transfer status and mark TAC as used (only after successful completion)
-    await this.prisma.transfer.update({
-      where: { id: transferId },
-      data: {
-        status: TransferStatus.COMPLETED,
-        completedAt: new Date(),
-        tacUsedAt: new Date(), // Mark TAC as used only after successful transfer
-        tacUsedBy: schoolId, // Record which school used the TAC
-      },
+      return enrollment;
     });
 
     return {
@@ -742,6 +856,22 @@ export class TransfersService {
 
     if (transfer.status === TransferStatus.COMPLETED) {
       throw new ConflictException('Cannot reject a completed transfer');
+    }
+
+    if (transfer.kind === 'SCHOOL_CLOSURE') {
+      await this.prisma.transfer.update({
+        where: { id: transferId },
+        data: {
+          status: TransferStatus.PENDING,
+          toSchoolId: null,
+          approvedAt: null,
+          rejectedAt: null,
+          rejectionReason: null,
+        },
+      });
+      return {
+        message: 'Incoming transfer released. The student can use this code at another school.',
+      };
     }
 
     await this.prisma.transfer.update({

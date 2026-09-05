@@ -116,6 +116,10 @@ export class AuthTokensDto {
     adminSchoolType?: string | null; // ✅ School type this admin is scoped to (e.g., 'PRIMARY', 'SECONDARY')
     slug?: string | null;
     portalUrl?: string | null;
+    lifecycleStatus?: string | null;
+    deactivatesAt?: string | null;
+    deactivationReason?: string | null;
+    deactivatedAt?: string | null;
   };
   transferCode?: string;
   portalUrl?: string;

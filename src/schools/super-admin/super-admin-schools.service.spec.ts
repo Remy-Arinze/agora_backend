@@ -12,6 +12,7 @@ import { AuthService } from '../../auth/auth.service';
 import { EmailService } from '../../email/email.service';
 import { TestUtils } from '../../common/test/test-utils';
 import { PortalsService } from '../../portals/portals.service';
+import { SchoolLifecycleService } from '../lifecycle/school-lifecycle.service';
 
 describe('SuperAdminSchoolsService', () => {
   let service: SuperAdminSchoolsService;
@@ -101,6 +102,15 @@ describe('SuperAdminSchoolsService', () => {
             assignSlugFromName: jest.fn().mockResolvedValue('test-school'),
             getSchoolFrontendUrl: jest.fn().mockResolvedValue('http://test-school.localhost:3000'),
             buildPortalUrl: jest.fn().mockReturnValue('http://test-school.localhost:3000'),
+          },
+        },
+        {
+          provide: SchoolLifecycleService,
+          useValue: {
+            scheduleClose: jest.fn(),
+            cancelClose: jest.fn(),
+            reactivate: jest.fn(),
+            assertOwnerOrPrincipal: jest.fn(),
           },
         },
       ],

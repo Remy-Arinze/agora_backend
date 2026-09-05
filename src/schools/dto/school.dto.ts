@@ -98,6 +98,18 @@ export class SchoolDto {
   @ApiProperty()
   isActive: boolean;
 
+  @ApiPropertyOptional({ description: 'ACTIVE | CLOSING | DEACTIVATED' })
+  lifecycleStatus?: string;
+
+  @ApiPropertyOptional()
+  deactivationReason?: string | null;
+
+  @ApiPropertyOptional()
+  deactivatesAt?: Date | null;
+
+  @ApiPropertyOptional()
+  deactivatedAt?: Date | null;
+
   @ApiProperty()
   hasPrimary: boolean;
 
