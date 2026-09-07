@@ -24,7 +24,7 @@ import { Request, Response } from 'express';
 import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
 import { LoginDto, VerifyOtpDto, VerifyLoginOtpDto, AuthTokensDto, LoginResponseDto } from './dto/login.dto';
-import { RequestPasswordResetDto, ResetPasswordDto } from './dto/password-reset.dto';
+import { RequestPasswordResetDto, ResetPasswordDto, ValidateResetTokenDto } from './dto/password-reset.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { RequestChangePasswordDto } from './dto/request-change-password.dto';
 import { ConfirmChangePasswordDto } from './dto/confirm-change-password.dto';
@@ -264,9 +264,9 @@ export class AuthController {
   @Post('request-password-reset')
   @HttpCode(HttpStatus.OK)
   @Throttle({ standard: { ttl: 60000, limit: 10 } })
-  @ApiOperation({ summary: 'Request password reset – sends OTP to email' })
+  @ApiOperation({ summary: 'Request password reset – sends a 10-minute OTP to the account email' })
   @ApiBody({ type: RequestPasswordResetDto })
-  @ApiResponse({ status: 200, description: 'If an account exists, a verification code has been sent' })
+  @ApiResponse({ status: 200, description: 'If an account exists and can reset, a verification code has been sent' })
   @ApiResponse({ status: 429, description: 'Too many requests.' })
   async requestPasswordReset(
     @Body() requestPasswordResetDto: RequestPasswordResetDto
@@ -274,8 +274,21 @@ export class AuthController {
     await this.authService.requestPasswordReset(requestPasswordResetDto);
     return ResponseDto.ok(
       undefined,
-      'If an account exists with this email, a verification code has been sent. Use it with your new password on the verify-reset-password step.'
+      'If an account exists with this email or Public ID, a verification code has been sent. Enter it with your new password to finish resetting.'
     );
+  }
+
+  @Post('validate-reset-token')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ standard: { ttl: 60000, limit: 20 } })
+  @ApiOperation({ summary: 'Check whether a password setup link token is still valid (does not consume it)' })
+  @ApiBody({ type: ValidateResetTokenDto })
+  @ApiResponse({ status: 200, description: 'Validity of the token' })
+  async validateResetToken(
+    @Body() dto: ValidateResetTokenDto,
+  ): Promise<ResponseDto<{ valid: boolean; reason?: 'invalid' | 'used' | 'expired' }>> {
+    const data = await this.authService.validateResetToken(dto.token);
+    return ResponseDto.ok(data, data.valid ? 'Token is valid' : 'Token is not valid');
   }
 
   @Post('verify-reset-password')

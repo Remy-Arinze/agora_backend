@@ -283,6 +283,7 @@ export class EmailService {
     schoolName?: string, // Legacy parameter for backward compatibility
     studentUid?: string, // For students: show UID in signup email (for their records)
     schoolId?: string | null,
+    purpose: 'setup' | 'reset' = 'setup',
   ): Promise<void> {
     const frontendUrl = await this.resolveFrontendUrl(schoolId);
     // Normalize URL - remove trailing slash if present to prevent double slashes
@@ -363,20 +364,15 @@ export class EmailService {
       `;
     }
 
-    // Determine if this is a password reset request or new account setup
-    // If schools array is provided (even with 1 school), it's a password reset request
-    // If schools is undefined but schoolName/publicId are provided, it's a new account setup
-    const isPasswordReset = schools !== undefined; // schools array provided = password reset
-    const isNewAccount = !isPasswordReset && (schoolName || publicId); // legacy params = new account
-
+    const isPasswordReset = purpose === 'reset';
 
     const mailOptions = {
       from: this.getFormattedFrom(),
       replyTo: this.getReplyTo(),
       to: email,
       subject: isPasswordReset
-        ? 'Reset Your Password - School Bud'
-        : 'Set Your Password - School Bud',
+        ? 'Reset your password – Myschoolbud'
+        : 'Set your password – Myschoolbud',
       headers: this.getEmailHeaders(),
       html: `
         <!DOCTYPE html>
@@ -393,12 +389,12 @@ export class EmailService {
           ? `
             <h2 style="color: #1f2937; margin-top: 0;">Password Reset Request</h2>
             <p>Hi ${name},</p>
-            <p>We received a request to reset your password for your <strong>${role}</strong> account on School Bud.</p>
+            <p>We received a request to reset your password for your <strong>${role}</strong> account on Myschoolbud.</p>
             <p>If you didn't make this request, you can safely ignore this email. Your password will remain unchanged.</p>
             `
           : `
             <h2 style="color: #1f2937; margin-top: 0;">Welcome, ${name}!</h2>
-            <p>Your account has been created${schoolName ? ` at <strong>${schoolName}</strong>` : ''} on School Bud as a <strong>${role}</strong>.</p>
+            <p>Your account has been created${schoolName ? ` at <strong>${schoolName}</strong>` : ''} on Myschoolbud as a <strong>${role}</strong>.</p>
             <p>To get started, please set your password using the link below.</p>
             `
         }
@@ -416,7 +412,7 @@ export class EmailService {
             <p style="color: #6b7280; font-size: 12px; word-break: break-all; background-color: #f3f4f6; padding: 10px; border-radius: 4px; font-family: monospace;">${resetUrl}</p>
             <div style="background-color: #fef3c7; border-left: 4px solid #f59e0b; padding: 12px; margin: 25px 0; border-radius: 4px;">
               <p style="margin: 0; color: #92400e; font-size: 13px;">
-                <strong>â±ï¸ Important:</strong> This link will expire in ${isPasswordReset ? '1 hour' : '24 hours'}. ${isPasswordReset ? 'For security reasons, password reset links expire quickly.' : 'Please set your password as soon as possible.'}
+                <strong>Important:</strong> This link expires in 24 hours and can be used until you successfully set a password. Opening it does not expire it.
               </p>
             </div>
             ${isPasswordReset
@@ -429,7 +425,7 @@ export class EmailService {
         }
             <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
             <p style="color: #9ca3af; font-size: 12px; text-align: center; margin: 0;">
-              © ${new Date().getFullYear()} School Bud. All rights reserved.<br><span style="color: #9ca3af;">— Bud, your school bud</span>
+              © ${new Date().getFullYear()} Myschoolbud. All rights reserved.
             </p>
           </div>
         </body>
@@ -482,7 +478,7 @@ export class EmailService {
       from: this.getFormattedFrom(),
       replyTo: this.getReplyTo(),
       to: email,
-      subject: 'Password Successfully Changed - School Bud',
+      subject: 'Your password was changed – Myschoolbud',
       headers: this.getEmailHeaders(),
       html: `
         <!DOCTYPE html>
@@ -516,7 +512,7 @@ export class EmailService {
             </p>
             <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
             <p style="color: #9ca3af; font-size: 12px; text-align: center; margin: 0;">
-              © ${new Date().getFullYear()} School Bud. All rights reserved.<br><span style="color: #9ca3af;">— Bud, your school bud</span>
+              © ${new Date().getFullYear()} Myschoolbud. All rights reserved.
             </p>
           </div>
         </body>
@@ -1766,7 +1762,7 @@ If you didn't request this code, please ignore this email or contact support imm
             <p style="margin: 0; color: #92400e; font-size: 14px;">If you didn't request this change, please secure your account and contact support.</p>
           </div>
           <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
-          <p style="color: #9ca3af; font-size: 12px; text-align: center;">© ${new Date().getFullYear()} School Bud.<br>— Bud, your school bud</p>
+          <p style="color: #9ca3af; font-size: 12px; text-align: center;">© ${new Date().getFullYear()} Myschoolbud.</p>
         </div>
       </body>
       </html>
@@ -1776,7 +1772,7 @@ If you didn't request this code, please ignore this email or contact support imm
       from: this.getFormattedFrom(),
       replyTo: this.getReplyTo(),
       to: email,
-      subject: 'Verify Password Change - School Bud',
+      subject: 'Verify your password change – Myschoolbud',
       headers: { ...this.getEmailHeaders(), 'X-Priority': '1' },
       html,
     });
@@ -1800,6 +1796,9 @@ If you didn't request this code, please ignore this email or contact support imm
       throw new Error('Email configuration error: No FROM address');
     }
 
+    const frontendUrl = this.getFrontendUrl().replace(/\/+$/, '');
+    const continueUrl = `${frontendUrl}/auth/forgot-password?identifier=${encodeURIComponent(email)}`;
+
     const html = `
       <!DOCTYPE html>
       <html>
@@ -1813,14 +1812,18 @@ If you didn't request this code, please ignore this email or contact support imm
         <div style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px;">
           <h2 style="color: #1f2937; margin-top: 0;">Reset Your Password</h2>
           <p>Hi ${name},</p>
-          <p>We received a request to reset your password. Use the verification code below to set a new password:</p>
+          <p>We received a request to reset your password. Enter this 6-digit code on the Myschoolbud reset page, then choose a new password:</p>
           <div style="background-color: #eff6ff; border: 2px solid #3b82f6; padding: 20px; margin: 30px 0; border-radius: 8px; text-align: center;">
             <p style="margin: 0; color: #1e40af; font-size: 32px; font-weight: 600; letter-spacing: 4px; font-family: 'Courier New', monospace;">${otpCode}</p>
           </div>
           <p style="color: #6b7280; font-size: 14px;">This code expires in 10 minutes. Do not share it with anyone.</p>
+          <div style="text-align: center; margin: 24px 0;">
+            <a href="${continueUrl}" style="background-color: #3b82f6; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: bold;">Enter code and set password</a>
+          </div>
+          <p style="color: #6b7280; font-size: 12px; word-break: break-all;">Or open: ${continueUrl}</p>
           <p style="color: #6b7280; font-size: 14px;">If you didn't request a password reset, you can safely ignore this email.</p>
           <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
-          <p style="color: #9ca3af; font-size: 12px; text-align: center;">© ${new Date().getFullYear()} School Bud.<br>— Bud, your school bud</p>
+          <p style="color: #9ca3af; font-size: 12px; text-align: center;">© ${new Date().getFullYear()} Myschoolbud.</p>
         </div>
       </body>
       </html>
@@ -1830,7 +1833,7 @@ If you didn't request this code, please ignore this email or contact support imm
       from: this.getFormattedFrom(),
       replyTo: this.getReplyTo(),
       to: email,
-      subject: 'Reset Your Password - School Bud',
+      subject: 'Your password reset code – Myschoolbud',
       headers: { ...this.getEmailHeaders(), 'X-Priority': '1' },
       html,
     });

@@ -919,23 +919,23 @@ export class AuthService {
   }
 
   /**
-   * Request password reset (forgot password). Sends OTP to email. User then calls verify-reset-password with email + OTP + new password.
+   * Request password reset (forgot password). Sends OTP to the account email.
+   * Always returns without revealing whether the account exists.
    */
   async requestPasswordReset(requestPasswordResetDto: RequestPasswordResetDto): Promise<void> {
-    const email = requestPasswordResetDto.email.trim().toLowerCase();
-    const user = await this.prisma.user.findUnique({
-      where: { email },
-      include: { schoolAdmins: true, teacherProfiles: true },
-    });
-    if (!user) return;
-    if (!user.email) return;
+    const identifier = (requestPasswordResetDto.emailOrPublicId || requestPasswordResetDto.email || '').trim();
+    if (!identifier) return;
 
-    // Check school registration status
+    const user = await this.findUserForPasswordReset(identifier);
+    if (!user?.email) return;
+
     let currentSchoolId: string | null = null;
-    if (user.role === 'SCHOOL_ADMIN' && user.schoolAdmins && user.schoolAdmins.length > 0) {
+    if (user.role === 'SCHOOL_ADMIN' && user.schoolAdmins?.length) {
       currentSchoolId = user.schoolAdmins[0].schoolId;
-    } else if (user.role === 'TEACHER' && user.teacherProfiles && user.teacherProfiles.length > 0) {
+    } else if (user.role === 'TEACHER' && user.teacherProfiles?.length) {
       currentSchoolId = user.teacherProfiles[0].schoolId;
+    } else if (user.role === 'STUDENT' && user.studentProfile?.enrollments?.length) {
+      currentSchoolId = user.studentProfile.enrollments[0].schoolId;
     }
 
     if (currentSchoolId) {
@@ -944,17 +944,90 @@ export class AuthService {
         select: { registrationStatus: true },
       });
       if (school && (school.registrationStatus === 'UNAPPROVED' || school.registrationStatus === 'REJECTED')) {
-        throw new BadRequestException('Password reset is not available for unapproved or rejected schools. Please contact support.');
+        this.logger.warn(`[FORGOT_PASSWORD] Skipping OTP for unapproved/rejected school ${currentSchoolId}`);
+        return;
       }
     }
 
     const name = this.getUserDisplayName(user);
-    const { otpCode } = await this.passwordOtpService.create('RESET_PASSWORD', user.email, undefined);
+    const { otpCode } = await this.passwordOtpService.create('RESET_PASSWORD', user.email, user.id);
     try {
       await this.emailService.sendPasswordResetOtpEmail(user.email, name, otpCode);
     } catch (error) {
       this.logger.error('Failed to send password reset OTP:', error instanceof Error ? error.stack : error);
     }
+  }
+
+  /**
+   * Look up a user by email or Public ID for forgot-password. Returns null if not found.
+   */
+  private async findUserForPasswordReset(identifier: string) {
+    const include = {
+      schoolAdmins: true,
+      teacherProfiles: true,
+      studentProfile: {
+        include: {
+          enrollments: {
+            where: { isActive: true },
+            orderBy: { enrollmentDate: 'desc' as const },
+            take: 1,
+          },
+        },
+      },
+      parentProfile: true,
+    };
+
+    if (identifier.includes('@')) {
+      return this.prisma.user.findFirst({
+        where: { email: identifier.toLowerCase() },
+        include,
+      });
+    }
+
+    const [admin, teacher, student] = await Promise.all([
+      this.prisma.schoolAdmin.findUnique({
+        where: { publicId: identifier },
+        select: { userId: true },
+      }),
+      this.prisma.teacher.findUnique({
+        where: { publicId: identifier },
+        select: { userId: true },
+      }),
+      this.prisma.student.findUnique({
+        where: { publicId: identifier },
+        select: { userId: true },
+      }),
+    ]);
+
+    const userId = admin?.userId || teacher?.userId || student?.userId;
+    if (!userId) return null;
+
+    return this.prisma.user.findUnique({
+      where: { id: userId },
+      include,
+    });
+  }
+
+  /**
+   * Check a setup/reset link token without consuming it.
+   */
+  async validateResetToken(token: string): Promise<{ valid: boolean; reason?: 'invalid' | 'used' | 'expired' }> {
+    if (!token?.trim()) return { valid: false, reason: 'invalid' };
+
+    const resetToken = await this.prisma.passwordResetToken.findUnique({
+      where: { token: token.trim() },
+      select: { usedAt: true, expiresAt: true },
+    });
+
+    if (!resetToken) return { valid: false, reason: 'invalid' };
+    if (resetToken.usedAt) return { valid: false, reason: 'used' };
+
+    const bufferMs = 2 * 60 * 1000;
+    if (new Date(resetToken.expiresAt) < new Date(Date.now() - bufferMs)) {
+      return { valid: false, reason: 'expired' };
+    }
+
+    return { valid: true };
   }
 
   /**
@@ -1123,12 +1196,15 @@ export class AuthService {
     studentUid?: string, // For students: show in signup email for their records
     schoolId?: string | null,
   ): Promise<void> {
-    // Generate reset token
+    await this.prisma.passwordResetToken.updateMany({
+      where: { userId, usedAt: null },
+      data: { usedAt: new Date() },
+    });
+
     const token = randomBytes(32).toString('hex');
     const expiresAt = new Date();
     expiresAt.setTime(expiresAt.getTime() + 24 * 60 * 60 * 1000); // 24 hours for new user activation
 
-    // Create reset token
     await this.prisma.passwordResetToken.create({
       data: {
         token,
@@ -1137,18 +1213,18 @@ export class AuthService {
       },
     });
 
-    // Send email with public ID and school name if provided
     try {
       await this.emailService.sendPasswordResetEmail(
         email,
         name,
         token,
         role,
-        undefined, // schools array (not used in this context)
-        publicId || undefined, // legacy publicId parameter
-        schoolName, // legacy schoolName parameter
-        studentUid, // for students: UID shown in signup email
+        undefined,
+        publicId || undefined,
+        schoolName,
+        studentUid,
         schoolId,
+        'setup',
       );
     } catch (error) {
       // Log error but don't fail the request
@@ -1318,7 +1394,12 @@ export class AuthService {
         name,
         token,
         role,
-        schools.length > 0 ? schools : undefined
+        schools.length > 0 ? schools : undefined,
+        undefined,
+        undefined,
+        undefined,
+        schoolId,
+        user.passwordHash ? 'reset' : 'setup',
       );
     } catch (error) {
       // Log error but don't fail the request
@@ -1375,8 +1456,16 @@ export class AuthService {
    * Verify reset-password OTP and set new password. Invalidates other sessions and sends confirmation.
    */
   async verifyResetPasswordWithOtp(dto: VerifyResetPasswordDto): Promise<void> {
+    const identifier = (dto.emailOrPublicId || dto.email || '').trim();
+    if (!identifier) {
+      throw new BadRequestException('Invalid or expired verification. Please request a new code.');
+    }
+    const user = await this.findUserForPasswordReset(identifier);
+    if (!user?.email) {
+      throw new BadRequestException('Invalid or expired verification. Please request a new code.');
+    }
     const { userId, email } = await this.passwordOtpService.verifyResetPassword(
-      dto.email.trim().toLowerCase(),
+      user.email,
       dto.otpCode,
     );
     await this.assertPasswordMeetsSchoolPolicy(userId, dto.newPassword.trim());
@@ -1452,10 +1541,21 @@ export class AuthService {
     }
   }
 
-  private getUserDisplayName(user: { email: string | null; schoolAdmins?: { firstName: string; lastName: string }[]; teacherProfiles?: { firstName: string; lastName: string }[] }): string {
+  private getUserDisplayName(user: {
+    email: string | null;
+    firstName?: string | null;
+    lastName?: string | null;
+    schoolAdmins?: { firstName: string; lastName: string }[];
+    teacherProfiles?: { firstName: string; lastName: string }[];
+    studentProfile?: { firstName: string; lastName: string } | null;
+    parentProfile?: { firstName: string; lastName: string } | null;
+  }): string {
     if (user.schoolAdmins?.length) return `${user.schoolAdmins[0].firstName} ${user.schoolAdmins[0].lastName}`;
     if (user.teacherProfiles?.length) return `${user.teacherProfiles[0].firstName} ${user.teacherProfiles[0].lastName}`;
-    return user.email ?? 'User';
+    if (user.studentProfile) return `${user.studentProfile.firstName} ${user.studentProfile.lastName}`;
+    if (user.parentProfile) return `${user.parentProfile.firstName} ${user.parentProfile.lastName}`;
+    if (user.firstName && user.lastName) return `${user.firstName} ${user.lastName}`;
+    return user.email ?? 'there';
   }
 
   /**

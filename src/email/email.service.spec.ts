@@ -70,7 +70,7 @@ describe('EmailService', () => {
       expect(mockTransporter.sendMail).toHaveBeenCalledWith(
         expect.objectContaining({
           to: email,
-          subject: expect.stringContaining('Set Your Password'),
+          subject: expect.stringContaining('Set your password'),
           html: expect.stringContaining(resetToken),
         })
       );
@@ -90,7 +90,7 @@ describe('EmailService', () => {
       expect(mockTransporter.sendMail).toHaveBeenCalledWith(
         expect.objectContaining({
           to: email,
-          subject: expect.stringContaining('Reset Your Password'),
+          subject: expect.stringContaining('Set your password'),
           html: expect.stringContaining(resetToken),
         })
       );

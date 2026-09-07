@@ -35,20 +35,30 @@ export class PasswordOtpService {
     const otpCode = this.generateOtpCode();
     const sessionId = this.generateSessionId();
     const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000);
+    const normalizedEmail = email.trim().toLowerCase();
+
+    await this.prisma.passwordOtp.updateMany({
+      where: {
+        email: normalizedEmail,
+        type,
+        usedAt: null,
+      },
+      data: { usedAt: new Date() },
+    });
 
     await this.prisma.passwordOtp.create({
       data: {
         sessionId,
         type,
         userId: userId ?? null,
-        email,
+        email: normalizedEmail,
         otpCode,
         expiresAt,
       },
     });
 
     this.logger.log(
-      `[PASSWORD_OTP] Created ${type} OTP for ${email}, sessionId: ${sessionId.substring(0, 8)}...`,
+      `[PASSWORD_OTP] Created ${type} OTP for ${normalizedEmail}, sessionId: ${sessionId.substring(0, 8)}...`,
     );
     return { sessionId, otpCode };
   }

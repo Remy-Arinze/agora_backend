@@ -248,7 +248,7 @@ describe('AuthService', () => {
       const mockUser = TestUtils.createMockUser();
       const mockToken = 'reset-token-123';
 
-      (prisma.user.findUnique as jest.Mock).mockResolvedValue(mockUser as any);
+      (prisma.user.findFirst as jest.Mock).mockResolvedValue(mockUser as any);
       (prisma.passwordResetToken.create as jest.Mock).mockResolvedValue({
         id: 'token-id',
         token: mockToken,
@@ -259,7 +259,7 @@ describe('AuthService', () => {
 
       await service.requestPasswordReset(mockRequestDto);
 
-      expect(prisma.user.findUnique).toHaveBeenCalledWith({
+      expect(prisma.user.findFirst).toHaveBeenCalledWith({
         where: { email: mockRequestDto.email },
         include: expect.any(Object),
       });
@@ -268,7 +268,7 @@ describe('AuthService', () => {
     });
 
     it('should not reveal if user does not exist', async () => {
-      (prisma.user.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.user.findFirst as jest.Mock).mockResolvedValue(null);
 
       await service.requestPasswordReset(mockRequestDto);
 
