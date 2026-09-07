@@ -314,6 +314,15 @@ enum SchemeOfWorkStatus {
   PUBLISHED
   FAILED
   CANCELLED
+  ARCHIVED
+}
+
+enum SchemeWeekDeliveryStatus {
+  PENDING
+  IN_PROGRESS
+  DELIVERED
+  SKIPPED
+  COMBINED
 }
 
 enum SchemeGenerationMode {
@@ -394,6 +403,8 @@ model AgoraCurriculum {
 model AgoraCurriculumTopic {
   id           String   @id @default(cuid())
   curriculumId String
+  /// Product identity that survives re-consolidate / version edits (e.g. MTH-JSS1-T2-W04-FRACTIONS)
+  stableKey    String
   term         Int      @default(1) // 1, 2, or 3 — which term this topic belongs to
   title        String
   description  String?
@@ -411,16 +422,51 @@ model AgoraCurriculumTopic {
   assessmentGuidance  String?
   duration            String?
 
-  order     Int      @default(0)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  order        Int       @default(0)
+  deprecatedAt DateTime? // Soft-delete; cloned school snapshots keep their copy
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
-  curriculum AgoraCurriculum @relation(fields: [curriculumId], references: [id], onDelete: Cascade)
+  curriculum     AgoraCurriculum         @relation(fields: [curriculumId], references: [id], onDelete: Cascade)
+  schemeWeekTopics SchemeOfWorkWeekTopic[]
 
+  @@unique([curriculumId, stableKey])
   @@unique([curriculumId, term, weekNumber])
   @@index([curriculumId])
+  @@index([stableKey])
   @@index([term])
   @@index([weekNumber])
+}
+
+model SchoolCurriculumTopic {
+  id                     String   @id @default(cuid())
+  schoolId               String
+  schoolCurriculumDocId  String?
+  subjectId              String
+  gradeLevel             String
+  termNumber             Int      @default(1)
+  stableKey              String
+  title                  String
+  description            String?
+  weekNumber             Int      @default(0)
+  subTopics              String[]
+  learningOutcomes       String[]
+  studentFriendlyOutcomes String[]
+  suggestedActivities    String[]
+  resources              String[]
+  assessmentType         String?
+  order                  Int      @default(0)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  school               School                  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  schoolCurriculumDoc  SchoolCurriculumDoc?    @relation(fields: [schoolCurriculumDocId], references: [id], onDelete: SetNull)
+  schemeWeekTopics     SchemeOfWorkWeekTopic[]
+
+  @@unique([schoolId, stableKey])
+  @@index([schoolId])
+  @@index([schoolCurriculumDocId])
+  @@index([subjectId])
 }
 
 model SchoolCurriculumDoc {
@@ -451,8 +497,9 @@ model SchoolCurriculumDoc {
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
 
-  school        School         @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  school        School                  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   schemesOfWork SchemeOfWork[]
+  topics        SchoolCurriculumTopic[]
 
   @@unique([schoolId, subjectId, gradeLevel, termNumber])
   @@index([schoolId])
@@ -490,6 +537,10 @@ model SchemeOfWork {
   approvedBy  String?
   publishedAt DateTime?
   publishedBy String?
+  archivedAt  DateTime?
+  archivedBy  String?
+  /// Set while live: "{schoolId}:{subjectId}:{termId}:{classLevelId}". Null when ARCHIVED so a replacement can take the slot.
+  activeKey   String?   @unique
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
@@ -500,6 +551,7 @@ model SchemeOfWork {
   parentScheme     SchemeOfWork?        @relation("SchemeOfWorkFork", fields: [parentSchemeId], references: [id], onDelete: SetNull)
   forks            SchemeOfWork[]       @relation("SchemeOfWorkFork")
   weeks            SchemeOfWorkWeek[]
+  assessments      Assessment[]
 
   @@index([schoolId])
   @@index([classLevelId])
@@ -553,12 +605,63 @@ model SchemeOfWorkWeek {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  schemeOfWork SchemeOfWork @relation(fields: [schemeOfWorkId], references: [id], onDelete: Cascade)
+  schemeOfWork SchemeOfWork              @relation(fields: [schemeOfWorkId], references: [id], onDelete: Cascade)
+  topics       SchemeOfWorkWeekTopic[]
+  deliveries   SchemeOfWorkWeekDelivery[]
 
   @@unique([schemeOfWorkId, weekNumber])
   @@index([schemeOfWorkId])
   @@index([weekNumber])
   @@index([isDelivered])
+}
+
+model SchemeOfWorkWeekTopic {
+  id                 String  @id @default(cuid())
+  schemeOfWorkWeekId String
+  agoraTopicId       String?
+  schoolTopicId      String?
+  stableKey          String
+  order              Int     @default(0)
+
+  week        SchemeOfWorkWeek      @relation(fields: [schemeOfWorkWeekId], references: [id], onDelete: Cascade)
+  agoraTopic  AgoraCurriculumTopic? @relation(fields: [agoraTopicId], references: [id], onDelete: SetNull)
+  schoolTopic SchoolCurriculumTopic? @relation(fields: [schoolTopicId], references: [id], onDelete: SetNull)
+
+  @@unique([schemeOfWorkWeekId, stableKey])
+  @@index([schemeOfWorkWeekId])
+  @@index([stableKey])
+  @@index([agoraTopicId])
+}
+
+model SchemeOfWorkWeekDelivery {
+  id         String                    @id @default(cuid())
+  weekId     String
+  classArmId String?
+  classId    String?
+  teacherId  String
+  status     SchemeWeekDeliveryStatus  @default(PENDING)
+
+  deliveredAt        DateTime?
+  deliveryNote       String?
+  catchUpReason      SchemeDeliveryCatchUpReason?
+  lessonNoteUrl      String?
+  lessonNotePublicId String?
+  lessonNoteFileName String?
+  deliveryConfidence Int      @default(0)
+  combinedIntoWeekId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  week     SchemeOfWorkWeek @relation(fields: [weekId], references: [id], onDelete: Cascade)
+  classArm ClassArm?        @relation(fields: [classArmId], references: [id], onDelete: Cascade)
+  teacher  Teacher          @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+
+  @@unique([weekId, classArmId])
+  @@index([weekId])
+  @@index([classArmId])
+  @@index([teacherId])
+  @@index([status])
 }
 
 /// Per-subject, calendar-dated exam slots (replaces weekly lesson grid during exam period).

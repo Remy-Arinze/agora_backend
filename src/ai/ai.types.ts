@@ -85,6 +85,17 @@ export interface GenerateQuestionsOptions {
   questionTypes?: ('multiple_choice' | 'true_false' | 'short_answer' | 'essay')[];
   difficulty?: 'easy' | 'medium' | 'hard' | 'mixed';
   curriculum?: string;
+  schemeOfWorkId?: string;
+  weekIds?: string[];
+  gradeType?: string;
+  weeks?: Array<{
+    weekNumber: number;
+    topic: string;
+    stableKey?: string;
+    subTopics?: string[];
+    learningOutcomes?: string[];
+    assessmentType?: string;
+  }>;
 }
 
 export interface ParseCurriculumResult {
@@ -143,6 +154,7 @@ export interface ConsolidateCurriculumResult {
 export interface SchemeOfWorkGenerationResult {
   weeks: {
     weekNumber: number;
+    stableKey?: string;
     topic: string;
     subTopics: string[];
     learningOutcomes: string[];

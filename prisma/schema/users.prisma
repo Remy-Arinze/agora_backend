@@ -44,6 +44,8 @@ model User {
   errors              ApplicationError[]
   aiUsageLogs         AiUsageLog[]
   chatConversations   ChatConversation[]
+  budSubscriptions    BudSubscription[]
+  budPayments         BudPayment[]
 
   @@index([email])
   @@index([phone])

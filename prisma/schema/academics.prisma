@@ -176,6 +176,7 @@ model ClassArm {
   curriculumProgress CurriculumItemProgress[]
   assessments        Assessment[]
   examTimetableSlots ExamTimetableSlot[]
+  schemeDeliveries   SchemeOfWorkWeekDelivery[]
 
   @@unique([classLevelId, name, academicYear])
   @@index([classLevelId])

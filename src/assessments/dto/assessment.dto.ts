@@ -46,6 +46,21 @@ class CreateQuestionDto {
     @Min(0)
     points: number;
 
+    @ApiPropertyOptional()
+    @IsOptional()
+    @IsString()
+    stableKey?: string;
+
+    @ApiPropertyOptional()
+    @IsOptional()
+    @IsString()
+    bloomLevel?: string;
+
+    @ApiPropertyOptional()
+    @IsOptional()
+    @IsString()
+    source?: string;
+
     @ApiProperty()
     @IsNumber()
     order: number;
@@ -160,6 +175,23 @@ export class CreateAssessmentDto {
     @ValidateNested({ each: true })
     @Type(() => CreateQuestionDto)
     questions: CreateQuestionDto[];
+
+    @ApiPropertyOptional()
+    @IsOptional()
+    @IsString()
+    schemeOfWorkId?: string;
+
+    @ApiPropertyOptional({ type: [String] })
+    @IsOptional()
+    @IsArray()
+    @IsString({ each: true })
+    weekIds?: string[];
+
+    @ApiPropertyOptional({ type: [String] })
+    @IsOptional()
+    @IsArray()
+    @IsString({ each: true })
+    stableKeys?: string[];
 }
 
 export class SubmitAnswerDto {

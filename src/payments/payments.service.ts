@@ -413,6 +413,10 @@ export class PaymentsService {
 
     // Handle initial payment success (standard transaction)
     if (event === 'charge.success') {
+      if (data?.metadata?.product === 'BUD' || String(data?.reference || '').startsWith('agora_bud_')) {
+        await this.handleBudPaymentSuccess(data.reference, data);
+        return;
+      }
       await this.handleSuccessfulPayment(data.reference, data);
       return;
     }
@@ -477,5 +481,106 @@ export class PaymentsService {
       default:
         this.logger.log(`Unhandled webhook event: ${event}`);
     }
+  }
+
+  async initializeBudPayment(options: {
+    email: string;
+    userId: string;
+    studentId: string;
+    planId: string;
+    schoolId?: string;
+    callbackUrl?: string;
+  }) {
+    if (!this.secretKey) throw new BadRequestException('Payment service is not configured');
+    const plan = await this.prisma.budPlan.findUnique({ where: { id: options.planId } });
+    if (!plan || !plan.isActive) throw new BadRequestException('Bud plan not found');
+    const reference = `agora_bud_${options.studentId.slice(-6)}_${Date.now()}`;
+    const payload = {
+      email: options.email,
+      amount: plan.priceKobo,
+      plan: plan.paystackPlanCode || undefined,
+      reference,
+      currency: 'NGN',
+      callback_url:
+        options.callbackUrl || `${this.configService.get('APP_URL')}/dashboard/student/bud/subscribe/callback`,
+      metadata: {
+        product: 'BUD',
+        userId: options.userId,
+        studentId: options.studentId,
+        planId: plan.id,
+        schoolId: options.schoolId,
+      },
+    };
+    const response = await fetch(`${this.baseUrl}/transaction/initialize`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${this.secretKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+    const data = await response.json();
+    if (!data.status) throw new BadRequestException(data.message || 'Failed to initialize Bud payment');
+    await this.prisma.budPayment.create({
+      data: {
+        userId: options.userId,
+        reference,
+        amountKobo: plan.priceKobo,
+        status: 'PENDING',
+        metadata: payload.metadata,
+      },
+    });
+    return { authorizationUrl: data.data.authorization_url, reference };
+  }
+
+  async verifyBudReference(reference: string): Promise<{ success: boolean; data?: any }> {
+    if (!this.secretKey) throw new BadRequestException('Payment service is not configured');
+    const response = await fetch(`${this.baseUrl}/transaction/verify/${reference}`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${this.secretKey}` },
+    });
+    const data = await response.json();
+    return { success: Boolean(data.status && data.data?.status === 'success'), data: data.data };
+  }
+
+  async handleBudPaymentSuccess(reference: string, paystackData?: any) {
+    const payment = await this.prisma.budPayment.findUnique({ where: { reference } });
+    if (!payment) {
+      this.logger.warn(`Bud payment not found: ${reference}`);
+      return;
+    }
+    if (payment.status === 'SUCCESS') return;
+    const meta = (payment.metadata || paystackData?.metadata || {}) as any;
+    const plan = await this.prisma.budPlan.findUnique({ where: { id: meta.planId } });
+    if (!plan) return;
+    const end = new Date();
+    if (plan.interval === 'TERMLY') end.setDate(end.getDate() + 120);
+    else if (plan.interval === 'TRIAL') end.setDate(end.getDate() + 7);
+    else end.setMonth(end.getMonth() + 1);
+
+    const sub = await this.prisma.budSubscription.upsert({
+      where: { studentId: meta.studentId },
+      create: {
+        userId: meta.userId,
+        studentId: meta.studentId,
+        schoolId: meta.schoolId || null,
+        planId: plan.id,
+        status: 'ACTIVE',
+        endDate: end,
+        aiCredits: plan.aiCredits,
+        aiCreditsUsed: 0,
+      },
+      update: {
+        planId: plan.id,
+        status: 'ACTIVE',
+        endDate: end,
+        aiCredits: plan.aiCredits,
+        aiCreditsUsed: 0,
+      },
+    });
+    await this.prisma.budPayment.update({
+      where: { id: payment.id },
+      data: { status: 'SUCCESS', subscriptionId: sub.id, paystackResponse: paystackData || {} },
+    });
   }
 }

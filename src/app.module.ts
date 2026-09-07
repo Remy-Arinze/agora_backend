@@ -48,6 +48,7 @@ import { SchoolSettingsModule } from './school-settings/school-settings.module';
 import { ExportModule } from './export/export.module';
 import { BackupModule } from './backup/backup.module';
 import { PortalsModule } from './portals/portals.module';
+import { BudModule } from './bud/bud.module';
 
 @Module({
   imports: [
@@ -118,6 +119,7 @@ import { PortalsModule } from './portals/portals.module';
     SchoolSettingsModule,
     ExportModule,
     BackupModule,
+    BudModule,
   ],
   controllers: [AppController],
   providers: [

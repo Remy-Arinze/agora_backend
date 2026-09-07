@@ -32,6 +32,7 @@ model Teacher {
   curriculumProgress CurriculumItemProgress[]
   facultiesAsDean    Faculty[]                @relation("FacultyDean") // Faculties where this teacher is dean
   assessments        Assessment[]
+  schemeDeliveries   SchemeOfWorkWeekDelivery[]
 
   @@unique([userId, schoolId]) // A user can only be a teacher once per school, but can be teacher in multiple schools
   @@index([userId])

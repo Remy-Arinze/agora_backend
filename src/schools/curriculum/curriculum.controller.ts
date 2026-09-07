@@ -248,6 +248,17 @@ export class CurriculumController {
     return ResponseDto.ok(data, 'Scheme of Work setup initiated');
   }
 
+  @Get('schemes/:schemeId/library-diff')
+  @RequirePermission(PermissionResource.CURRICULUM, PermissionType.READ)
+  @ApiOperation({ summary: 'Diff a live scheme against the current Bud library version' })
+  async libraryDiff(
+    @Param('schoolId') schoolId: string,
+    @Param('schemeId') schemeId: string,
+  ) {
+    const data = await this.curriculumService.diffSchemeLibrary(schoolId, schemeId);
+    return ResponseDto.ok(data, 'Library diff');
+  }
+
   @Post('generate-bulk')
   @RequirePermission(PermissionResource.CURRICULUM, PermissionType.WRITE)
   @ApiOperation({ summary: 'Bulk generate curricula from NERDC templates' })

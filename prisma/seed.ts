@@ -4,7 +4,11 @@ import * as dotenv from 'dotenv';
 import { PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
-import { getDevProMaxStudents, isFastSubscriptionMode } from '../src/subscriptions/subscription-dev.config';
+import {
+  getDevFreeMaxStudents,
+  getDevProMaxStudents,
+  isFastSubscriptionMode,
+} from '../src/subscriptions/subscription-dev.config';
 
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
@@ -173,12 +177,12 @@ async function main() {
       cta: 'Current Plan',
       accent: 'gray',
       isPublic: true,
-      maxStudents: 100,
+      maxStudents: getDevFreeMaxStudents(),
       maxTeachers: 10,
       maxAdmins: 2,
       aiCredits: 0,
       features: [
-        { text: '100 Students', included: true },
+        { text: `${getDevFreeMaxStudents()} Students`, included: true },
         { text: '10 Teachers', included: true },
         { text: '2 Admin Users', included: true },
         { text: 'Core Management Platform', included: true },
@@ -245,7 +249,10 @@ async function main() {
     });
 
     if (createdPlan) {
-      if (plan.tierCode === 'PRO' && createdPlan.maxStudents !== plan.maxStudents) {
+      if (
+        (plan.tierCode === 'PRO' || plan.tierCode === 'FREE') &&
+        createdPlan.maxStudents !== plan.maxStudents
+      ) {
         await prisma.subscriptionPlan.update({
           where: { id: createdPlan.id },
           data: { maxStudents: plan.maxStudents },
@@ -290,6 +297,44 @@ async function main() {
 
 
   console.log('\n🎉 Seeding completed!\n');
+  await prisma.budPlan.upsert({
+    where: { slug: 'bud-trial' },
+    update: {},
+    create: {
+      slug: 'bud-trial',
+      name: 'Bud Trial',
+      interval: 'TRIAL',
+      priceKobo: 0,
+      aiCredits: 200,
+      dailyCardLimit: 5,
+      chatEnabled: false,
+    },
+  });
+  await prisma.budPlan.upsert({
+    where: { slug: 'bud-monthly' },
+    update: {},
+    create: {
+      slug: 'bud-monthly',
+      name: 'Bud Monthly',
+      interval: 'MONTHLY',
+      priceKobo: 250000,
+      aiCredits: 8000,
+      chatEnabled: true,
+    },
+  });
+  await prisma.budPlan.upsert({
+    where: { slug: 'bud-termly' },
+    update: {},
+    create: {
+      slug: 'bud-termly',
+      name: 'Bud Termly',
+      interval: 'TERMLY',
+      priceKobo: 650000,
+      aiCredits: 25000,
+      chatEnabled: true,
+    },
+  });
+
   console.log('📋 Test Login Credentials:\n');
   console.log('Super Admin:');
   console.log(`  Email: ${SUPER_ADMIN_EMAIL}`);

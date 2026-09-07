@@ -74,6 +74,9 @@ model Assessment {
   teacherId           String
   termId              String? // The academic term this assessment belongs to
   academicYear        String?
+  schemeOfWorkId      String?
+  weekIds             String[] @default([])
+  stableKeys          String[] @default([])
   title               String
   description         String?
   type                String // "QUIZ", "EXAM", "ASSIGNMENT"
@@ -98,7 +101,8 @@ model Assessment {
   classArm ClassArm? @relation(fields: [classArmId], references: [id], onDelete: SetNull)
   subject  Subject   @relation(fields: [subjectId], references: [id], onDelete: Cascade)
   teacher  Teacher   @relation(fields: [teacherId], references: [id], onDelete: Cascade)
-  term     Term?     @relation(fields: [termId], references: [id], onDelete: SetNull)
+  term         Term?         @relation(fields: [termId], references: [id], onDelete: SetNull)
+  schemeOfWork SchemeOfWork? @relation(fields: [schemeOfWorkId], references: [id], onDelete: SetNull)
 
   questions   AssessmentQuestion[]
   submissions AssessmentSubmission[]
@@ -109,6 +113,7 @@ model Assessment {
   @@index([subjectId])
   @@index([teacherId])
   @@index([termId])
+  @@index([schemeOfWorkId])
   @@index([status])
 }
 
@@ -121,6 +126,9 @@ model AssessmentQuestion {
   correctAnswer String? // Expected correct answer
   points        Decimal  @default(1)
   order         Int      @default(0)
+  stableKey     String?
+  bloomLevel    String?
+  source        String   @default("TEACHER") // AI | TEACHER
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 

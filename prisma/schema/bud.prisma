@@ -1,0 +1,190 @@
+enum BudPlanInterval {
+  TRIAL
+  MONTHLY
+  TERMLY
+}
+
+enum BudSubscriptionStatus {
+  TRIAL
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+  EXPIRED
+}
+
+enum StudySessionType {
+  REVIEW
+  FLASHCARDS
+  QUIZ
+  TEACH_BACK
+  CHAT
+}
+
+model BudPlan {
+  id                     String          @id @default(cuid())
+  slug                   String          @unique
+  name                   String
+  interval               BudPlanInterval
+  priceKobo              Int             @default(0)
+  aiCredits              Int             @default(0) // -1 = unlimited
+  dailyCardLimit         Int? // null = unlimited
+  chatEnabled            Boolean         @default(true)
+  paystackPlanCode       String?
+  isActive               Boolean         @default(true)
+  customSchoolId         String?
+  createdAt              DateTime        @default(now())
+  updatedAt              DateTime        @updatedAt
+
+  customSchool   School?           @relation("BudPlanSchool", fields: [customSchoolId], references: [id], onDelete: SetNull)
+  subscriptions  BudSubscription[]
+
+  @@index([isActive])
+  @@index([interval])
+}
+
+model BudProfile {
+  id             String    @id @default(cuid())
+  studentId      String    @unique
+  companionName  String    @default("Bud")
+  streakCount    Int       @default(0)
+  lastStudyDate  DateTime?
+  reminderHour   Int       @default(16)
+  timezone       String    @default("Africa/Lagos")
+  onboardedAt    DateTime?
+  pendingRename  String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+}
+
+model BudSubscription {
+  id                 String                 @id @default(cuid())
+  userId             String
+  studentId          String                 @unique
+  schoolId           String?
+  planId             String
+  status             BudSubscriptionStatus  @default(TRIAL)
+  startDate          DateTime               @default(now())
+  endDate            DateTime?
+  aiCredits          Int                    @default(0)
+  aiCreditsUsed      Int                    @default(0)
+  paystackCustomerId String?
+  paystackCode       String?
+  isRecurring        Boolean                @default(false)
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  student  Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  school   School?  @relation(fields: [schoolId], references: [id], onDelete: SetNull)
+  plan     BudPlan  @relation(fields: [planId], references: [id])
+  payments BudPayment[]
+
+  @@index([userId])
+  @@index([schoolId])
+  @@index([status])
+}
+
+model BudPayment {
+  id               String   @id @default(cuid())
+  userId           String
+  subscriptionId   String?
+  reference        String   @unique
+  amountKobo       Int
+  status           String   @default("PENDING") // PENDING | SUCCESS | FAILED
+  metadata         Json?
+  paystackResponse Json?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscription BudSubscription?  @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([subscriptionId])
+}
+
+model StudyDeck {
+  id            String   @id @default(cuid())
+  studentId     String
+  subjectId     String?
+  schemeWeekId  String?
+  stableKey     String?
+  title         String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  student Student     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  cards   StudyCard[]
+
+  @@index([studentId])
+  @@index([stableKey])
+  @@index([schemeWeekId])
+}
+
+model StudyCard {
+  id        String   @id @default(cuid())
+  deckId    String
+  front     String
+  back      String
+  cloze     String?
+  stableKey String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  deck    StudyDeck     @relation(fields: [deckId], references: [id], onDelete: Cascade)
+  reviews CardReview[]
+
+  @@index([deckId])
+  @@index([stableKey])
+}
+
+model CardReview {
+  id         String   @id @default(cuid())
+  cardId     String
+  dueAt      DateTime @default(now())
+  stability  Float    @default(0)
+  difficulty Float    @default(0)
+  reps       Int      @default(0)
+  lapses     Int      @default(0)
+  lastRating Int?
+  lastReviewedAt DateTime?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  card StudyCard @relation(fields: [cardId], references: [id], onDelete: Cascade)
+
+  @@unique([cardId])
+  @@index([dueAt])
+}
+
+model StudySession {
+  id          String           @id @default(cuid())
+  studentId   String
+  type        StudySessionType
+  durationSec Int              @default(0)
+  stableKeys  String[]
+  metadata    Json?
+  createdAt   DateTime         @default(now())
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([studentId, createdAt])
+}
+
+model DailyReviewPlan {
+  id          String    @id @default(cuid())
+  studentId   String
+  date        DateTime
+  stableKeys  String[]
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, date])
+  @@index([studentId])
+  @@index([date])
+}

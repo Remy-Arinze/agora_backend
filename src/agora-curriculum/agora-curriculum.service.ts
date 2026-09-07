@@ -546,25 +546,41 @@ export class AgoraCurriculumService implements OnModuleInit {
   }
 
   async updateTopic(topicId: string, data: any) {
+    const { stableKey: _ignore, ...safe } = data || {};
     return this.prisma.agoraCurriculumTopic.update({
       where: { id: topicId },
-      data,
+      data: safe,
     });
   }
 
   async addTopic(curriculumId: string, data: any) {
-    // Get the highest week number to auto-increment
     const lastTopic = await this.prisma.agoraCurriculumTopic.findFirst({
       where: { curriculumId },
       orderBy: { weekNumber: 'desc' },
     });
 
     const nextWeek = (lastTopic?.weekNumber || 0) + 1;
+    const curriculum = await this.prisma.agoraCurriculum.findUnique({
+      where: { id: curriculumId },
+      include: { subject: true, topics: { select: { stableKey: true } } },
+    });
+    const { allocateUniqueStableKey, buildTopicStableKey } = await import(
+      '../common/utils/topic-stable-key.util'
+    );
+    const used = new Set((curriculum?.topics || []).map((t) => t.stableKey));
+    const preferred = buildTopicStableKey({
+      subjectCode: curriculum?.subject?.code || curriculum?.subject?.name,
+      gradeLevel: curriculum?.gradeLevel,
+      term: data.term || 1,
+      weekNumber: nextWeek,
+      title: data.title || data.topic || 'Untitled',
+    });
 
     return this.prisma.agoraCurriculumTopic.create({
       data: {
         ...data,
         curriculumId,
+        stableKey: allocateUniqueStableKey(preferred, used),
         weekNumber: nextWeek,
         order: nextWeek,
       },
@@ -572,8 +588,9 @@ export class AgoraCurriculumService implements OnModuleInit {
   }
 
   async deleteTopic(topicId: string) {
-    return this.prisma.agoraCurriculumTopic.delete({
+    return this.prisma.agoraCurriculumTopic.update({
       where: { id: topicId },
+      data: { deprecatedAt: new Date() },
     });
   }
 }

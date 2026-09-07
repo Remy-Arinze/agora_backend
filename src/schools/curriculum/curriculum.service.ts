@@ -5,6 +5,7 @@ import {
   ForbiddenException,
   ConflictException,
   Logger,
+  GoneException,
 } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { SchoolRepository } from '../domain/repositories/school.repository';
@@ -40,6 +41,8 @@ import { SetupSchemeOfWorkDto } from './dto/scheme-of-work.dto';
 import { SchemeGenerationMode, SchemeOfWorkStatus } from '@prisma/client';
 import { AiService } from '../../ai/ai.service';
 import { CloudinaryService } from '../../storage/cloudinary/cloudinary.service';
+import { SchemeSpineService } from './scheme-spine.service';
+import { schemeActiveKey } from '../../common/utils/topic-stable-key.util';
 
 @Injectable()
 export class CurriculumService {
@@ -59,6 +62,7 @@ export class CurriculumService {
     private readonly subscriptionBilling: SubscriptionBillingService,
     private readonly aiService: AiService,
     private readonly cloudinaryService: CloudinaryService,
+    private readonly schemeSpine: SchemeSpineService,
     @InjectQueue(CURRICULUM_PROCESSING_QUEUE) private readonly curriculumQueue: Queue
   ) { }
 
@@ -273,328 +277,33 @@ export class CurriculumService {
    * Create a new curriculum (manual creation)
    */
   async createCurriculum(
-    schoolId: string,
-    createDto: CreateCurriculumDto,
-    user: UserWithContext
+    _schoolId: string,
+    _createDto: CreateCurriculumDto,
+    _user: UserWithContext
   ): Promise<CurriculumDto> {
-    // Validate school exists
-    const school = await this.schoolRepository.findById(schoolId);
-    if (!school) {
-      throw new BadRequestException('School not found');
-    }
-
-    await this.assertStaffMayMutateCurriculum(schoolId, user);
-
-    // Resolve class/classLevel
-    const { classLevelId, targetClassId } = await this.resolveClassTarget(
-      schoolId,
-      createDto.classId
-    );
-
-    // Get teacher from context
-    const isAdmin = user.role === 'SCHOOL_ADMIN' || user.role === 'SUPER_ADMIN';
-    let teacher: any = null;
-
-    if (!isAdmin) {
-      teacher = await this.getTeacherFromContext(user, schoolId);
-    } else if (createDto.teacherId) {
-      teacher = await (this.prisma as any).teacher.findUnique({ where: { id: createDto.teacherId } });
-    }
-
-    // Validate subject is in timetable (for PRIMARY/SECONDARY)
-    if (classLevelId && createDto.subjectId) {
-      const timetableSubjects = await this.getSubjectsFromTimetable(
-        schoolId,
-        classLevelId,
-        createDto.termId
-      );
-      const subjectInTimetable = timetableSubjects.find((s) => s.subjectId === createDto.subjectId);
-      if (!subjectInTimetable) {
-        throw new BadRequestException(
-          'Subject is not in the timetable for this class. Please set up the timetable first.'
-        );
-      }
-    }
-
-    // Check for existing curriculum
-    await this.checkExistingCurriculum(
-      schoolId,
-      classLevelId,
-      targetClassId,
-      createDto.subjectId,
-      createDto.termId
-    );
-
-    // Get term info for academic year
-    const term = await (this.prisma as any).term.findUnique({
-      where: { id: createDto.termId },
-      include: { academicSession: true },
-    });
-
-    // Create curriculum
-    const curriculum = await (this.prisma as any).curriculum.create({
-      data: {
-        schoolId: school.id,
-        classLevelId,
-        classId: targetClassId,
-        subjectId: createDto.subjectId || null,
-        subject: createDto.subject || null,
-        termId: createDto.termId,
-        teacherId: teacher?.id || null,
-        academicYear:
-          createDto.academicYear ||
-          term?.academicSession?.name ||
-          new Date().getFullYear().toString(),
-        nerdcCurriculumId: createDto.nerdcCurriculumId || null,
-        isNerdcBased: !!createDto.nerdcCurriculumId,
-        status: isAdmin ? 'APPROVED' : 'DRAFT',
-        items: {
-          create: createDto.items.map((item, index) => ({
-            weekNumber: item.weekNumber || item.week || index + 1,
-            topic: item.topic,
-            subTopics: item.subTopics || [],
-            objectives: item.objectives,
-            activities: item.activities || [],
-            resources: item.resources,
-            assessment: item.assessment || null,
-            order: item.order ?? index,
-            status: 'PENDING',
-          })),
-        },
-      },
-      include: {
-        items: { orderBy: { order: 'asc' } },
-        teacher: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-          },
-        },
-        term: true,
-        subjectRef: true,
-      },
-    });
-
-    return this.mapToDto(curriculum);
+    throw new GoneException('Legacy curriculum create is retired. Use scheme of work setup.');
   }
 
   /**
    * Generate curriculum from NERDC template
    */
   async generateFromNerdc(
-    schoolId: string,
-    dto: GenerateCurriculumDto,
-    user: UserWithContext
+    _schoolId: string,
+    _dto: GenerateCurriculumDto,
+    _user: UserWithContext
   ): Promise<CurriculumDto> {
-    const school = await this.schoolRepository.findById(schoolId);
-    if (!school) {
-      throw new BadRequestException('School not found');
-    }
-
-    await this.assertStaffMayMutateCurriculum(schoolId, user);
-
-    // Get class level info
-    const classLevel = await (this.prisma as any).classLevel.findUnique({
-      where: { id: dto.classLevelId },
-    });
-
-    if (!classLevel || classLevel.schoolId !== school.id) {
-      throw new NotFoundException('Class level not found');
-    }
-
-    // Get subject info
-    const subject = await (this.prisma as any).subject.findUnique({
-      where: { id: dto.subjectId },
-    });
-
-    if (!subject || subject.schoolId !== school.id) {
-      throw new NotFoundException('Subject not found');
-    }
-
-    // Get term info
-    const term = await (this.prisma as any).term.findUnique({
-      where: { id: dto.termId },
-      include: { academicSession: true },
-    });
-
-    if (!term) {
-      throw new NotFoundException('Term not found');
-    }
-
-    // Get teacher
-    const isAdmin = user.role === 'SCHOOL_ADMIN' || user.role === 'SUPER_ADMIN';
-    let teacher: any = null;
-
-    if (!isAdmin) {
-      teacher = await this.getTeacherFromContext(user, schoolId);
-    } else if (dto.teacherId) {
-      teacher = await (this.prisma as any).teacher.findUnique({ where: { id: dto.teacherId } });
-    }
-
-    if (teacher && teacher.schoolId !== schoolId) {
-      throw new ForbiddenException('Teacher not found in this school');
-    }
-
-    // Validate subject is in timetable
-    const timetableSubjects = await this.getSubjectsFromTimetable(
-      schoolId,
-      dto.classLevelId,
-      dto.termId
-    );
-    const subjectInTimetable = timetableSubjects.find((s) => s.subjectId === dto.subjectId);
-    if (!subjectInTimetable) {
-      throw new BadRequestException(
-        'Subject is not in the timetable for this class. Please set up the timetable first.'
-      );
-    }
-
-    // Check for existing curriculum
-    await this.checkExistingCurriculum(schoolId, dto.classLevelId, null, dto.subjectId, dto.termId);
-
-    // Get NERDC template - try to match by subject name/code
-    const classLevelCode = getClassLevelCode(classLevel.name, classLevel.type);
-    let nerdcTemplate: any = null;
-
-    if (classLevelCode) {
-      // Try to find NERDC template by matching subject name or code
-      nerdcTemplate = await this.nerdcService.getCurriculumTemplate(
-        subject.name, // Try matching by subject name
-        classLevel.name,
-        classLevel.type,
-        term.number
-      );
-
-      // If not found by name, try by subject code if available
-      if (!nerdcTemplate && subject.code) {
-        nerdcTemplate = await this.nerdcService.getCurriculumTemplate(
-          subject.code,
-          classLevel.name,
-          classLevel.type,
-          term.number
-        );
-      }
-    }
-
-    // Build curriculum items from template or create skeleton
-    let nerdcCurriculumId: string | null = null;
-    let items: any[] = [];
-
-    if (nerdcTemplate && nerdcTemplate.weeks.length > 0) {
-      nerdcCurriculumId = nerdcTemplate.id;
-      items = nerdcTemplate.weeks.map((w: any, index: number) => ({
-        weekNumber: w.weekNumber,
-        topic: w.topic,
-        subTopics: w.subTopics || [],
-        objectives: w.objectives || [],
-        activities: w.activities || [],
-        resources: w.resources || [],
-        assessment: w.assessment || null,
-        order: index,
-        status: 'PENDING',
-      }));
-    } else {
-      items = Array.from({ length: 13 }, (_, i) => {
-        const isIntro = i === 0;
-        const isMidTerm = i === 6;
-        const isEndTerm = i === 12;
-
-        return {
-          weekNumber: i + 1,
-          topic: isIntro
-            ? `Introduction to ${subject.name}`
-            : isMidTerm
-              ? 'Mid-Term Review and Assessment'
-              : isEndTerm
-                ? 'Revision and End of Term Examination'
-                : `${subject.name} - Week ${i + 1} Topic`,
-          subTopics: isMidTerm || isEndTerm ? [] : [`Understanding core concepts for week ${i + 1}`, `Practical applications of week ${i + 1} topics`],
-          objectives: isIntro
-            ? [`Introduce key concepts of ${subject.name}`, 'Set expectations for the term']
-            : isMidTerm
-              ? ['Review topics covered in weeks 1-6', 'Assess student progress']
-              : isEndTerm
-                ? ['Review all topics covered this term', 'Prepare for final examination']
-                : ['Understand the core concepts presented this week', 'Apply knowledge to practical exercises'],
-          activities: isMidTerm
-            ? ['Revision exercises', 'Mid-Term Test']
-            : isEndTerm
-              ? ['Comprehensive revision', 'Final Examination']
-              : ['Class discussion', 'Group exercises', 'Take-home assignment'],
-          resources: isMidTerm || isEndTerm ? ['Assessment papers', 'Revision notes'] : ['Textbook chapter', 'Worksheet', 'Visual aids'],
-          assessment: isMidTerm ? 'Mid-term assessment' : isEndTerm ? 'End of term examination' : 'Weekly Quiz',
-          order: i,
-          status: 'PENDING',
-        };
-      });
-    }
-
-    // Create curriculum
-    const curriculum = await (this.prisma as any).curriculum.create({
-      data: {
-        schoolId: school.id,
-        classLevelId: dto.classLevelId,
-        subjectId: dto.subjectId,
-        termId: dto.termId,
-        teacherId: teacher?.id || null,
-        academicYear: term.academicSession?.name || new Date().getFullYear().toString(),
-        nerdcCurriculumId,
-        isNerdcBased: !!nerdcCurriculumId,
-        status: isAdmin ? 'APPROVED' : 'DRAFT',
-        items: {
-          create: items,
-        },
-      },
-      include: {
-        items: { orderBy: { order: 'asc' } },
-        teacher: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-          },
-        },
-        term: true,
-        subjectRef: true,
-      },
-    });
-
-    return this.mapToDto(curriculum);
+    throw new GoneException('Legacy NERDC generate is retired. Import a published Bud library curriculum.');
   }
 
   /**
    * Bulk generate curricula from NERDC for multiple subjects
    */
   async bulkGenerateFromNerdc(
-    schoolId: string,
-    dto: BulkGenerateCurriculumDto,
-    user: UserWithContext
+    _schoolId: string,
+    _dto: BulkGenerateCurriculumDto,
+    _user: UserWithContext
   ): Promise<{ created: string[]; failed: { subjectId: string; error: string }[] }> {
-    const created: string[] = [];
-    const failed: { subjectId: string; error: string }[] = [];
-
-    for (const subjectId of dto.subjectIds) {
-      try {
-        const curriculum = await this.generateFromNerdc(
-          schoolId,
-          {
-            classLevelId: dto.classLevelId,
-            subjectId,
-            termId: dto.termId,
-            teacherId: dto.teacherId,
-          },
-          user
-        );
-        created.push(curriculum.id);
-      } catch (error) {
-        failed.push({
-          subjectId,
-          error: error instanceof Error ? error.message : 'Unknown error',
-        });
-      }
-    }
-
-    return { created, failed };
+    throw new GoneException('Legacy bulk NERDC generate is retired. Use scheme of work setup.');
   }
 
   /**
@@ -614,6 +323,13 @@ export class CurriculumService {
     }
 
     const { classLevelId, targetClassId } = await this.resolveClassTarget(schoolId, classId);
+
+    const schemeFirst = await this.getCurriculumFromSchemeOfWork(schoolId, classId, {
+      subjectName: subject,
+      termId,
+      classLevelId,
+    });
+    if (schemeFirst) return schemeFirst;
 
     const where: any = {
       isActive: true,
@@ -683,12 +399,7 @@ export class CurriculumService {
       return this.mapToDto(curriculum);
     }
 
-    // Fallback: Agora / admin setup stores SchemeOfWork (not legacy Curriculum rows)
-    return this.getCurriculumFromSchemeOfWork(schoolId, classId, {
-      subjectName: subject,
-      termId,
-      classLevelId,
-    });
+    return null;
   }
 
   /**
@@ -731,7 +442,7 @@ export class CurriculumService {
     const scheme = await (this.prisma as any).schemeOfWork.findFirst({
       where: schemeWhere,
       include: {
-        weeks: { orderBy: { order: 'asc' } },
+        weeks: { orderBy: { order: 'asc' }, include: { topics: true, deliveries: true } },
         classLevel: true,
       },
       orderBy: { updatedAt: 'desc' },
@@ -748,7 +459,7 @@ export class CurriculumService {
             ...(options.termId ? { termId: options.termId } : {}),
           },
           include: {
-            weeks: { orderBy: { order: 'asc' } },
+            weeks: { orderBy: { order: 'asc' }, include: { topics: true, deliveries: true } },
             classLevel: true,
           },
           orderBy: { updatedAt: 'desc' },
@@ -763,7 +474,7 @@ export class CurriculumService {
               include: { academicSession: { select: { name: true } } },
             })
           : null;
-        return this.mapSchemeToCurriculumDto({ ...anyScheme, term }, subject);
+        return this.mapSchemeToCurriculumDto(this.overlayArmDelivery({ ...anyScheme, term }, classId), subject);
       }
       return null;
     }
@@ -778,7 +489,22 @@ export class CurriculumService {
         })
       : null;
 
-    return this.mapSchemeToCurriculumDto({ ...scheme, term }, subject);
+    return this.mapSchemeToCurriculumDto(this.overlayArmDelivery({ ...scheme, term }, classId), subject);
+  }
+
+  private overlayArmDelivery(scheme: any, classId: string) {
+    const weeks = (scheme.weeks || []).map((w: any) => {
+      const arm = (w.deliveries || []).find((d: any) => d.classArmId === classId);
+      if (!arm) return { ...w, weekStatus: w.isDelivered ? 'DELIVERED' : 'PENDING' };
+      return {
+        ...w,
+        isDelivered: arm.status === 'DELIVERED',
+        weekStatus: arm.status,
+        deliveryNote: arm.deliveryNote ?? w.deliveryNote,
+        deliveredAt: arm.deliveredAt ?? w.deliveredAt,
+      };
+    });
+    return { ...scheme, weeks };
   }
 
   /**
@@ -1550,9 +1276,9 @@ export class CurriculumService {
     const { classLevelId, classId, subjectId, mode } = dto;
 
     // Get all terms for the current session
-    const session = await (this.prisma as any).session.findFirst({
-      where: { schoolId, isCurrent: true },
-      include: { terms: { orderBy: { number: 'asc' } } }
+    const session = await this.prisma.academicSession.findFirst({
+      where: { schoolId, status: 'ACTIVE' },
+      include: { terms: { orderBy: { number: 'asc' } } },
     });
 
     if (!session || !session.terms || session.terms.length === 0) {
@@ -1592,12 +1318,20 @@ export class CurriculumService {
       for (const term of session.terms) {
         // Check for existing
         const existing = await (tx as any).schemeOfWork.findFirst({
-          where: { schoolId, subjectId, termId: term.id, classLevelId }
+          where: { schoolId, subjectId, termId: term.id, classLevelId, status: { not: 'ARCHIVED' } }
         });
 
-        if (existing) {
+        if (existing && existing.status !== 'ARCHIVED') {
           if (dto.forceOverwrite) {
-            await (tx as any).schemeOfWork.delete({ where: { id: existing.id } });
+            await (tx as any).schemeOfWork.update({
+              where: { id: existing.id },
+              data: {
+                status: 'ARCHIVED',
+                archivedAt: new Date(),
+                archivedBy: user.id,
+                activeKey: null,
+              },
+            });
           } else {
             throw new ConflictException(`A Scheme of Work exists for Term ${term.number}. Pass forceOverwrite to replace.`);
           }
@@ -1612,6 +1346,7 @@ export class CurriculumService {
             classId: classId || null,
             generationMode: mode,
             schoolCurriculumId: docIds[0], // primary tracking ID
+            activeKey: schemeActiveKey(schoolId, subjectId, term.id, classLevelId),
             status: 'QUEUED',
             parentSchemeId: batchGroupId // internal tag to link them
           }
@@ -1642,94 +1377,29 @@ export class CurriculumService {
     }
     const { classLevelId, classId, subjectId, termId, mode } = dto;
 
-    // Check for existing scheme
-    const existing = await (this.prisma as any).schemeOfWork.findFirst({
-      where: {
-        schoolId,
-        subjectId,
-        termId,
-        classLevelId,
-      },
-    });
-
-    if (existing) {
-      if (dto.forceOverwrite) {
-        await (this.prisma as any).schemeOfWork.delete({
-          where: { id: existing.id }
-        });
-      } else {
-        throw new ConflictException('A Scheme of Work already exists for this subject and term. Pass forceOverwrite to replace it.');
-      }
-    }
-
-    // PATH A: Agora Curriculum (Free)
     if (mode === SchemeGenerationMode.AGORA_ONLY) {
       if (!dto.agoraCurriculumId) {
         throw new BadRequestException('Bud library Curriculum ID is required for Bud library-only mode.');
       }
-
-      const agoraCurriculum = await (this.prisma as any).agoraCurriculum.findUnique({
-        where: { id: dto.agoraCurriculumId },
-        include: { topics: { orderBy: { weekNumber: 'asc' } } },
+      return this.schemeSpine.snapshotAgoraOnly({
+        schoolId,
+        subjectId,
+        termId,
+        classLevelId,
+        classId,
+        agoraCurriculumId: dto.agoraCurriculumId,
+        userId: user.id,
+        forceOverwrite: dto.forceOverwrite,
       });
+    }
 
-      if (!agoraCurriculum) {
-        throw new NotFoundException('Bud library Curriculum not found.');
+    const existing = await this.schemeSpine.findLiveScheme(schoolId, subjectId, termId, classLevelId);
+    if (existing) {
+      if (dto.forceOverwrite) {
+        await this.schemeSpine.archiveLiveScheme(existing.id, user.id);
+      } else {
+        throw new ConflictException('A Scheme of Work already exists for this subject and term. Pass forceOverwrite to replace it.');
       }
-
-      // 1. Get the current term number (1, 2, or 3)
-      const term = await (this.prisma as any).term.findUnique({
-        where: { id: termId },
-        select: { number: true }
-      });
-
-      if (!term) {
-        throw new BadRequestException('Invalid term sequence.');
-      }
-
-      const targetTermNumber = term.number;
-
-      // 2. Filter topics for this specific term
-      const termTopics = agoraCurriculum.topics.filter((t: any) => t.term === targetTermNumber);
-
-      if (termTopics.length === 0) {
-        // Fallback or warning: If no topics found for this term, we might be using a legacy 1-term curriculum
-        // In that case, we decide whether to use ALL topics or throw error.
-        // For now, if it's term 1 and exactly 1-14 weeks exist without term field set (or all default to 1), it works.
-      }
-
-      return await this.prisma.$transaction(async (tx) => {
-        const scheme = await (tx as any).schemeOfWork.create({
-          data: {
-            schoolId,
-            classLevelId,
-            classId: classId || null,
-            subjectId,
-            termId,
-            generationMode: mode,
-            agoraCurriculumId: agoraCurriculum.id,
-            status: SchemeOfWorkStatus.PUBLISHED,
-          },
-        });
-
-        // 3. Clone ONLY the term-relevant topics into weeks
-        await (tx as any).schemeOfWorkWeek.createMany({
-          data: termTopics.map((t: any) => ({
-            schemeOfWorkId: scheme.id,
-            weekNumber: t.weekNumber,
-            topic: t.title,
-            subTopics: t.subTopics || [],
-            learningOutcomes: t.learningOutcomes || [],
-            studentFriendlyOutcomes: t.studentFriendlyOutcomes || [],
-            suggestedActivities: t.suggestedActivities || [],
-            resources: t.resources || [],
-            assessmentType: t.assessmentType,
-            order: t.order || t.weekNumber,
-          })),
-        });
-
-        return scheme;
-      });
     }
 
     // PATH B: Custom School Curriculum (Paid)
@@ -1765,6 +1435,9 @@ export class CurriculumService {
           generationMode: mode,
           agoraCurriculumId: dto.agoraCurriculumId || null,
           schoolCurriculumId: dto.schoolCurriculumDocId || dto.schoolCurriculumDocIds?.[0] || null,
+          mergeWeightAgora: dto.mergeWeightAgora ?? (mode === SchemeGenerationMode.MERGED ? 70 : null),
+          mergeWeightSchool: dto.mergeWeightSchool ?? (mode === SchemeGenerationMode.MERGED ? 30 : null),
+          activeKey: schemeActiveKey(schoolId, subjectId, termId, classLevelId),
           status: 'QUEUED',
         };
 
@@ -1790,6 +1463,10 @@ export class CurriculumService {
     throw new BadRequestException('Invalid generation mode.');
   }
 
+  async diffSchemeLibrary(schoolId: string, schemeId: string) {
+    return this.schemeSpine.libraryDiff(schoolId, schemeId);
+  }
+
   /**
    * Get all schemes of work for a class and term
    */
@@ -1801,6 +1478,7 @@ export class CurriculumService {
         schoolId,
         classLevelId,
         termId,
+        status: { not: 'ARCHIVED' },
       },
       include: {
         weeks: {
@@ -1839,7 +1517,7 @@ export class CurriculumService {
     const scheme = await (this.prisma as any).schemeOfWork.findFirst({
       where: { id: schemeId, schoolId },
       include: {
-        weeks: { orderBy: { order: 'asc' } },
+        weeks: { orderBy: { order: 'asc' }, include: { topics: true } },
         classLevel: true,
         school: true,
       }
@@ -1910,9 +1588,7 @@ export class CurriculumService {
 
     await this.assertStaffMayMutateCurriculum(schoolId, user);
 
-    await (this.prisma as any).schemeOfWork.delete({
-      where: { id: schemeId }
-    });
+    await this.schemeSpine.archiveLiveScheme(schemeId, user.id);
   }
 
   private mapSchemeToCurriculumDto(
@@ -1969,8 +1645,15 @@ export class CurriculumService {
         activities: w.suggestedActivities || [],
         resources: w.resources || [],
         assessment: w.assessmentType || null,
-        status: w.isDelivered ? 'COMPLETED' : 'PENDING',
+        status: (w.weekStatus || (w.isDelivered ? 'DELIVERED' : 'PENDING')) === 'SKIPPED'
+          ? 'SKIPPED'
+          : w.isDelivered
+            ? 'COMPLETED'
+            : 'PENDING',
+        weekStatus: w.weekStatus || (w.isDelivered ? 'DELIVERED' : 'PENDING'),
         order: w.order,
+        stableKeys: (w.topics || []).map((t: any) => t.stableKey),
+        stableKey: w.topics?.[0]?.stableKey,
       })),
       totalWeeks,
       completedWeeks,

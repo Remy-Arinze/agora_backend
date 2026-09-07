@@ -10,6 +10,7 @@
  *   DEV_SUBSCRIPTION_PERIOD_DAYS=3    # or set days directly
  *   DEV_SUBSCRIPTION_GRACE_DAYS=3     # waiting window after expiry (any day count)
  *   DEV_PRO_MAX_STUDENTS=5            # Pro student cap (easy to fill)
+ *   DEV_FREE_MAX_STUDENTS=2           # Free cap after downgrade (must be below Pro to test lock/pick)
  *
  * Paid-period precedence: PERIOD shorthand, then PERIOD_WEEKS, then PERIOD_DAYS (default 1 day).
  * Grace is always an independent day count and does not follow the paid period.
@@ -20,9 +21,11 @@ import {
 } from './subscription-billing.constants';
 
 export const PRODUCTION_PRO_MAX_STUDENTS = 800;
+export const PRODUCTION_FREE_MAX_STUDENTS = 100;
 export const DEFAULT_DEV_PERIOD_DAYS = 1;
 export const DEFAULT_DEV_GRACE_DAYS = 1;
 export const DEFAULT_DEV_PRO_MAX_STUDENTS = 5;
+export const DEFAULT_DEV_FREE_MAX_STUDENTS = 2;
 
 function envFlag(name: string): boolean {
   const v = process.env[name]?.trim().toLowerCase();
@@ -96,12 +99,21 @@ export function getDevProMaxStudents(): number {
   return envPositiveInt('DEV_PRO_MAX_STUDENTS', DEFAULT_DEV_PRO_MAX_STUDENTS);
 }
 
-/** Apply the short Pro student cap when fast mode is on. Other tiers are unchanged. */
+export function getDevFreeMaxStudents(): number {
+  if (!isFastSubscriptionMode()) return PRODUCTION_FREE_MAX_STUDENTS;
+  return envPositiveInt('DEV_FREE_MAX_STUDENTS', DEFAULT_DEV_FREE_MAX_STUDENTS);
+}
+
+function getDevStudentCapForTier(tier: string | undefined): number | undefined {
+  if (!isFastSubscriptionMode()) return undefined;
+  if (tier === 'PRO') return getDevProMaxStudents();
+  if (tier === 'FREE') return getDevFreeMaxStudents();
+  return undefined;
+}
+
+/** Overlay the short Pro / Free student caps when fast mode is on. Other tiers are unchanged. */
 export function applyDevStudentCap(tier: string | undefined, maxStudents: number): number {
-  if (tier === 'PRO' && isFastSubscriptionMode()) {
-    return getDevProMaxStudents();
-  }
-  return maxStudents;
+  return getDevStudentCapForTier(tier) ?? maxStudents;
 }
 
 /**
@@ -125,8 +137,8 @@ export function addPaidPeriod(base: Date, isYearly: boolean): Date {
 export function applyDevPlanOverrides<T extends { tierCode: string; maxStudents: number; features?: unknown }>(
   plan: T,
 ): T {
-  if (!isFastSubscriptionMode() || plan.tierCode !== 'PRO') return plan;
-  const maxStudents = getDevProMaxStudents();
+  const maxStudents = getDevStudentCapForTier(plan.tierCode);
+  if (maxStudents === undefined) return plan;
   const features = Array.isArray(plan.features)
     ? plan.features.map((feature: { text?: string }) => {
         if (typeof feature?.text === 'string' && /^\d[\d,]*\s+students$/i.test(feature.text.trim())) {
@@ -143,7 +155,8 @@ export function describeFastSubscriptionMode(): string {
   const weeks = periodDays % 7 === 0 ? ` (${periodDays / 7}w)` : '';
   return (
     `DEV_FAST_SUBSCRIPTION is ON: paid period=${periodDays}d${weeks}, ` +
-    `grace=${getSubscriptionGraceDays()}d, Pro max students=${getDevProMaxStudents()}. ` +
+    `grace=${getSubscriptionGraceDays()}d, Pro max students=${getDevProMaxStudents()}, ` +
+    `Free max students=${getDevFreeMaxStudents()}. ` +
     'Ignored when NODE_ENV=production.'
   );
 }

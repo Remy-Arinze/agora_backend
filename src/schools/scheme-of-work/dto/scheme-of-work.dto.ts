@@ -123,4 +123,19 @@ export class MarkWeekDeliveredDto {
   @IsOptional()
   @IsEnum(SchemeDeliveryCatchUpReason)
   catchUpReason?: SchemeDeliveryCatchUpReason;
+
+  @ApiPropertyOptional({ description: 'Class arm this delivery applies to' })
+  @IsOptional()
+  @IsString()
+  classArmId?: string;
+
+  @ApiPropertyOptional({ description: 'PENDING | IN_PROGRESS | DELIVERED | SKIPPED | COMBINED' })
+  @IsOptional()
+  @IsString()
+  weekStatus?: string;
+
+  @ApiPropertyOptional({ description: 'When combining, the destination week id' })
+  @IsOptional()
+  @IsString()
+  combinedIntoWeekId?: string;
 }

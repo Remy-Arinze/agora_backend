@@ -308,6 +308,53 @@ Admitted: ${enr.createdAt.toLocaleDateString()}`.trim();
 
     if (!classData) return;
 
+    const schemes = await this.prisma.schemeOfWork.findMany({
+      where: {
+        schoolId: classData.schoolId,
+        status: { in: ['PUBLISHED', 'APPROVED'] },
+      },
+      include: {
+        weeks: {
+          orderBy: { weekNumber: 'asc' },
+          include: { topics: true },
+        },
+      },
+    });
+
+    for (const scheme of schemes) {
+      const subject = await this.prisma.subject.findUnique({
+        where: { id: scheme.subjectId },
+        select: { name: true },
+      });
+      const subjectName = subject?.name || 'Subject';
+      const chunked = this.chunkArray(scheme.weeks, 5);
+      for (const [index, weeks] of chunked.entries()) {
+        const text = weeks
+          .map(
+            (w) =>
+              `Week ${w.weekNumber}: ${w.topic}. Keys: ${w.topics.map((t) => t.stableKey).join(', ')}. Outcomes: ${w.learningOutcomes.join(', ')}`,
+          )
+          .join('\n');
+        await this.upsertChunk(
+          classData.schoolId,
+          `class_sow_${classData.id}_${scheme.id}_${index}`,
+          `School: ${classData.school.name}\nClass: ${classData.name}\nSubject: ${subjectName}\nScheme of Work (Part ${index + 1}):\n${text}`.trim(),
+          {
+            type: 'scheme_of_work',
+            classId: classData.id,
+            schemeId: scheme.id,
+            subject: subjectName,
+            timestamp: new Date().toISOString(),
+            permissions: {
+              roles: ['SUPER_ADMIN', 'SCHOOL_ADMIN', 'TEACHER', 'STUDENT'],
+              isPublic: false,
+              allowedClassId: classData.id,
+            },
+          },
+        );
+      }
+    }
+
     for (const curriculum of classData.curricula) {
       const subjectName = curriculum.subjectRef?.name || curriculum.subject || 'N/A';
       const chunkedItems = this.chunkArray(curriculum.items, 5);

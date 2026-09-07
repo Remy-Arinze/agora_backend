@@ -1,6 +1,22 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
-import { AgoraCurriculumSourceStatus, SchemeOfWorkStatus } from '@prisma/client';
+import { AgoraCurriculumSourceStatus, SchoolCurriculumDocStatus, SchemeOfWorkStatus } from '@prisma/client';
 import { DocumentExtractor } from '../common/utils/document-extractor';
+import {
+  allocateUniqueStableKey,
+  buildTopicStableKey,
+} from '../common/utils/topic-stable-key.util';
+import {
+  DEFAULT_WORKING_DAYS,
+  WorkingDay,
+  buildHalfTermRange,
+  holidayRangesFromEvents,
+} from '../common/utils/instructional-day.util';
+import {
+  PackableTopic,
+  buildInstructionalWeekRanges,
+  flattenPackedWeekTopic,
+  packTopicsOntoCalendar,
+} from '../schools/curriculum/scheme-calendar-packer.util';
 import { MetricsService } from '../common/metrics/metrics.service';
 import { PrismaService } from '../database/prisma.service';
 import {
@@ -120,8 +136,12 @@ export class AiCurriculumPipelineService {
         this.logger.log(`Performing real PDF text extraction for source: ${sourceId}`);
         if (onProgress) await onProgress('AI is extracting text from PDF (this might take a minute)...');
         rawText = await DocumentExtractor.extractTextFromPdfUrl(source.fileUrl);
+      } else if (source.fileUrl && (source.fileType === 'DOCX' || source.fileType === 'DOC')) {
+        this.logger.log(`Performing real DOCX text extraction for source: ${sourceId}`);
+        if (onProgress) await onProgress('AI is extracting text from DOCX...');
+        rawText = await DocumentExtractor.extractTextFromDocxUrl(source.fileUrl);
       } else if (source.fileUrl) {
-        rawText = `[Simulated text extraction from ${source.fileType} at ${source.fileUrl}]`;
+        rawText = await DocumentExtractor.extractTextFromUrl(source.fileUrl, source.fileType);
       }
 
       const cleanedText = rawText.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '').replace(/\s+/g, ' ').trim();
@@ -288,7 +308,7 @@ export class AiCurriculumPipelineService {
             Your task is to consolidate multiple raw curriculum source materials into a FULL ACADEMIC SESSION curriculum for the Nigerian school year.
             
             The Nigerian school year has 3 terms (1st, 2nd, and 3rd). 
-            Each term has approximately 13 weeks:
+            Each term has a configurable week template (default 13 weeks):
             - Weeks 1-6: Academic topics
             - Week 7: Mid-term revision/break
             - Weeks 8-12: Academic topics
@@ -410,40 +430,80 @@ ${overview.progressionNotes || ''}
         },
       });
 
-      await this.prisma.agoraCurriculumTopic.deleteMany({
-        where: { curriculumId },
-      });
-
       if (result.terms && Array.isArray(result.terms)) {
-        const createOps = [];
+        const existing = await this.prisma.agoraCurriculumTopic.findMany({
+          where: { curriculumId },
+        });
+        const existingBySlot = new Map(
+          existing.map((t) => [`${t.term}:${t.weekNumber}`, t]),
+        );
+        const usedKeys = new Set(existing.map((t) => t.stableKey).filter(Boolean));
+        const seenIds = new Set<string>();
+        const subjectCode = curriculum.subject?.code || curriculum.subject?.name || 'SUB';
 
+        const upsertOps = [];
         for (const termBlock of result.terms) {
           if (!termBlock.topics) continue;
-
           for (const [index, t] of termBlock.topics.entries()) {
-            createOps.push(
-              this.prisma.agoraCurriculumTopic.create({
-                data: {
-                  curriculumId,
-                  term: termBlock.term || 1,
-                  title: t.title || 'Untitled Topic',
-                  description: t.description,
-                  weekNumber: index + 1,
-                  topic: t.title,
-                  subTopics: t.subTopics || [],
-                  learningOutcomes: t.learningOutcomes || [],
-                  studentFriendlyOutcomes: t.studentFriendlyOutcomes || [],
-                  suggestedActivities: t.suggestedActivities || [],
-                  resources: t.resources || [],
-                  assessmentType: t.assessmentType,
-                  order: t.order || index + 1,
-                },
-              }),
-            );
+            const term = termBlock.term || 1;
+            const weekNumber = index + 1;
+            const slot = existingBySlot.get(`${term}:${weekNumber}`);
+            const payload = {
+              title: t.title || 'Untitled Topic',
+              description: t.description,
+              weekNumber,
+              topic: t.title,
+              subTopics: t.subTopics || [],
+              learningOutcomes: t.learningOutcomes || [],
+              studentFriendlyOutcomes: t.studentFriendlyOutcomes || [],
+              suggestedActivities: t.suggestedActivities || [],
+              resources: t.resources || [],
+              assessmentType: t.assessmentType,
+              order: t.order || weekNumber,
+              deprecatedAt: null,
+            };
+            if (slot) {
+              seenIds.add(slot.id);
+              upsertOps.push(
+                this.prisma.agoraCurriculumTopic.update({
+                  where: { id: slot.id },
+                  data: payload,
+                }),
+              );
+            } else {
+              const preferred = buildTopicStableKey({
+                subjectCode,
+                gradeLevel,
+                term,
+                weekNumber,
+                title: t.title || 'Untitled Topic',
+              });
+              const stableKey = allocateUniqueStableKey(preferred, usedKeys);
+              upsertOps.push(
+                this.prisma.agoraCurriculumTopic.create({
+                  data: {
+                    curriculumId,
+                    stableKey,
+                    term,
+                    ...payload,
+                  },
+                }),
+              );
+            }
           }
         }
 
-        await this.prisma.$transaction(createOps);
+        const staleIds = existing.filter((t) => !seenIds.has(t.id)).map((t) => t.id);
+        if (staleIds.length) {
+          upsertOps.push(
+            this.prisma.agoraCurriculumTopic.updateMany({
+              where: { id: { in: staleIds } },
+              data: { deprecatedAt: new Date() },
+            }) as any,
+          );
+        }
+
+        await this.prisma.$transaction(upsertOps);
       }
 
       this.metricsService.loisCurationTotal.inc({ status: 'success' });
@@ -498,7 +558,11 @@ ${overview.progressionNotes || ''}
           if (doc.manualContent) {
             contentToVerify = JSON.stringify(doc.manualContent);
           } else if (doc.fileUrl) {
-            contentToVerify = `[Extracted Content from ${doc.fileName}]\nSubject: ${subjectName}\nGrade: ${gradeName}\nTopics list...`;
+            try {
+              contentToVerify = await DocumentExtractor.extractTextFromUrl(doc.fileUrl, doc.fileType);
+            } catch {
+              contentToVerify = JSON.stringify(doc.parsedData || {});
+            }
           }
 
           const verification = await this.verifyCurriculumDocument(contentToVerify, subjectName, gradeName);
@@ -525,9 +589,19 @@ ${overview.progressionNotes || ''}
 
       const modelInput = {
         generationMode: scheme.generationMode,
-        agoraTopics: scheme.agoraCurriculum?.topics || [],
+        agoraTopics: (scheme.agoraCurriculum?.topics || []).map((t: any) => ({
+          stableKey: t.stableKey,
+          title: t.title,
+          weekNumber: t.weekNumber,
+          term: t.term,
+          subTopics: t.subTopics,
+          learningOutcomes: t.learningOutcomes,
+          studentFriendlyOutcomes: t.studentFriendlyOutcomes,
+          assessmentType: t.assessmentType,
+        })),
         customSchoolGuidance: scheme.schoolCurriculum?.parsedData || null,
-        targetWeeks: 12,
+        mergeWeightAgora: scheme.mergeWeightAgora ?? 70,
+        mergeWeightSchool: scheme.mergeWeightSchool ?? 30,
         subject: subjectName,
         gradeLevel: gradeName,
       };
@@ -537,7 +611,7 @@ ${overview.progressionNotes || ''}
         messages: [
           {
             role: 'system',
-            content: `You are an expert master teacher. Map the given curriculum topics across a standard ${modelInput.targetWeeks}-week academic term for ${subjectName} (${gradeName}). Group related topics if necessary. Assign one clear topic to each week. ALWAYS Output a JSON object with a "weeks" array (matching weekNumber 1 to 12). Include revision/exams in the final two weeks if appropriate.`,
+            content: `You are an expert master teacher. Propose an ordered list of topics for ${subjectName} (${gradeName}) from the provided sources. Do NOT invent a calendar grid. If generationMode is MERGED, prefer Agora coverage (weight ${modelInput.mergeWeightAgora}%) and overlay school-local content (weight ${modelInput.mergeWeightSchool}%). When a topic maps to an Agora library topic you MUST copy its stableKey. Output JSON { "topics": [{ "stableKey", "title", "subTopics", "learningOutcomes", "studentFriendlyOutcomes", "suggestedActivities", "resources", "assessmentType", "order" }] }.`,
           },
           { role: 'user', content: JSON.stringify(modelInput) },
         ],
@@ -555,6 +629,7 @@ ${overview.progressionNotes || ''}
                     type: 'object',
                     properties: {
                       weekNumber: { type: 'number' },
+                      stableKey: { type: 'string' },
                       topic: { type: 'string' },
                       subTopics: { type: 'array', items: { type: 'string' } },
                       learningOutcomes: { type: 'array', items: { type: 'string' } },
@@ -565,6 +640,7 @@ ${overview.progressionNotes || ''}
                     },
                     required: [
                       'weekNumber',
+                      'stableKey',
                       'topic',
                       'subTopics',
                       'learningOutcomes',
@@ -588,25 +664,149 @@ ${overview.progressionNotes || ''}
       const result = JSON.parse(resultText) as SchemeOfWorkGenerationResult;
 
       if (result.weeks && Array.isArray(result.weeks)) {
-        await this.prisma.$transaction(
-          result.weeks.map((w) =>
-            this.prisma.schemeOfWorkWeek.create({
-              data: {
-                schemeOfWorkId: schemeId,
-                weekNumber: w.weekNumber,
-                topic: w.topic,
-                subTopics: w.subTopics || [],
-                learningOutcomes: w.learningOutcomes || [],
-                studentFriendlyOutcomes: w.studentFriendlyOutcomes || [],
-                suggestedActivities: w.suggestedActivities || [],
-                resources: w.resources || [],
-                assessmentType: w.assessmentType,
-              },
-            }),
-          ),
+        const weekNumbers = result.weeks.map((w) => w.weekNumber);
+        if (new Set(weekNumbers).size !== weekNumbers.length) {
+          throw new Error('Invalid scheme: duplicate week numbers');
+        }
+        if (result.weeks.some((w) => !w.topic || !(w.learningOutcomes || []).length)) {
+          throw new Error('Invalid scheme: each week needs a topic and learning outcomes');
+        }
+
+        const agoraTopics = (scheme.agoraCurriculum?.topics || []).filter((t: any) => !t.deprecatedAt);
+        const agoraByKey = new Map<string, any>();
+        const agoraByTitle = new Map<string, any>();
+        for (const t of agoraTopics) {
+          agoraByKey.set(t.stableKey, t);
+          agoraByTitle.set(String(t.title || '').toLowerCase(), t);
+        }
+        const schoolTopics = await this.prisma.schoolCurriculumTopic.findMany({
+          where: {
+            schoolId: scheme.schoolId,
+            subjectId: scheme.subjectId,
+          },
+        });
+        const schoolByTitle = new Map(
+          schoolTopics.map((t) => [String(t.title || '').toLowerCase(), t]),
         );
 
-        await (this.prisma as any).schemeOfWork.update({
+        if (scheme.generationMode === 'MERGED' && agoraTopics.length) {
+          const keepCount = Math.max(
+            1,
+            Math.ceil((agoraTopics.length * (scheme.mergeWeightAgora ?? 70)) / 100),
+          );
+          const required = [...agoraTopics]
+            .sort((a: any, b: any) => (a.order || a.weekNumber) - (b.order || b.weekNumber))
+            .slice(0, keepCount);
+          const have = new Set(result.weeks.map((w) => w.stableKey).filter(Boolean));
+          for (const req of required) {
+            if (!have.has(req.stableKey)) {
+              result.weeks.push({
+                weekNumber: result.weeks.length + 1,
+                stableKey: req.stableKey,
+                topic: req.title,
+                subTopics: req.subTopics || [],
+                learningOutcomes: req.learningOutcomes || [],
+                studentFriendlyOutcomes: req.studentFriendlyOutcomes || [],
+                suggestedActivities: req.suggestedActivities || [],
+                resources: req.resources || [],
+                assessmentType: req.assessmentType || '',
+              });
+              have.add(req.stableKey);
+            }
+          }
+        }
+
+        const packable: PackableTopic[] = result.weeks.map((w, i) => {
+          const matched =
+            (w.stableKey && agoraByKey.get(w.stableKey)) ||
+            agoraByTitle.get(String(w.topic || '').toLowerCase());
+          const schoolMatched = schoolByTitle.get(String(w.topic || '').toLowerCase());
+          const stableKey =
+            w.stableKey ||
+            matched?.stableKey ||
+            schoolMatched?.stableKey ||
+            buildTopicStableKey({
+              subjectCode: subjectName,
+              gradeLevel: gradeName,
+              title: w.topic,
+              weekNumber: w.weekNumber || i + 1,
+            });
+          return {
+            stableKey,
+            agoraTopicId: matched?.id || null,
+            schoolTopicId: schoolMatched?.id || null,
+            title: w.topic,
+            subTopics: w.subTopics || [],
+            learningOutcomes: w.learningOutcomes || [],
+            studentFriendlyOutcomes: w.studentFriendlyOutcomes || [],
+            suggestedActivities: w.suggestedActivities || [],
+            resources: w.resources || [],
+            assessmentType: w.assessmentType,
+            weekNumber: w.weekNumber || i + 1,
+            order: i + 1,
+          };
+        });
+
+        const term = await this.prisma.term.findUnique({ where: { id: scheme.termId } });
+        if (!term) throw new Error('Invalid scheme term');
+        const schoolRow = await this.prisma.school.findUnique({
+          where: { id: scheme.schoolId },
+          select: { workingDays: true },
+        });
+        const events = await this.prisma.event.findMany({
+          where: {
+            schoolId: scheme.schoolId,
+            type: 'HOLIDAY',
+            startDate: { lte: term.endDate },
+            endDate: { gte: term.startDate },
+          },
+          select: { type: true, startDate: true, endDate: true },
+        });
+        const ranges = buildInstructionalWeekRanges(term.startDate, term.endDate, {
+          workingDays: (schoolRow?.workingDays?.length
+            ? schoolRow.workingDays
+            : DEFAULT_WORKING_DAYS) as WorkingDay[],
+          nonInstructionalRanges: [
+            buildHalfTermRange(term.halfTermStart, term.halfTermEnd),
+            ...holidayRangesFromEvents(events),
+          ],
+        });
+        if (!ranges.length) throw new Error('This term has no instructional weeks to pack a scheme onto.');
+        const packed = packTopicsOntoCalendar(packable, ranges);
+
+        await this.prisma.schemeOfWorkWeek.deleteMany({ where: { schemeOfWorkId: schemeId } });
+        for (const week of packed) {
+          const flat = flattenPackedWeekTopic(week);
+          const created = await this.prisma.schemeOfWorkWeek.create({
+            data: {
+              schemeOfWorkId: schemeId,
+              weekNumber: week.weekNumber,
+              calendarStartDate: week.calendarStartDate,
+              calendarEndDate: week.calendarEndDate,
+              topic: flat.topic,
+              subTopics: flat.subTopics,
+              learningOutcomes: flat.learningOutcomes,
+              studentFriendlyOutcomes: flat.studentFriendlyOutcomes,
+              suggestedActivities: flat.suggestedActivities,
+              resources: flat.resources,
+              assessmentType: flat.assessmentType,
+              order: week.weekNumber,
+            },
+          });
+          if (week.topics.length) {
+            await this.prisma.schemeOfWorkWeekTopic.createMany({
+              data: week.topics.map((t, i) => ({
+                schemeOfWorkWeekId: created.id,
+                agoraTopicId: t.agoraTopicId || null,
+                schoolTopicId: t.schoolTopicId || null,
+                stableKey: t.stableKey,
+                order: i,
+              })),
+            });
+          }
+        }
+
+        await this.prisma.schemeOfWork.update({
           where: { id: schemeId },
           data: {
             status: SchemeOfWorkStatus.DRAFT,
@@ -848,7 +1048,6 @@ ${overview.progressionNotes || ''}
 
       const doc = await (this.prisma as any).schoolCurriculumDoc.findUnique({
         where: { id: docId },
-        include: { subject: { select: { name: true } } },
       });
 
       if (!doc) throw new BadRequestException('School curriculum document not found');
@@ -954,7 +1153,7 @@ ${overview.progressionNotes || ''}
         if (grade === doc.gradeLevel || (resultsArray.length === 1 && doc.gradeLevel)) {
           await (this.prisma as any).schoolCurriculumDoc.update({
             where: { id: docId },
-            data: { status: 'COMPLETED', parsedData },
+            data: { status: SchoolCurriculumDocStatus.PARSED, parsedData },
           });
         } else {
           await (this.prisma as any).schoolCurriculumDoc.create({
@@ -966,7 +1165,7 @@ ${overview.progressionNotes || ''}
               fileName: doc.fileName,
               fileUrl: doc.fileUrl,
               fileType: doc.fileType,
-              status: 'COMPLETED',
+              status: SchoolCurriculumDocStatus.PARSED,
               parsedData,
               uploadedBy: doc.uploadedBy,
             },
@@ -974,6 +1173,7 @@ ${overview.progressionNotes || ''}
         }
       }
 
+      await this.persistSchoolTopicsFromParsed(doc, resultsArray);
       return result;
     } catch (error) {
       this.logger.error(`Error parsing school curriculum doc ${docId}:`, error);
@@ -983,6 +1183,54 @@ ${overview.progressionNotes || ''}
         data: { status: 'FAILED', parseErrors: msg },
       });
       return null;
+    }
+  }
+
+  private async persistSchoolTopicsFromParsed(
+    doc: { id: string; schoolId: string; subjectId: string; gradeLevel: string },
+    resultsArray: Array<{ gradeLevel?: string; topics?: any[] }>,
+  ) {
+    const subject = await this.prisma.subject.findUnique({
+      where: { id: doc.subjectId },
+      select: { code: true, name: true },
+    });
+    const used = new Set<string>();
+    const existing = await this.prisma.schoolCurriculumTopic.findMany({
+      where: { schoolId: doc.schoolId },
+      select: { stableKey: true },
+    });
+    existing.forEach((t) => used.add(t.stableKey));
+
+    for (const gradeResult of resultsArray) {
+      const grade = gradeResult.gradeLevel || doc.gradeLevel;
+      for (const [index, t] of (gradeResult.topics || []).entries()) {
+        const preferred = buildTopicStableKey({
+          subjectCode: subject?.code || subject?.name || 'SCH',
+          gradeLevel: grade,
+          weekNumber: index + 1,
+          title: t.title || 'Untitled',
+        });
+        const stableKey = allocateUniqueStableKey(preferred, used);
+        await this.prisma.schoolCurriculumTopic.create({
+          data: {
+            schoolId: doc.schoolId,
+            schoolCurriculumDocId: doc.id,
+            subjectId: doc.subjectId,
+            gradeLevel: grade,
+            termNumber: 1,
+            stableKey,
+            title: t.title || 'Untitled',
+            weekNumber: index + 1,
+            subTopics: t.subTopics || [],
+            learningOutcomes: t.learningOutcomes || [],
+            studentFriendlyOutcomes: t.studentFriendlyOutcomes || [],
+            suggestedActivities: t.suggestedActivities || [],
+            resources: t.resources || [],
+            assessmentType: t.assessmentType,
+            order: index + 1,
+          },
+        });
+      }
     }
   }
 }

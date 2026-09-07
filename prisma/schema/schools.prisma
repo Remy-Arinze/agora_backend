@@ -60,7 +60,10 @@ model School {
   aiUsageLogs         AiUsageLog[]
   knowledgeChunks     KnowledgeChunk[]
   schoolCurricula     SchoolCurriculumDoc[] // School-uploaded curriculum documents
+  schoolCurriculumTopics SchoolCurriculumTopic[]
   schemesOfWork       SchemeOfWork[] // Generated schemes of work
+  budSubscriptions    BudSubscription[]
+  budPlans            BudPlan[] @relation("BudPlanSchool")
   admissionApplications AdmissionApplication[]
   subscriptionBillingAuditLogs SubscriptionBillingAuditLog[]
   loisConfig            LoisConfig?

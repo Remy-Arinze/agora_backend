@@ -43,6 +43,10 @@ export class AiService {
     return this.generators.generateFlashcards(...args);
   }
 
+  generateBudReply(...args: Parameters<AiContentGeneratorsService['generateBudReply']>) {
+    return this.generators.generateBudReply(...args);
+  }
+
   generateSummary(...args: Parameters<AiContentGeneratorsService['generateSummary']>) {
     return this.generators.generateSummary(...args);
   }

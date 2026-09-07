@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsString, IsNotEmpty, IsNumber, IsOptional, IsArray, IsEnum } from 'class-validator';
 
 export class GenerateQuizDto {
@@ -70,6 +70,33 @@ export class GenerateAssessmentDto {
     @IsString()
     @IsOptional()
     curriculum?: string;
+
+    @ApiPropertyOptional()
+    @IsOptional()
+    @IsString()
+    schemeOfWorkId?: string;
+
+    @ApiPropertyOptional()
+    @IsOptional()
+    @IsArray()
+    weekIds?: string[];
+
+    @ApiPropertyOptional()
+    @IsOptional()
+    @IsString()
+    gradeType?: string;
+
+    @ApiPropertyOptional()
+    @IsOptional()
+    @IsArray()
+    weeks?: Array<{
+        weekNumber: number;
+        topic: string;
+        stableKey?: string;
+        subTopics?: string[];
+        learningOutcomes?: string[];
+        assessmentType?: string;
+    }>;
 }
 
 export class GradeEssayDto {

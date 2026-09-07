@@ -4,6 +4,7 @@ import {
   NotFoundException,
   ConflictException,
 } from '@nestjs/common';
+import { SchemeOfWorkStatus } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { SchoolRepository } from '../domain/repositories/school.repository';
 import {
@@ -1074,7 +1075,45 @@ export class FacultyService {
       throw new NotFoundException('Level not found');
     }
 
-    // Get curriculum for the department (ClassLevel)
+    const schemes = await this.prisma.schemeOfWork.findMany({
+      where: {
+        schoolId: school.id,
+        classLevelId: level.classLevelId,
+        status: { in: [SchemeOfWorkStatus.PUBLISHED, SchemeOfWorkStatus.APPROVED] },
+      },
+      include: {
+        weeks: { orderBy: { weekNumber: 'asc' }, include: { topics: true } },
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+
+    if (schemes.length) {
+      const subjectIds = [...new Set(schemes.map((s) => s.subjectId))];
+      const subjects = await this.prisma.subject.findMany({
+        where: { id: { in: subjectIds } },
+        select: { id: true, name: true },
+      });
+      const subjectNames = new Map(subjects.map((s) => [s.id, s.name]));
+      return schemes.map((scheme) => ({
+        id: scheme.id,
+        subject: subjectNames.get(scheme.subjectId) || 'Subject',
+        academicYear: '',
+        teacher: null,
+        teacherId: null,
+        itemsCount: scheme.weeks.length,
+        items: scheme.weeks.map((w) => ({
+          id: w.id,
+          weekNumber: w.weekNumber,
+          topic: w.topic,
+          objectives: w.learningOutcomes,
+          stableKeys: w.topics.map((t) => t.stableKey),
+        })),
+        createdAt: scheme.createdAt,
+        source: 'SCHEME_OF_WORK',
+      }));
+    }
+
+    // Legacy fallback only when no scheme exists
     const curricula = await this.prisma.curriculum.findMany({
       where: {
         classLevelId: level.classLevelId,

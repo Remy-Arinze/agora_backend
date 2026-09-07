@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, Logger, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger, ForbiddenException, GoneException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { GenerateSchemeOfWorkDto, UpdateSchemeOfWorkStatusDto, UpdateSchemeOfWorkWeekDto, MarkWeekDeliveredDto } from './dto/scheme-of-work.dto';
 import { SchemeGenerationMode, SchemeOfWorkStatus, SchemeDeliveryCatchUpReason } from '@prisma/client';
@@ -34,83 +34,10 @@ export class SchemeOfWorkService {
   // SCHOOL ADMIN / BASE SCHEMES
   // ==========================================
 
-  async generateScheme(schoolId: string, dto: GenerateSchemeOfWorkDto, userId: string) {
-    const curriculum = await this.schoolSettingsService.getCurriculumPolicy(schoolId);
-    const generationMode =
-      dto.generationMode ??
-      (curriculum.curriculumSource === 'AGORA_NATIONAL'
-        ? SchemeGenerationMode.AGORA_ONLY
-        : curriculum.curriculumSource === 'SCHOOL_UPLOAD'
-          ? SchemeGenerationMode.SCHOOL_ONLY
-          : SchemeGenerationMode.MERGED);
-    const mergeWeightAgora =
-      dto.mergeWeightAgora ?? (generationMode === SchemeGenerationMode.MERGED ? 50 : undefined);
-    const mergeWeightSchool =
-      dto.mergeWeightSchool ?? (generationMode === SchemeGenerationMode.MERGED ? 50 : undefined);
-
-    // Basic validations
-    if (generationMode === SchemeGenerationMode.AGORA_ONLY && !dto.agoraCurriculumId) {
-      throw new BadRequestException('Bud library Curriculum ID is required when mode is AGORA_ONLY');
-    }
-    if (generationMode === SchemeGenerationMode.SCHOOL_ONLY && !dto.schoolCurriculumId) {
-      throw new BadRequestException('School Curriculum Doc ID is required when mode is SCHOOL_ONLY');
-    }
-    if (generationMode === SchemeGenerationMode.MERGED && (!dto.agoraCurriculumId || !dto.schoolCurriculumId)) {
-      throw new BadRequestException('Both Bud library Curriculum and School Curriculum Doc IDs are required for MERGED mode');
-    }
-    if (generationMode === SchemeGenerationMode.MERGED && (!mergeWeightAgora || !mergeWeightSchool)) {
-      throw new BadRequestException('Merge weights are required for MERGED mode');
-    }
-
-    // Determine parent fork tracking
-    let isFork = false;
-    let parentSchemeId = null;
-    let version = 1;
-
-    if (dto.parentSchemeId) {
-      const parent = await this.prisma.schemeOfWork.findUnique({ where: { id: dto.parentSchemeId } });
-      if (!parent) throw new NotFoundException('Parent Scheme of Work not found');
-      if (parent.schoolId !== schoolId) throw new ForbiddenException('Cannot fork a scheme from another school');
-
-      isFork = true;
-      parentSchemeId = parent.id;
-      version = parent.version + 1;
-    }
-
-    // Capture the version of Agora Curriculum used if passed
-    let agoraCurriculumVersion = null;
-    if (dto.agoraCurriculumId) {
-      const ac = await this.prisma.agoraCurriculum.findUnique({ where: { id: dto.agoraCurriculumId } });
-      if (ac) agoraCurriculumVersion = ac.version;
-    }
-
-    const scheme = await this.prisma.schemeOfWork.create({
-      data: {
-        schoolId,
-        classArmId: dto.classArmId,
-        classId: dto.classId,
-        subjectId: dto.subjectId,
-        termId: dto.termId,
-        generationMode,
-        agoraCurriculumId: dto.agoraCurriculumId,
-        agoraCurriculumVersion: agoraCurriculumVersion,
-        schoolCurriculumId: dto.schoolCurriculumId,
-        mergeWeightAgora,
-        mergeWeightSchool,
-        isFork,
-        parentSchemeId,
-        version,
-        status: SchemeOfWorkStatus.GENERATING, // Initial state, handed to AI
-      },
-    });
-
-    this.logger.log(`Created Scheme of Work [${scheme.id}] for generation queuing.`);
-    // Phase 4 trigger: Send to background AiService parser
-    this.aiService.generateSchemeOfWork(scheme.id).catch(e => {
-      this.logger.error(`Background Scheme of Work generation failed for ${scheme.id}:`, e);
-    });
-
-    return scheme;
+  async generateScheme(_schoolId: string, _dto: GenerateSchemeOfWorkDto, _userId: string) {
+    throw new GoneException(
+      'Use POST /schools/:schoolId/curriculum/schemes/setup. This generate path is retired so credits and lifecycle stay consistent.',
+    );
   }
 
   async getSchemesBySchool(schoolId: string, query: { classId?: string, termId?: string, subjectId?: string }) {
@@ -247,9 +174,12 @@ export class SchemeOfWorkService {
     }
 
     const schemes = await this.prisma.schemeOfWork.findMany({
-      where: whereBase,
+      where: { ...whereBase, status: { not: SchemeOfWorkStatus.ARCHIVED } },
       include: {
-        weeks: { orderBy: { weekNumber: 'asc' } },
+        weeks: {
+          orderBy: { weekNumber: 'asc' },
+          include: { topics: true, deliveries: true },
+        },
       },
       orderBy: [{ status: 'asc' }, { updatedAt: 'desc' }],
     });
@@ -302,8 +232,22 @@ export class SchemeOfWorkService {
       if (match) selected = match;
     }
 
+    const armId = resolved.classArmId;
+    const weeks = (selected.weeks || []).map((w) => {
+      const arm = armId ? w.deliveries.find((d) => d.classArmId === armId) : null;
+      return {
+        ...w,
+        isDelivered: arm ? arm.status === 'DELIVERED' : w.isDelivered,
+        weekStatus: arm?.status || (w.isDelivered ? 'DELIVERED' : 'PENDING'),
+        stableKeys: w.topics.map((t) => t.stableKey),
+        stableKey: w.topics[0]?.stableKey,
+      };
+    });
+
     return {
       ...selected,
+      weeks,
+      classArmId: armId,
       subjectName: subjectMap.get(selected.subjectId)?.name || null,
       availableSubjects: uniqueSubjects,
     };
@@ -326,8 +270,51 @@ export class SchemeOfWorkService {
       where: { userId, schoolId },
     });
 
+    const classArmId = dto.classArmId || week.schemeOfWork.classArmId || null;
+    const persistArmDelivery = async (status: 'PENDING' | 'IN_PROGRESS' | 'DELIVERED' | 'SKIPPED' | 'COMBINED', extra: Record<string, unknown> = {}) => {
+      if (!teacher || !classArmId) return;
+      await this.prisma.schemeOfWorkWeekDelivery.upsert({
+        where: { weekId_classArmId: { weekId, classArmId } },
+        create: {
+          weekId,
+          classArmId,
+          teacherId: teacher.id,
+          status,
+          ...extra,
+        },
+        update: { status, teacherId: teacher.id, ...extra },
+      });
+    };
+
+    if (dto.weekStatus === 'SKIPPED' || dto.weekStatus === 'COMBINED') {
+      await persistArmDelivery(dto.weekStatus as any, {
+        combinedIntoWeekId: dto.combinedIntoWeekId || null,
+      });
+      if (dto.weekStatus === 'COMBINED' && dto.combinedIntoWeekId) {
+        const sourceTopics = await this.prisma.schemeOfWorkWeekTopic.findMany({ where: { schemeOfWorkWeekId: weekId } });
+        const destTopics = await this.prisma.schemeOfWorkWeekTopic.findMany({
+          where: { schemeOfWorkWeekId: dto.combinedIntoWeekId },
+          select: { stableKey: true },
+        });
+        const destKeys = new Set(destTopics.map((t) => t.stableKey));
+        const toCopy = sourceTopics.filter((t) => !destKeys.has(t.stableKey));
+        if (toCopy.length) {
+          await this.prisma.schemeOfWorkWeekTopic.createMany({
+            data: toCopy.map((t, i) => ({
+              schemeOfWorkWeekId: dto.combinedIntoWeekId!,
+              agoraTopicId: t.agoraTopicId,
+              schoolTopicId: t.schoolTopicId,
+              stableKey: t.stableKey,
+              order: destTopics.length + i,
+            })),
+          });
+        }
+      }
+    }
+
     // Unmarking — clear delivery state, keep lesson file for history unless they clear later
     if (!dto.isDelivered) {
+      await persistArmDelivery('PENDING', { deliveredAt: null, deliveryNote: null, catchUpReason: null, deliveryConfidence: 0 });
       return this.prisma.schemeOfWorkWeek.update({
         where: { id: weekId },
         data: {
@@ -372,7 +359,7 @@ export class SchemeOfWorkService {
       lessonNoteUrl: week.lessonNoteUrl,
     });
 
-    return this.prisma.schemeOfWorkWeek.update({
+    const updated = await this.prisma.schemeOfWorkWeek.update({
       where: { id: weekId },
       data: {
         isDelivered: true,
@@ -384,6 +371,13 @@ export class SchemeOfWorkService {
         deliveryConfidence: confidence,
       },
     });
+    await persistArmDelivery('DELIVERED', {
+      deliveredAt: updated.deliveredAt,
+      deliveryNote: deliveryNote || null,
+      catchUpReason,
+      deliveryConfidence: confidence,
+    });
+    return updated;
   }
 
   async uploadLessonNote(

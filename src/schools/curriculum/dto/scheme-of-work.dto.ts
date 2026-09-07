@@ -46,6 +46,20 @@ export class SetupSchemeOfWorkDto {
   @ApiPropertyOptional({ description: 'Force overwrite existing Scheme of Work via archiving' })
   @IsOptional()
   forceOverwrite?: boolean;
+
+  @ApiPropertyOptional({ description: 'Agora merge weight percent (MERGED)' })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(100)
+  mergeWeightAgora?: number;
+
+  @ApiPropertyOptional({ description: 'School merge weight percent (MERGED)' })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(100)
+  mergeWeightSchool?: number;
 }
 
 export class UpdateSchemeOfWorkStatusDto {

@@ -10,6 +10,8 @@ import { NerdcCurriculumService } from './nerdc-curriculum.service';
 import { SchoolRepository } from '../domain/repositories/school.repository';
 import { StaffRepository } from '../domain/repositories/staff.repository';
 import { SchemeOfWorkProcessor } from './scheme-of-work.processor';
+import { SchemeSpineService } from './scheme-spine.service';
+import { SchoolSettingsModule } from '../../school-settings/school-settings.module';
 
 @Module({
   imports: [
@@ -18,6 +20,7 @@ import { SchemeOfWorkProcessor } from './scheme-of-work.processor';
     VectorQueueModule,
     AiModule,
     CloudinaryModule,
+    SchoolSettingsModule,
   ],
   controllers: [CurriculumController],
   providers: [
@@ -26,7 +29,8 @@ import { SchemeOfWorkProcessor } from './scheme-of-work.processor';
     SchoolRepository,
     StaffRepository,
     SchemeOfWorkProcessor,
+    SchemeSpineService,
   ],
-  exports: [CurriculumService, NerdcCurriculumService],
+  exports: [CurriculumService, NerdcCurriculumService, SchemeSpineService],
 })
 export class CurriculumModule { }

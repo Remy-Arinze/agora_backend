@@ -1,3 +1,4 @@
+import { inflateRawSync } from 'zlib';
 import { Logger } from '@nestjs/common';
 
 // pdf-parse v1.x exports the parser function directly as module.exports.
@@ -40,6 +41,76 @@ export class DocumentExtractor {
       this.logger.error(`Error during text extraction: ${error.message}`);
       throw new Error(`Text extraction failed: ${error.message}`);
     }
+  }
+
+  /**
+   * Extract plain text from a remote DOCX (Office Open XML) via its URL.
+   */
+  static async extractTextFromDocxUrl(url: string): Promise<string> {
+    try {
+      this.logger.log(`Fetching DOCX for text extraction from: ${url}`);
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch document: ${response.statusText}`);
+      }
+      const buffer = Buffer.from(await response.arrayBuffer());
+      const MAX_SIZE_BYTES = 20 * 1024 * 1024;
+      if (buffer.length > MAX_SIZE_BYTES) {
+        throw new Error('Document exceeds maximum size limit of 20MB.');
+      }
+      const xml = this.readZipEntry(buffer, 'word/document.xml');
+      if (!xml) {
+        throw new Error('DOCX is missing word/document.xml');
+      }
+      const text = xml
+        .replace(/<w:tab\/>/g, '\t')
+        .replace(/<\/w:p>/g, '\n')
+        .replace(/<w:t[^>]*>([^<]*)<\/w:t>/g, '$1')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/\s+\n/g, '\n')
+        .replace(/[ \t]{2,}/g, ' ')
+        .trim();
+      this.logger.log(`Extracted DOCX text successfully from ${url} (${text.length} chars)`);
+      return text;
+    } catch (error) {
+      this.logger.error(`Error during DOCX extraction: ${error.message}`);
+      throw new Error(`Text extraction failed: ${error.message}`);
+    }
+  }
+
+  static async extractTextFromUrl(url: string, fileType?: string | null): Promise<string> {
+    const type = (fileType || '').toUpperCase();
+    if (type === 'PDF' || url.toLowerCase().includes('.pdf')) {
+      return this.extractTextFromPdfUrl(url);
+    }
+    if (type === 'DOCX' || type === 'DOC' || url.toLowerCase().includes('.docx')) {
+      return this.extractTextFromDocxUrl(url);
+    }
+    throw new Error(`Unsupported document type for extraction: ${fileType || 'unknown'}`);
+  }
+
+  private static readZipEntry(buffer: Buffer, entryName: string): string | null {
+    let offset = 0;
+    while (offset + 30 <= buffer.length) {
+      if (buffer.readUInt32LE(offset) !== 0x04034b50) break;
+      const method = buffer.readUInt16LE(offset + 8);
+      const compSize = buffer.readUInt32LE(offset + 18);
+      const nameLen = buffer.readUInt16LE(offset + 26);
+      const extraLen = buffer.readUInt16LE(offset + 28);
+      const name = buffer.slice(offset + 30, offset + 30 + nameLen).toString('utf8');
+      const dataStart = offset + 30 + nameLen + extraLen;
+      const dataEnd = dataStart + compSize;
+      if (name === entryName) {
+        const raw = buffer.slice(dataStart, dataEnd);
+        const inflated = method === 0 ? raw : inflateRawSync(raw);
+        return inflated.toString('utf8');
+      }
+      offset = dataEnd;
+    }
+    return null;
   }
 
   /**

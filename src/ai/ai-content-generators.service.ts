@@ -23,6 +23,33 @@ export class AiContentGeneratorsService {
 
   constructor(private readonly llm: AiLlmClientService) {}
 
+  async generateBudReply(options: {
+    companionName: string;
+    message: string;
+    topics: string[];
+    studentName?: string;
+  }): Promise<string> {
+    this.llm.ensureConfigured();
+    const openai = this.llm.getOpenai();
+    const model = this.llm.getModel();
+    const topics = options.topics.length
+      ? options.topics.join('; ')
+      : 'today’s delivered scheme topics';
+    const response = await openai.chat.completions.create({
+      model,
+      messages: [
+        {
+          role: 'system',
+          content: `You are ${options.companionName}, a peer study buddy for a Nigerian school student${options.studentName ? ` named ${options.studentName}` : ''}. Warm, short, age-aware. Stay on these topics: ${topics}. Use Socratic hints on homework — never dump finished answers, never write formal exams or CAs, never talk about other students. If they want to rename you, acknowledge warmly.`,
+        },
+        { role: 'user', content: options.message },
+      ],
+      temperature: 0.7,
+      max_tokens: 400,
+    });
+    return response.choices[0]?.message?.content?.trim() || 'Want to try a flashcard on that?';
+  }
+
   async generateFlashcards(options: GenerateFlashcardsOptions): Promise<{ data: Flashcard[]; usage: any }> {
     this.llm.ensureConfigured();
     const openai = this.llm.getOpenai();
@@ -365,31 +392,42 @@ Return as JSON:
       questionTypes = ['multiple_choice', 'short_answer', 'essay'],
       difficulty = 'mixed',
       curriculum = 'NERDC',
+      gradeType,
+      weeks = [],
     } = options;
+
+    const eligibleWeeks = weeks.filter(
+      (w) =>
+        (w.assessmentType || '').toLowerCase() !== 'skip' &&
+        String((w as any).weekStatus || '').toUpperCase() !== 'SKIPPED',
+    );
+    const weekBlock = eligibleWeeks.length
+      ? eligibleWeeks
+          .map(
+            (w) =>
+              `Week ${w.weekNumber} [${w.stableKey || 'no-key'}] ${w.topic}
+  Outcomes: ${(w.learningOutcomes || []).join('; ')}
+  Assessment hint: ${w.assessmentType || 'mixed'}`,
+          )
+          .join('\n')
+      : topic;
 
     const prompt = `Generate assessment questions for a formal test/exam.
 
 Subject: ${subject}
-Topic: ${topic}
 Grade Level: ${gradeLevel}
+Assessment kind: ${gradeType || 'CA'}
 Curriculum: ${curriculum}
 Number of Questions: ${questionCount}
 Question Types: ${questionTypes.join(', ')}
-Difficulty Distribution: ${difficulty}
+Difficulty: ${difficulty}
 
-Create well-crafted questions suitable for formal assessment:
-- Multiple choice: 4 options (A, B, C, D), one correct answer
-- Short answer: Requires 1-3 sentence response
-- Essay: Open-ended, tests deeper understanding
+Use these scheme weeks as the specification. Do not invent extra topics.
+If a week assessmentType is Project, prefer short_answer/essay over a pile of MCQs.
 
-For each question include:
-- Question text
-- Type
-- Options (for multiple choice)
-- Correct answer or sample answer
-- Point value suggestion
+${weekBlock}
 
-Return as JSON: {"questions": [{"text": "...", "type": "MULTIPLE_CHOICE | SHORT_ANSWER | ESSAY", "options": ["...", "..."], "correctAnswer": "...", "points": number}]}`;
+Return JSON: {"questions": [{"text": "...", "type": "MULTIPLE_CHOICE | SHORT_ANSWER | ESSAY", "options": ["..."], "correctAnswer": "...", "points": number, "stableKey": "copy from the week this tests"}]}`;
 
     try {
       const response = await openai.chat.completions.create({

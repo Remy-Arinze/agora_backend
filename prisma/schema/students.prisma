@@ -43,6 +43,11 @@ model Student {
   personalResources     StudentResource[]
   courseRegistrations   CourseRegistration[] // For TERTIARY: Course registrations (carry-overs, etc.)
   assessmentSubmissions AssessmentSubmission[]
+  budProfile            BudProfile?
+  budSubscription       BudSubscription?
+  studyDecks            StudyDeck[]
+  studySessions         StudySession[]
+  dailyReviewPlans      DailyReviewPlan[]
 
   @@index([uid])
   @@index([userId])

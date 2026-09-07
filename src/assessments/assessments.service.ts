@@ -128,6 +128,9 @@ export class AssessmentsService {
                 autoSubmitOnTimeout: dto.autoSubmitOnTimeout !== undefined ? dto.autoSubmitOnTimeout : true,
                 violationThreshold: dto.violationThreshold !== undefined ? dto.violationThreshold : grading.defaultViolationThreshold,
                 pointsPerViolation: dto.pointsPerViolation ?? Number(grading.defaultPointsPerViolation) ?? 0,
+                schemeOfWorkId: dto.schemeOfWorkId || null,
+                weekIds: dto.weekIds || [],
+                stableKeys: dto.stableKeys || [],
                 questions: {
                     create: dto.questions.map(q => ({
                         text: q.text,
@@ -135,7 +138,10 @@ export class AssessmentsService {
                         options: q.options || [],
                         correctAnswer: q.correctAnswer,
                         points: q.points,
-                        order: q.order
+                        order: q.order,
+                        stableKey: q.stableKey || null,
+                        bloomLevel: q.bloomLevel || null,
+                        source: q.source || 'TEACHER',
                     }))
                 }
             },
