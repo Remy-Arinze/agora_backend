@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException, Logger, ForbiddenException, GoneException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { GenerateSchemeOfWorkDto, UpdateSchemeOfWorkStatusDto, UpdateSchemeOfWorkWeekDto, MarkWeekDeliveredDto } from './dto/scheme-of-work.dto';
-import { SchemeGenerationMode, SchemeOfWorkStatus, SchemeDeliveryCatchUpReason } from '@prisma/client';
+import { Prisma, SchemeGenerationMode, SchemeOfWorkStatus, SchemeDeliveryCatchUpReason } from '@prisma/client';
 import { AiService } from '../../ai/ai.service';
 import { CloudinaryService } from '../../storage/cloudinary/cloudinary.service';
 import {
@@ -160,7 +160,7 @@ export class SchemeOfWorkService {
       throw new NotFoundException('Class not found');
     }
 
-    const whereBase: any = {
+    const whereBase: Prisma.SchemeOfWorkWhereInput = {
       schoolId,
       status: { in: [SchemeOfWorkStatus.PUBLISHED, SchemeOfWorkStatus.APPROVED, SchemeOfWorkStatus.DRAFT, SchemeOfWorkStatus.GENERATING] },
       OR: [
