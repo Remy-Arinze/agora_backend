@@ -4,9 +4,14 @@ import { PrismaService } from '../database/prisma.service';
 import { SubscriptionsService } from './subscriptions.service';
 import { SubscriptionAuditService } from './subscription-audit.service';
 import { SubscriptionTier as SubTierDto } from './dto/subscription.dto';
-import { SUBSCRIPTION_GRACE_DAYS, SUBSCRIPTION_GRACE_REMINDER_DAYS } from './subscription-billing.constants';
 import { operationalEnrollmentWhere } from './enrollment-operational';
 import { NotificationService } from '../notification/notification.service';
+import {
+  describeFastSubscriptionMode,
+  getSubscriptionGraceDays,
+  getSubscriptionGraceReminderDays,
+  isFastSubscriptionMode,
+} from './subscription-dev.config';
 
 function addUtcDays(d: Date, days: number): Date {
   const x = new Date(d);
@@ -42,6 +47,9 @@ export class SubscriptionBillingService implements OnModuleInit {
    *  system self-heals after a restart.
    */
   async onModuleInit() {
+    if (isFastSubscriptionMode()) {
+      this.logger.warn(describeFastSubscriptionMode());
+    }
     try {
       this.logger.log('Running startup billing phase reconciliation...');
       await this.runDailyBillingLifecycle();
@@ -160,7 +168,7 @@ export class SubscriptionBillingService implements OnModuleInit {
         continue;
       }
 
-      const graceEnd = addUtcDays(end, SUBSCRIPTION_GRACE_DAYS);
+      const graceEnd = addUtcDays(end, getSubscriptionGraceDays());
 
       if (now.getTime() <= graceEnd.getTime()) {
         const graceDay = calendarDaysAfter(end, now) + 1;
@@ -173,7 +181,7 @@ export class SubscriptionBillingService implements OnModuleInit {
         });
 
         const shouldRemind =
-          (SUBSCRIPTION_GRACE_REMINDER_DAYS as readonly number[]).includes(graceDay) &&
+          getSubscriptionGraceReminderDays().includes(graceDay) &&
           (!sub.billingGraceReminderLastAt ||
             startOfUtcDay(sub.billingGraceReminderLastAt).getTime() < startOfUtcDay(now).getTime());
 
@@ -201,7 +209,7 @@ export class SubscriptionBillingService implements OnModuleInit {
           schoolName: sub.school?.name ?? 'Your school',
           kind: 'ADMIN_ACTION_REQUIRED',
           graceEndsAt: graceEnd.toISOString(),
-          graceDay: SUBSCRIPTION_GRACE_DAYS + 1,
+          graceDay: getSubscriptionGraceDays() + 1,
           timestamp: now.toISOString(),
         });
         await this.appendAuditLog(sub.schoolId, 'billing_phase_admin_action_required', null, {
@@ -238,7 +246,7 @@ export class SubscriptionBillingService implements OnModuleInit {
       graceEndsAt: row?.gracePeriodEndsAt ?? null,
       operationalStudentCount: opStudentCount,
       freeTierStudentCap: freeCap,
-      graceDaysTotal: SUBSCRIPTION_GRACE_DAYS,
+      graceDaysTotal: getSubscriptionGraceDays(),
     };
   }
 
@@ -522,7 +530,7 @@ export class SubscriptionBillingService implements OnModuleInit {
     // If already in a worse phase, don't upgrade to grace period
     if (sub.billingPhase === SchoolBillingPhase.ADMIN_ACTION_REQUIRED) return;
 
-    const graceEnd = addUtcDays(new Date(), SUBSCRIPTION_GRACE_DAYS);
+    const graceEnd = addUtcDays(new Date(), getSubscriptionGraceDays());
 
     await this.prisma.subscription.update({
       where: { schoolId },
@@ -571,7 +579,7 @@ export class SubscriptionBillingService implements OnModuleInit {
       schoolName: 'Your school',
       kind: 'ADMIN_ACTION_REQUIRED',
       graceEndsAt: new Date().toISOString(),
-      graceDay: SUBSCRIPTION_GRACE_DAYS + 1,
+      graceDay: getSubscriptionGraceDays() + 1,
       timestamp: new Date().toISOString(),
     });
   }

@@ -5,6 +5,7 @@ import { SubscriptionTier } from '../subscriptions/dto/subscription.dto';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { SubscriptionBillingService } from '../subscriptions/subscription-billing.service';
 import { SubscriptionAuditService } from '../subscriptions/subscription-audit.service';
+import { addPaidPeriod } from '../subscriptions/subscription-dev.config';
 import * as crypto from 'crypto';
 
 export interface InitializePaymentOptions {
@@ -345,27 +346,16 @@ export class PaymentsService {
       Number(payment.amount)
     );
 
-    // Calculate new end date
+    // Calculate new end date (1 month / 1 year, or the fast-mode day/week period)
     const now = new Date();
     const currentEnd = payment.subscription.endDate;
     const base =
       currentEnd && currentEnd.getTime() > now.getTime() ? new Date(currentEnd) : now;
-    const endDate = new Date(base);
-    if (metadata.isYearly) {
-      endDate.setFullYear(endDate.getFullYear() + 1);
-    } else {
-      endDate.setMonth(endDate.getMonth() + 1);
-    }
+    const endDate = addPaidPeriod(base, metadata.isYearly);
 
-    // Tier Limits
-    const tierLimits = {
-      [SubscriptionTier.FREE]: { maxStudents: 100, maxTeachers: 10, maxAdmins: 2, aiCredits: 0 },
-      [SubscriptionTier.PRO]: { maxStudents: 800, maxTeachers: 80, maxAdmins: 20, aiCredits: 10000 },
-      [SubscriptionTier.PRO_PLUS]: { maxStudents: 2000, maxTeachers: 150, maxAdmins: 35, aiCredits: 25000 },
-      [SubscriptionTier.CUSTOM]: { maxStudents: -1, maxTeachers: -1, maxAdmins: -1, aiCredits: -1 },
-    };
-
-    const limits = tierLimits[metadata.tier] || tierLimits[SubscriptionTier.FREE];
+    const limits =
+      this.subscriptionsService.getTierLimitCaps(metadata.tier) ||
+      this.subscriptionsService.getTierLimitCaps(SubscriptionTier.FREE);
 
     const sub = payment.subscription;
     let newAiCredits = limits.aiCredits;

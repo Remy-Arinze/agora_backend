@@ -1,7 +1,12 @@
 /// <reference types="node" />
+import * as path from 'path';
+import * as dotenv from 'dotenv';
 import { PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
+import { getDevProMaxStudents, isFastSubscriptionMode } from '../src/subscriptions/subscription-dev.config';
+
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
 const prisma = new PrismaClient();
 
@@ -192,12 +197,12 @@ async function main() {
       cta: 'Upgrade to Pro',
       accent: 'blue',
       isPublic: true,
-      maxStudents: 800,
+      maxStudents: getDevProMaxStudents(),
       maxTeachers: 80,
       maxAdmins: 20,
       aiCredits: 10000,
       features: [
-        { text: '800 Students', included: true },
+        { text: `${getDevProMaxStudents()} Students`, included: true },
         { text: '80 Teachers', included: true },
         { text: '20 Admin Users', included: true },
         { text: 'Core Management Platform', included: true },
@@ -240,7 +245,18 @@ async function main() {
     });
 
     if (createdPlan) {
-      console.log(`  ⏭️ Plan exists, skipping: ${plan.name}`);
+      if (plan.tierCode === 'PRO' && createdPlan.maxStudents !== plan.maxStudents) {
+        await prisma.subscriptionPlan.update({
+          where: { id: createdPlan.id },
+          data: { maxStudents: plan.maxStudents },
+        });
+        console.log(
+          `  🔄 Updated ${plan.name} maxStudents -> ${plan.maxStudents}` +
+            (isFastSubscriptionMode() ? ' (DEV_FAST_SUBSCRIPTION)' : ''),
+        );
+      } else {
+        console.log(`  ⏭️ Plan exists, skipping: ${plan.name}`);
+      }
       if (plan.tierCode === 'FREE') {
         freePlanId = createdPlan.id;
       }

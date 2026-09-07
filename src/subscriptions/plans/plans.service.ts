@@ -1,20 +1,22 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { CreateSubscriptionPlanDto, UpdateSubscriptionPlanDto } from '../dto/subscription-plan.dto';
+import { applyDevPlanOverrides } from '../subscription-dev.config';
 
 @Injectable()
 export class SubscriptionPlansService {
     constructor(private readonly prisma: PrismaService) { }
 
     async getPublicPlans() {
-        return this.prisma.subscriptionPlan.findMany({
+        const plans = await this.prisma.subscriptionPlan.findMany({
             where: { isPublic: true },
             orderBy: { monthlyPrice: 'asc' },
         });
+        return plans.map((plan) => applyDevPlanOverrides(plan));
     }
 
     async getPlansForSchool(schoolId: string) {
-        return this.prisma.subscriptionPlan.findMany({
+        const plans = await this.prisma.subscriptionPlan.findMany({
             where: {
                 OR: [
                     { isPublic: true },
@@ -23,6 +25,7 @@ export class SubscriptionPlansService {
             },
             orderBy: { monthlyPrice: 'asc' },
         });
+        return plans.map((plan) => applyDevPlanOverrides(plan));
     }
 
     async getAllPlans() {

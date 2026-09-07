@@ -13,6 +13,7 @@ import {
   SchoolToolAccessDto,
   SubscriptionBillingPhase,
 } from './dto/subscription.dto';
+import { applyDevStudentCap } from './subscription-dev.config';
 
 /**
  * Service for managing school subscriptions and tool access
@@ -55,7 +56,9 @@ export class SubscriptionsService {
 
   /** Caps used for billing, admissions, and Paystack success handler (keep aligned with `SubscriptionPlan` seed). */
   getTierLimitCaps(tier: SubscriptionTier) {
-    return { ...this.tierLimits[tier] };
+    const limits = { ...(this.tierLimits[tier] ?? this.tierLimits[SubscriptionTier.FREE]) };
+    limits.maxStudents = applyDevStudentCap(tier, limits.maxStudents);
+    return limits;
   }
 
   /**
@@ -275,7 +278,7 @@ export class SubscriptionsService {
       aiCreditsRemaining: subscription.aiCreditsRemaining,
       aiPeriodActive,
       limits: {
-        maxStudents: subscription.maxStudents,
+        maxStudents: applyDevStudentCap(subscription.tier, subscription.maxStudents),
         maxTeachers: subscription.maxTeachers,
         maxAdmins: subscription.maxAdmins,
       },
@@ -567,7 +570,9 @@ export class SubscriptionsService {
       where: { schoolId },
     });
 
-    const maxStudents = subscription?.maxStudents ?? this.tierLimits[SubscriptionTier.FREE].maxStudents;
+    const storedMax =
+      subscription?.maxStudents ?? this.tierLimits[SubscriptionTier.FREE].maxStudents;
+    const maxStudents = applyDevStudentCap(subscription?.tier, storedMax);
 
     if (maxStudents === -1) {
       const currentCount = await this.prisma.student.count({
@@ -787,7 +792,7 @@ export class SubscriptionsService {
       startDate: subscription.startDate,
       endDate: subscription.endDate,
       isActive: subscription.isActive,
-      maxStudents: subscription.maxStudents,
+      maxStudents: applyDevStudentCap(subscription.tier, subscription.maxStudents),
       maxTeachers: subscription.maxTeachers,
       maxAdmins: subscription.maxAdmins,
       aiCredits: subscription.aiCredits,
