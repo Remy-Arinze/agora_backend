@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Patch,
+  Put,
   Delete,
   Body,
   Param,
@@ -31,7 +32,7 @@ import {
   SkipWeekDto,
 } from './dto/create-curriculum.dto';
 import { CreateSchoolCurriculumDocDto } from './dto/school-curriculum-doc.dto';
-import { SetupSchemeOfWorkDto } from './dto/scheme-of-work.dto';
+import { SetupSchemeOfWorkDto, ReplaceSchemeWeeksDto } from './dto/scheme-of-work.dto';
 import { CurriculumDto, CurriculumSummaryDto, TimetableSubjectDto } from './dto/curriculum.dto';
 import {
   AgoraSubjectDto,
@@ -183,6 +184,22 @@ export class CurriculumController {
   ): Promise<ResponseDto<any>> {
     const data = await this.curriculumService.getSchemeOfWorkById(schoolId, schemeId, user);
     return ResponseDto.ok(data, 'Scheme retrieved successfully');
+  }
+
+  @Put('schemes/:schemeId/weeks')
+  @RequirePermission(PermissionResource.CURRICULUM, PermissionType.WRITE)
+  @ApiOperation({ summary: 'Replace ordered content weeks on a scheme (restamp onto the term calendar)' })
+  @ApiParam({ name: 'schoolId', description: 'School ID' })
+  @ApiParam({ name: 'schemeId', description: 'Scheme ID' })
+  @ApiResponse({ status: 200, description: 'Scheme weeks updated' })
+  async replaceSchemeWeeks(
+    @Param('schoolId') schoolId: string,
+    @Param('schemeId') schemeId: string,
+    @Body() dto: ReplaceSchemeWeeksDto,
+    @CurrentUser() user: UserWithContext,
+  ): Promise<ResponseDto<CurriculumDto>> {
+    const data = await this.curriculumService.replaceSchemeWeeks(schoolId, schemeId, dto, user);
+    return ResponseDto.ok(data, 'Scheme weeks updated');
   }
 
   @Delete('schemes/:schemeId')

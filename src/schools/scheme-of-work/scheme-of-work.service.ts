@@ -10,6 +10,10 @@ import {
   DEFAULT_WORKING_DAYS,
 } from '../../common/utils/instructional-day.util';
 import { SchoolSettingsService } from '../../school-settings/school-settings.service';
+import {
+  coverageFromStoredWeeks,
+  isCatchUpAssessment,
+} from '../curriculum/scheme-calendar-packer.util';
 
 /** Confidence contributions — higher when more proof is attached */
 const CONFIDENCE = {
@@ -235,12 +239,15 @@ export class SchemeOfWorkService {
     const armId = resolved.classArmId;
     const weeks = (selected.weeks || []).map((w) => {
       const arm = armId ? w.deliveries.find((d) => d.classArmId === armId) : null;
+      const isCatchUp = isCatchUpAssessment(w.assessmentType);
       return {
         ...w,
         isDelivered: arm ? arm.status === 'DELIVERED' : w.isDelivered,
         weekStatus: arm?.status || (w.isDelivered ? 'DELIVERED' : 'PENDING'),
         stableKeys: w.topics.map((t) => t.stableKey),
         stableKey: w.topics[0]?.stableKey,
+        isCatchUp,
+        outsideCalendar: !isCatchUp && !w.calendarStartDate,
       };
     });
 
@@ -250,6 +257,7 @@ export class SchemeOfWorkService {
       classArmId: armId,
       subjectName: subjectMap.get(selected.subjectId)?.name || null,
       availableSubjects: uniqueSubjects,
+      calendarCoverage: coverageFromStoredWeeks(weeks),
     };
   }
 

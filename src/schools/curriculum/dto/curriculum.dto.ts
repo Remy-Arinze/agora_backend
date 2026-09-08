@@ -64,6 +64,18 @@ export class CurriculumItemDto {
 
   @ApiProperty()
   updatedAt: Date;
+
+  @ApiPropertyOptional()
+  calendarStartDate?: Date | null;
+
+  @ApiPropertyOptional()
+  calendarEndDate?: Date | null;
+
+  @ApiPropertyOptional({ description: 'Extra calendar week beyond the library plan' })
+  isCatchUp?: boolean;
+
+  @ApiPropertyOptional({ description: 'Plan week with no instructional date this term' })
+  outsideCalendar?: boolean;
 }
 
 // ============================================
@@ -146,14 +158,29 @@ export class CurriculumDto {
   items: CurriculumItemDto[];
 
   // Computed progress stats
-  @ApiPropertyOptional({ description: 'Total weeks in curriculum' })
+  @ApiPropertyOptional({ description: 'Total plan weeks (excludes catch-up rows)' })
   totalWeeks?: number;
 
-  @ApiPropertyOptional({ description: 'Completed weeks' })
+  @ApiPropertyOptional({ description: 'Completed plan weeks' })
   completedWeeks?: number;
 
   @ApiPropertyOptional({ description: 'Progress percentage' })
   progressPercentage?: number;
+
+  @ApiPropertyOptional({ description: 'How this scheme sits on the term calendar' })
+  calendarCoverage?: {
+    instructionalWeeks: number;
+    planWeeks: number;
+    unscheduledWeeks: number;
+    bufferWeeks: number;
+    mismatch: 'ALIGNED' | 'SHORT' | 'LONG';
+  };
+
+  @ApiPropertyOptional({ description: 'Whether school admins can add, remove, or reorder weeks' })
+  structureEditable?: boolean;
+
+  @ApiPropertyOptional({ description: 'Why structure edits are locked, if not editable' })
+  structureLockReason?: string | null;
 }
 
 // ============================================

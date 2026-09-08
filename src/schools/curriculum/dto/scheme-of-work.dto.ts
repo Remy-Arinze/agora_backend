@@ -1,4 +1,17 @@
-import { IsString, IsNotEmpty, IsOptional, IsEnum, IsInt, IsArray, Min, Max } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsOptional,
+  IsEnum,
+  IsInt,
+  IsArray,
+  IsBoolean,
+  Min,
+  Max,
+  ArrayMinSize,
+  ValidateNested,
+} from 'class-validator';
+import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { SchemeGenerationMode } from '@prisma/client';
 
@@ -45,6 +58,7 @@ export class SetupSchemeOfWorkDto {
 
   @ApiPropertyOptional({ description: 'Force overwrite existing Scheme of Work via archiving' })
   @IsOptional()
+  @IsBoolean()
   forceOverwrite?: boolean;
 
   @ApiPropertyOptional({ description: 'Agora merge weight percent (MERGED)' })
@@ -99,4 +113,54 @@ export class SchemeOfWorkResponseDto {
 
   @ApiPropertyOptional()
   publishedAt?: Date;
+}
+
+export class ReplaceSchemeWeekDto {
+  @ApiPropertyOptional({ description: 'Existing week id (omit for new weeks)' })
+  @IsOptional()
+  @IsString()
+  id?: string;
+
+  @ApiProperty({ description: 'Topic title' })
+  @IsString()
+  @IsNotEmpty()
+  topic: string;
+
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  subTopics?: string[];
+
+  @ApiPropertyOptional({ type: [String], description: 'Learning objectives' })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  objectives?: string[];
+
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  activities?: string[];
+
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  resources?: string[];
+
+  @ApiPropertyOptional({ description: 'Assessment type (CATCH_UP is stripped for content weeks)' })
+  @IsOptional()
+  @IsString()
+  assessment?: string;
+}
+
+export class ReplaceSchemeWeeksDto {
+  @ApiProperty({ type: [ReplaceSchemeWeekDto] })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => ReplaceSchemeWeekDto)
+  weeks: ReplaceSchemeWeekDto[];
 }

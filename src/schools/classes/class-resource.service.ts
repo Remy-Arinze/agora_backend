@@ -196,18 +196,16 @@ export class ClassResourceService {
       },
     });
 
-    // Fetch uploader names for all resources
-    const resourcesWithUploader = await Promise.all(
-      resources.map(async (resource: any) => {
-        const uploaderName = await this.getUploaderName(resource.uploadedBy);
-        return {
-          ...resource,
-          uploadedByName: uploaderName,
-        };
-      })
+    const uploaderNames = await this.getUploaderNames(
+      resources.map((resource: any) => resource.uploadedBy).filter(Boolean),
     );
 
-    return resourcesWithUploader.map((resource: any) => this.mapToDto(resource));
+    return resources.map((resource: any) =>
+      this.mapToDto({
+        ...resource,
+        uploadedByName: uploaderNames.get(resource.uploadedBy) || 'Unknown',
+      }),
+    );
   }
 
   /**
@@ -432,40 +430,49 @@ export class ClassResourceService {
   }
 
   /**
+   * Resolve uploader display names in bulk (admin → teacher → user email).
+   */
+  private async getUploaderNames(userIds: string[]): Promise<Map<string, string>> {
+    const names = new Map<string, string>();
+    const uniqueIds = [...new Set(userIds.filter(Boolean))];
+    if (uniqueIds.length === 0) return names;
+
+    const [admins, teachers, users] = await Promise.all([
+      this.prisma.schoolAdmin.findMany({
+        where: { userId: { in: uniqueIds } },
+        select: { userId: true, firstName: true, lastName: true },
+      }),
+      this.prisma.teacher.findMany({
+        where: { userId: { in: uniqueIds } },
+        select: { userId: true, firstName: true, lastName: true },
+      }),
+      this.prisma.user.findMany({
+        where: { id: { in: uniqueIds } },
+        select: { id: true, email: true },
+      }),
+    ]);
+
+    for (const user of users) {
+      names.set(user.id, user.email || 'Unknown');
+    }
+    for (const teacher of teachers) {
+      const name = `${teacher.firstName} ${teacher.lastName}`.trim();
+      if (name) names.set(teacher.userId, name);
+    }
+    for (const admin of admins) {
+      const name = `${admin.firstName} ${admin.lastName}`.trim();
+      if (name) names.set(admin.userId, name);
+    }
+
+    return names;
+  }
+
+  /**
    * Get uploader name from userId
    */
   private async getUploaderName(userId: string): Promise<string> {
-    try {
-      // First, try to find as SchoolAdmin
-      const schoolAdmin = await this.prisma.schoolAdmin.findFirst({
-        where: { userId },
-        select: { firstName: true, lastName: true },
-      });
-
-      if (schoolAdmin) {
-        return `${schoolAdmin.firstName} ${schoolAdmin.lastName}`.trim();
-      }
-
-      // Then, try to find as Teacher
-      const teacher = await this.prisma.teacher.findFirst({
-        where: { userId },
-        select: { firstName: true, lastName: true },
-      });
-
-      if (teacher) {
-        return `${teacher.firstName} ${teacher.lastName}`.trim();
-      }
-
-      // Fallback to user email if no profile found
-      const user = await this.prisma.user.findUnique({
-        where: { id: userId },
-        select: { email: true },
-      });
-
-      return user?.email || 'Unknown';
-    } catch (error) {
-      return 'Unknown';
-    }
+    const names = await this.getUploaderNames([userId]);
+    return names.get(userId) || 'Unknown';
   }
 
   /**

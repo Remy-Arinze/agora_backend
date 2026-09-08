@@ -24,13 +24,78 @@ export type PackableTopic = {
   isExam?: boolean;
 };
 
+export const CATCH_UP_ASSESSMENT = 'CATCH_UP';
+
+export type PackedWeekSlotKind = 'CONTENT' | 'REVISION' | 'EXAM' | 'CATCH_UP';
+
 export type PackedWeek = {
   weekNumber: number;
-  calendarStartDate: Date;
-  calendarEndDate: Date;
-  slotKind: 'CONTENT' | 'REVISION' | 'EXAM';
+  calendarStartDate: Date | null;
+  calendarEndDate: Date | null;
+  slotKind: PackedWeekSlotKind;
   topics: PackableTopic[];
+  /** Existing SchemeOfWorkWeek id when restamping an edited scheme. */
+  sourceId?: string | null;
 };
+
+export type RestampableContentWeek = {
+  id?: string | null;
+  topic: string;
+  subTopics?: string[];
+  learningOutcomes?: string[];
+  studentFriendlyOutcomes?: string[];
+  suggestedActivities?: string[];
+  resources?: string[];
+  assessmentType?: string | null;
+  topics?: PackableTopic[];
+};
+
+export type CalendarMismatch = 'ALIGNED' | 'SHORT' | 'LONG';
+
+export type CalendarCoverage = {
+  instructionalWeeks: number;
+  planWeeks: number;
+  unscheduledWeeks: number;
+  bufferWeeks: number;
+  mismatch: CalendarMismatch;
+};
+
+export function isCatchUpAssessment(assessmentType?: string | null) {
+  return (assessmentType || '').toUpperCase() === CATCH_UP_ASSESSMENT;
+}
+
+export function computeCalendarCoverage(input: {
+  instructionalWeeks: number;
+  planWeeks: number;
+  unscheduledWeeks: number;
+  bufferWeeks: number;
+}): CalendarCoverage {
+  const { instructionalWeeks, planWeeks, unscheduledWeeks, bufferWeeks } = input;
+  const mismatch: CalendarMismatch =
+    unscheduledWeeks > 0 ? 'SHORT' : bufferWeeks > 0 ? 'LONG' : 'ALIGNED';
+  return { instructionalWeeks, planWeeks, unscheduledWeeks, bufferWeeks, mismatch };
+}
+
+export function coverageFromStoredWeeks(
+  weeks: Array<{
+    assessmentType?: string | null;
+    calendarStartDate?: Date | string | null;
+  }>,
+  instructionalWeeks?: number,
+): CalendarCoverage {
+  const bufferWeeks = weeks.filter((w) => isCatchUpAssessment(w.assessmentType)).length;
+  const planWeeks = weeks.length - bufferWeeks;
+  const unscheduledWeeks = weeks.filter(
+    (w) => !isCatchUpAssessment(w.assessmentType) && !w.calendarStartDate,
+  ).length;
+  const dated = weeks.filter((w) => !!w.calendarStartDate).length;
+  return computeCalendarCoverage({
+    instructionalWeeks: instructionalWeeks ?? dated,
+    planWeeks,
+    unscheduledWeeks,
+    bufferWeeks,
+  });
+}
 
 function addDays(date: Date, days: number): Date {
   const d = new Date(date);
@@ -174,6 +239,154 @@ export function packTopicsOntoCalendar(
   return packed;
 }
 
+function datesWithinTerm(
+  start: Date | undefined,
+  end: Date | undefined,
+  termEnd?: Date,
+): { start: Date; end: Date } | null {
+  if (!start || !end) return null;
+  if (termEnd && startOfLocalDay(start).getTime() > startOfLocalDay(termEnd).getTime()) {
+    return null;
+  }
+  return { start, end };
+}
+
+/**
+ * Bud library import: keep one scheme week per source topic (typically 13).
+ * Dates attach only when the term has a matching instructional week that starts
+ * on or before term end. Extra calendar weeks become catch-up rows.
+ */
+export function packLibraryTopicsPreserveWeeks(
+  topics: PackableTopic[],
+  weekRanges: Array<{ weekNumber: number; start: Date; end: Date }>,
+  options: { termEnd?: Date } = {},
+): PackedWeek[] {
+  const ordered = [...topics].sort(
+    (a, b) => (a.weekNumber ?? a.order ?? 0) - (b.weekNumber ?? b.order ?? 0),
+  );
+  const rangeByNumber = new Map(weekRanges.map((w) => [w.weekNumber, w]));
+  const used = new Set<number>();
+
+  const packed: PackedWeek[] = ordered.map((topic, i) => {
+    let weekNumber = topic.weekNumber && topic.weekNumber > 0 ? topic.weekNumber : i + 1;
+    if (used.has(weekNumber)) {
+      weekNumber = i + 1;
+      while (used.has(weekNumber)) weekNumber += 1;
+    }
+    used.add(weekNumber);
+
+    const range = rangeByNumber.get(weekNumber);
+    const bounded = datesWithinTerm(range?.start, range?.end, options.termEnd);
+
+    return {
+      weekNumber,
+      calendarStartDate: bounded?.start ?? null,
+      calendarEndDate: bounded?.end ?? null,
+      slotKind: looksLikeExam(topic) ? 'EXAM' : looksLikeRevision(topic) ? 'REVISION' : 'CONTENT',
+      topics: [topic],
+    };
+  });
+
+  const leftover = weekRanges.filter((w) => !used.has(w.weekNumber));
+  for (const range of leftover) {
+    const bounded = datesWithinTerm(range.start, range.end, options.termEnd);
+    if (!bounded) continue;
+    packed.push({
+      weekNumber: range.weekNumber,
+      calendarStartDate: bounded.start,
+      calendarEndDate: bounded.end,
+      slotKind: 'CATCH_UP',
+      topics: [],
+    });
+    used.add(range.weekNumber);
+  }
+
+  return packed.sort((a, b) => a.weekNumber - b.weekNumber);
+}
+
+/**
+ * Admin editor: content weeks occupy slots 1…N. Dates attach from instructional
+ * range N when it starts on or before term end. Leftover calendar slots become
+ * catch-up. Extra content past the calendar stays undated.
+ */
+export function restampContentWeeksOntoCalendar(
+  contentWeeks: RestampableContentWeek[],
+  weekRanges: Array<{ weekNumber: number; start: Date; end: Date }>,
+  options: { termEnd?: Date } = {},
+): PackedWeek[] {
+  if (!contentWeeks.length) {
+    throw new Error('SCHEME_HAS_NO_CONTENT_WEEKS');
+  }
+
+  const rangeByNumber = new Map(weekRanges.map((w) => [w.weekNumber, w]));
+  const packed: PackedWeek[] = contentWeeks.map((week, i) => {
+    const weekNumber = i + 1;
+    const range = rangeByNumber.get(weekNumber);
+    const bounded = datesWithinTerm(range?.start, range?.end, options.termEnd);
+    const stub: PackableTopic = {
+      stableKey: week.id ? `keep:${week.id}` : `new:${i}`,
+      agoraTopicId: week.topics?.[0]?.agoraTopicId,
+      schoolTopicId: week.topics?.[0]?.schoolTopicId,
+      title: week.topic,
+      subTopics: week.subTopics || [],
+      learningOutcomes: week.learningOutcomes || [],
+      studentFriendlyOutcomes: week.studentFriendlyOutcomes || [],
+      suggestedActivities: week.suggestedActivities || [],
+      resources: week.resources || [],
+      assessmentType: isCatchUpAssessment(week.assessmentType) ? null : week.assessmentType || null,
+    };
+    return {
+      weekNumber,
+      calendarStartDate: bounded?.start ?? null,
+      calendarEndDate: bounded?.end ?? null,
+      slotKind: looksLikeExam(stub) ? 'EXAM' : looksLikeRevision(stub) ? 'REVISION' : 'CONTENT',
+      topics: week.topics?.length ? week.topics : [stub],
+      sourceId: week.id || null,
+    };
+  });
+
+  const used = new Set(packed.map((w) => w.weekNumber));
+  for (const range of weekRanges) {
+    if (used.has(range.weekNumber)) continue;
+    const bounded = datesWithinTerm(range.start, range.end, options.termEnd);
+    if (!bounded) continue;
+    packed.push({
+      weekNumber: range.weekNumber,
+      calendarStartDate: bounded.start,
+      calendarEndDate: bounded.end,
+      slotKind: 'CATCH_UP',
+      topics: [],
+      sourceId: null,
+    });
+    used.add(range.weekNumber);
+  }
+
+  return packed.sort((a, b) => a.weekNumber - b.weekNumber);
+}
+
+export function flattenContentWeek(week: RestampableContentWeek): {
+  topic: string;
+  subTopics: string[];
+  learningOutcomes: string[];
+  studentFriendlyOutcomes: string[];
+  suggestedActivities: string[];
+  resources: string[];
+  assessmentType: string | null;
+} {
+  const outcomes = week.learningOutcomes || [];
+  return {
+    topic: (week.topic || '').trim() || 'Untitled topic',
+    subTopics: week.subTopics || [],
+    learningOutcomes: outcomes,
+    studentFriendlyOutcomes: week.studentFriendlyOutcomes?.length
+      ? week.studentFriendlyOutcomes
+      : outcomes,
+    suggestedActivities: week.suggestedActivities || [],
+    resources: week.resources || [],
+    assessmentType: isCatchUpAssessment(week.assessmentType) ? null : week.assessmentType || null,
+  };
+}
+
 export function flattenPackedWeekTopic(week: PackedWeek): {
   topic: string;
   subTopics: string[];
@@ -183,6 +396,17 @@ export function flattenPackedWeekTopic(week: PackedWeek): {
   resources: string[];
   assessmentType: string | null;
 } {
+  if (week.slotKind === 'CATCH_UP') {
+    return {
+      topic: 'Catch-up / revision',
+      subTopics: [],
+      learningOutcomes: ['Use this week to finish outstanding topics, revise, or sit remaining assessments.'],
+      studentFriendlyOutcomes: ['I can catch up on work from earlier weeks.'],
+      suggestedActivities: ['Review incomplete topics', 'Targeted practice', 'Past-question drill'],
+      resources: [],
+      assessmentType: CATCH_UP_ASSESSMENT,
+    };
+  }
   const titles = week.topics.map((t) => t.title).filter(Boolean);
   return {
     topic: titles.join(' / ') || `Week ${week.weekNumber}`,

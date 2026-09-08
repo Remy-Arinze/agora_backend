@@ -28,7 +28,7 @@ import { NerdcCurriculumService } from './nerdc-curriculum.service';
 import {
   AgoraCurriculumTemplateDto,
   AgoraSubjectDto,
-  getClassLevelCode,
+  agoraGradeLevelCandidates,
 } from './dto/nerdc-curriculum.dto';
 import { UserWithContext } from '../../auth/types/user-with-context.type';
 import { UserRole } from '@prisma/client';
@@ -37,12 +37,16 @@ import { SubscriptionBillingService } from '../../subscriptions/subscription-bil
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { SCHEME_GENERATION_QUEUE } from './scheme-of-work.processor';
-import { SetupSchemeOfWorkDto } from './dto/scheme-of-work.dto';
+import { SetupSchemeOfWorkDto, ReplaceSchemeWeeksDto } from './dto/scheme-of-work.dto';
 import { SchemeGenerationMode, SchemeOfWorkStatus } from '@prisma/client';
 import { AiService } from '../../ai/ai.service';
 import { CloudinaryService } from '../../storage/cloudinary/cloudinary.service';
 import { SchemeSpineService } from './scheme-spine.service';
 import { schemeActiveKey } from '../../common/utils/topic-stable-key.util';
+import {
+  coverageFromStoredWeeks,
+  isCatchUpAssessment,
+} from './scheme-calendar-packer.util';
 
 @Injectable()
 export class CurriculumService {
@@ -90,28 +94,7 @@ export class CurriculumService {
     classLevelId: string,
     termId: string
   ): Promise<TimetableSubjectDto[]> {
-    // Get all ClassArms for this ClassLevel
-    const classArms = await (this.prisma as any).classArm.findMany({
-      where: { classLevelId },
-      select: { id: true },
-    });
-
-    // Build the list of IDs to check
-    // Include both ClassArm IDs and the classLevelId itself (which might be a ClassArm ID in legacy data)
-    const idsToCheck = classArms.map((ca: any) => ca.id);
-
-    // Also add the classLevelId itself - in case timetable was created with class ID
-    // that happens to be stored incorrectly
-    if (!idsToCheck.includes(classLevelId)) {
-      idsToCheck.push(classLevelId);
-    }
-
-    if (idsToCheck.length === 0) {
-      return [];
-    }
-
-    // Get distinct subjects from timetable periods
-    // Check both classArmId and classId since timetable periods might be stored with either
+    // One query: periods for any arm on this level (plus legacy classId / classArmId = level id)
     const periods = await (this.prisma as any).timetablePeriod.findMany({
       where: {
         AND: [
@@ -119,7 +102,11 @@ export class CurriculumService {
           { type: 'LESSON' },
           { subjectId: { not: null } },
           {
-            OR: [{ classArmId: { in: idsToCheck } }, { classId: { in: idsToCheck } }],
+            OR: [
+              { classArm: { classLevelId } },
+              { classArmId: classLevelId },
+              { classId: classLevelId },
+            ],
           },
         ],
       },
@@ -1258,10 +1245,11 @@ export class CurriculumService {
    * Find the latest published Agora curriculum for a subject and level
    */
   async getLatestAgoraCurriculum(subjectId: string, gradeLevel: string) {
+    const gradeLevels = agoraGradeLevelCandidates(gradeLevel);
     return await (this.prisma as any).agoraCurriculum.findFirst({
       where: {
         subjectId,
-        gradeLevel,
+        gradeLevel: { in: gradeLevels },
         status: 'PUBLISHED',
       },
       orderBy: { version: 'desc' },
@@ -1318,23 +1306,23 @@ export class CurriculumService {
       for (const term of session.terms) {
         // Check for existing
         const existing = await (tx as any).schemeOfWork.findFirst({
-          where: { schoolId, subjectId, termId: term.id, classLevelId, status: { not: SchemeOfWorkStatus.ARCHIVED } }
+          where: { schoolId, subjectId, termId: term.id, classLevelId: classLevelId ?? null, status: { not: SchemeOfWorkStatus.ARCHIVED } }
         });
 
-        if (existing && existing.status !== SchemeOfWorkStatus.ARCHIVED) {
-          if (dto.forceOverwrite) {
-            await (tx as any).schemeOfWork.update({
-              where: { id: existing.id },
-              data: {
-                status: SchemeOfWorkStatus.ARCHIVED,
-                archivedAt: new Date(),
-                archivedBy: user.id,
-                activeKey: null,
-              },
-            });
-          } else {
+        if (existing) {
+          const silent = this.schemeSpine.isSilentReplaceStatus(existing.status);
+          if (!silent && !dto.forceOverwrite) {
             throw new ConflictException(`A Scheme of Work exists for Term ${term.number}. Pass forceOverwrite to replace.`);
           }
+          await (tx as any).schemeOfWork.update({
+            where: { id: existing.id },
+            data: {
+              status: SchemeOfWorkStatus.ARCHIVED,
+              archivedAt: new Date(),
+              archivedBy: user.id,
+              activeKey: null,
+            },
+          });
         }
 
         const scheme = await (tx as any).schemeOfWork.create({
@@ -1393,14 +1381,14 @@ export class CurriculumService {
       });
     }
 
-    const existing = await this.schemeSpine.findLiveScheme(schoolId, subjectId, termId, classLevelId);
-    if (existing) {
-      if (dto.forceOverwrite) {
-        await this.schemeSpine.archiveLiveScheme(existing.id, user.id);
-      } else {
-        throw new ConflictException('A Scheme of Work already exists for this subject and term. Pass forceOverwrite to replace it.');
-      }
-    }
+    await this.schemeSpine.occupyLiveSchemeSlot({
+      schoolId,
+      subjectId,
+      termId,
+      classLevelId,
+      userId: user.id,
+      forceOverwrite: dto.forceOverwrite,
+    });
 
     // PATH B: Custom School Curriculum (Paid)
     if (mode === SchemeGenerationMode.SCHOOL_ONLY || mode === SchemeGenerationMode.MERGED) {
@@ -1481,19 +1469,31 @@ export class CurriculumService {
         status: { not: SchemeOfWorkStatus.ARCHIVED },
       },
       include: {
-        weeks: {
-          select: { id: true, isDelivered: true },
-        },
+        weeks: { select: { assessmentType: true, isDelivered: true, calendarStartDate: true } },
       },
     });
+
+    let instructionalWeeks = 0;
+    try {
+      const { ranges } = await this.schemeSpine.buildWeekRanges(schoolId, termId);
+      instructionalWeeks = ranges.length;
+    } catch {
+      instructionalWeeks = 0;
+    }
 
     const schemeMap = new Map(schemes.map((s: any) => [s.subjectId, s]));
 
     return subjects.map(subject => {
       const scheme = schemeMap.get(subject.subjectId) as any;
-      const weeks = scheme?.weeks || [];
-      const weeksTotal = weeks.length;
-      const weeksCompleted = weeks.filter((w: any) => w.isDelivered).length;
+      const coverage = scheme
+        ? coverageFromStoredWeeks(scheme.weeks || [], instructionalWeeks)
+        : null;
+      const weeksTotal = coverage?.planWeeks ?? 0;
+      const weeksCompleted = scheme
+        ? (scheme.weeks || []).filter(
+            (w: any) => w.isDelivered && !isCatchUpAssessment(w.assessmentType),
+          ).length
+        : 0;
       return {
         ...subject,
         schemeId: scheme?.id || null,
@@ -1506,6 +1506,8 @@ export class CurriculumService {
         weeksTotal,
         weeksCompleted,
         progressPercentage: weeksTotal > 0 ? Math.round((weeksCompleted / weeksTotal) * 100) : 0,
+        instructionalWeeks,
+        calendarCoverage: coverage,
       };
     });
   }
@@ -1517,7 +1519,7 @@ export class CurriculumService {
     const scheme = await (this.prisma as any).schemeOfWork.findFirst({
       where: { id: schemeId, schoolId },
       include: {
-        weeks: { orderBy: { order: 'asc' }, include: { topics: true } },
+        weeks: { orderBy: { order: 'asc' }, include: { topics: true, deliveries: true } },
         classLevel: true,
         school: true,
       }
@@ -1570,6 +1572,35 @@ export class CurriculumService {
     );
   }
 
+  async replaceSchemeWeeks(
+    schoolId: string,
+    schemeId: string,
+    dto: ReplaceSchemeWeeksDto,
+    user: UserWithContext,
+  ): Promise<CurriculumDto> {
+    await this.assertStaffMayMutateCurriculum(schoolId, user);
+    const isAdmin = user.role === 'SCHOOL_ADMIN' || user.role === 'SUPER_ADMIN';
+    if (!isAdmin) {
+      throw new ForbiddenException('Only administrators can edit scheme weeks');
+    }
+
+    await this.schemeSpine.replaceContentWeeks({
+      schoolId,
+      schemeId,
+      contentWeeks: dto.weeks.map((w) => ({
+        id: w.id || null,
+        topic: w.topic,
+        subTopics: w.subTopics || [],
+        learningOutcomes: w.objectives || [],
+        suggestedActivities: w.activities || [],
+        resources: w.resources || [],
+        assessmentType: w.assessment || null,
+      })),
+    });
+
+    return this.getSchemeOfWorkById(schoolId, schemeId, user);
+  }
+
   /**
    * Delete a Scheme of Work
    */
@@ -1597,8 +1628,14 @@ export class CurriculumService {
     extras?: { teacherId?: string; teacherName?: string },
   ): CurriculumDto {
     const weeks = scheme.weeks || [];
-    const totalWeeks = weeks.length;
-    const completedWeeks = weeks.filter((w: any) => w.isDelivered).length;
+    const calendarCoverage = coverageFromStoredWeeks(weeks);
+    const lock = this.schemeSpine.structureEditLock({
+      status: scheme.status,
+      weeks,
+    });
+    const planWeeksList = weeks.filter((w: any) => !isCatchUpAssessment(w.assessmentType));
+    const totalWeeks = calendarCoverage.planWeeks;
+    const completedWeeks = planWeeksList.filter((w: any) => w.isDelivered).length;
     const term = scheme.term;
 
     // Map scheme statuses onto curriculum badge vocabulary where needed
@@ -1635,7 +1672,9 @@ export class CurriculumService {
       isActive: scheme.status === 'PUBLISHED',
       createdAt: scheme.createdAt,
       updatedAt: scheme.updatedAt,
-      items: weeks.map((w: any) => ({
+      items: weeks.map((w: any) => {
+        const isCatchUp = isCatchUpAssessment(w.assessmentType);
+        return {
         id: w.id,
         curriculumId: scheme.id,
         weekNumber: w.weekNumber,
@@ -1654,10 +1693,18 @@ export class CurriculumService {
         order: w.order,
         stableKeys: (w.topics || []).map((t: any) => t.stableKey),
         stableKey: w.topics?.[0]?.stableKey,
-      })),
+        calendarStartDate: w.calendarStartDate || null,
+        calendarEndDate: w.calendarEndDate || null,
+        isCatchUp,
+        outsideCalendar: !isCatchUp && !w.calendarStartDate,
+      };
+      }),
       totalWeeks,
       completedWeeks,
       progressPercentage: totalWeeks > 0 ? Math.round((completedWeeks / totalWeeks) * 100) : 0,
+      calendarCoverage,
+      structureEditable: lock.structureEditable,
+      structureLockReason: lock.structureLockReason,
     };
   }
 
@@ -1697,12 +1744,15 @@ export class CurriculumService {
 
     if (!targetAgoraSubjectId) return [];
 
-    // 3. Fetch published Agora curricula for that global subject
-    const normalizedGradeLevel = gradeLevel.replace(/\s+/g, '_');
+    // 3. Fetch published Agora curricula for that global subject.
+    // Super-admin stores PRIMARY_1; class names arrive as "Primary 1" → Primary_1.
+    const gradeLevels = agoraGradeLevelCandidates(gradeLevel);
+    if (gradeLevels.length === 0) return [];
+
     const curricula = await (this.prisma as any).agoraCurriculum.findMany({
       where: {
         subjectId: targetAgoraSubjectId,
-        gradeLevel: normalizedGradeLevel,
+        gradeLevel: { in: gradeLevels },
         status: 'PUBLISHED'
       },
       include: {

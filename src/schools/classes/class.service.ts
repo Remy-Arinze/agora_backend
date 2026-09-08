@@ -504,6 +504,12 @@ export class ClassService {
     // Use provided academic year or default to current
     const targetAcademicYear = academicYear || this.getCurrentAcademicYear();
 
+    const enrollmentCountWhere = {
+      schoolId: school.id,
+      isActive: true,
+      academicYear: targetAcademicYear,
+    };
+
     // For TERTIARY: Return Classes (courses)
     if (typeFilter === ClassType.TERTIARY) {
       const classes = await this.classModel.findMany({
@@ -518,28 +524,20 @@ export class ClassService {
               teacher: true,
             },
           },
+          _count: {
+            select: {
+              enrollments: { where: enrollmentCountWhere },
+            },
+          },
         },
         orderBy: {
           name: 'asc',
         },
       });
 
-      // Get student counts for TERTIARY classes
-      const classesWithCounts = await Promise.all(
-        classes.map(async (cls: any) => {
-          const studentsCount = await this.prisma.enrollment.count({
-            where: {
-              schoolId: school.id,
-              classId: cls.id,
-              isActive: true,
-              academicYear: targetAcademicYear,
-            },
-          });
-          return { ...cls, studentsCount };
-        })
+      return classes.map((cls: any) =>
+        this.mapToClassDto({ ...cls, studentsCount: cls._count?.enrollments ?? 0 }),
       );
-
-      return classesWithCounts.map((cls: any) => this.mapToClassDto(cls));
     }
 
     // For PRIMARY/SECONDARY: Return ClassArms only
@@ -573,52 +571,43 @@ export class ClassService {
             teacher: true,
           },
         },
+        _count: {
+          select: {
+            enrollments: { where: enrollmentCountWhere },
+          },
+        },
       },
       orderBy: [{ classLevel: { level: 'asc' } }, { name: 'asc' }],
     });
 
-    // Get student counts for ClassArms
-    const classArmsWithCounts = await Promise.all(
-      classArms.map(async (arm: any) => {
-        const studentsCount = await this.prisma.enrollment.count({
-          where: {
-            schoolId: school.id,
-            classArmId: arm.id,
-            isActive: true,
-            academicYear: targetAcademicYear,
-          },
-        });
-
-        return {
-          id: arm.id,
-          name: `${arm.classLevel.name} ${arm.name}`, // e.g., "JSS 3 A"
-          code: null,
-          classLevel: arm.classLevel.name,
-          type: arm.classLevel.type,
-          academicYear: arm.academicYear,
-          description: null,
-          isActive: arm.isActive,
-          createdAt: arm.createdAt,
-          updatedAt: arm.updatedAt,
-          schoolId: school.id,
-          studentsCount,
-          teachers: (arm.classTeachers || []).map((ct: any) => ({
-            id: ct.id,
-            teacherId: ct.teacher.id,
-            firstName: ct.teacher.firstName,
-            lastName: ct.teacher.lastName,
-            email: ct.teacher.email,
-            subject: ct.subject || ct.teacher.subject,
-            isPrimary: ct.isPrimary,
-            createdAt: ct.createdAt,
-          })),
-          classArmId: arm.id,
-          classLevelId: arm.classLevelId,
-        };
-      })
+    return classArms.map((arm: any) =>
+      this.mapToClassDto({
+        id: arm.id,
+        name: `${arm.classLevel.name} ${arm.name}`, // e.g., "JSS 3 A"
+        code: null,
+        classLevel: arm.classLevel.name,
+        type: arm.classLevel.type,
+        academicYear: arm.academicYear,
+        description: null,
+        isActive: arm.isActive,
+        createdAt: arm.createdAt,
+        updatedAt: arm.updatedAt,
+        schoolId: school.id,
+        studentsCount: arm._count?.enrollments ?? 0,
+        teachers: (arm.classTeachers || []).map((ct: any) => ({
+          id: ct.id,
+          teacherId: ct.teacher.id,
+          firstName: ct.teacher.firstName,
+          lastName: ct.teacher.lastName,
+          email: ct.teacher.email,
+          subject: ct.subject || ct.teacher.subject,
+          isPrimary: ct.isPrimary,
+          createdAt: ct.createdAt,
+        })),
+        classArmId: arm.id,
+        classLevelId: arm.classLevelId,
+      }),
     );
-
-    return classArmsWithCounts.map((arm: any) => this.mapToClassDto(arm));
   }
 
   /**
@@ -1382,9 +1371,22 @@ export class ClassService {
 
     const enrollments = await this.prisma.enrollment.findMany({
       where: enrollmentWhere,
-      include: {
+      select: {
+        id: true,
+        termId: true,
+        classLevel: true,
+        academicYear: true,
+        enrollmentDate: true,
         student: {
-          include: {
+          select: {
+            id: true,
+            uid: true,
+            publicId: true,
+            firstName: true,
+            lastName: true,
+            middleName: true,
+            dateOfBirth: true,
+            profileImage: true,
             user: {
               select: {
                 id: true,
@@ -1439,6 +1441,7 @@ export class ClassService {
       lastName: enrollment.student.lastName,
       middleName: enrollment.student.middleName,
       dateOfBirth: enrollment.student.dateOfBirth,
+      profileImage: enrollment.student.profileImage,
       email: enrollment.student.user?.email || null,
       phone: enrollment.student.user?.phone || null,
       enrollment: {

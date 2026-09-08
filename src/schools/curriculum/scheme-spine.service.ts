@@ -3,6 +3,7 @@ import {
   AgoraCurriculumPublishStatus,
   SchemeGenerationMode,
   SchemeOfWorkStatus,
+  SchemeWeekDeliveryStatus,
 } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import {
@@ -15,10 +16,36 @@ import { schemeActiveKey } from '../../common/utils/topic-stable-key.util';
 import { SchoolSettingsService } from '../../school-settings/school-settings.service';
 import {
   flattenPackedWeekTopic,
+  flattenContentWeek,
   packTopicsOntoCalendar,
+  packLibraryTopicsPreserveWeeks,
+  restampContentWeeksOntoCalendar,
   PackableTopic,
+  RestampableContentWeek,
   buildInstructionalWeekRanges,
 } from './scheme-calendar-packer.util';
+
+const SILENT_REPLACE_STATUSES: SchemeOfWorkStatus[] = [
+  SchemeOfWorkStatus.FAILED,
+  SchemeOfWorkStatus.CANCELLED,
+  SchemeOfWorkStatus.QUEUED,
+  SchemeOfWorkStatus.VERIFYING,
+];
+
+const STRUCTURE_EDITABLE_STATUSES: SchemeOfWorkStatus[] = [
+  SchemeOfWorkStatus.DRAFT,
+  SchemeOfWorkStatus.APPROVED,
+  SchemeOfWorkStatus.PUBLISHED,
+];
+
+const DELIVERY_LOCK_STATUSES: SchemeWeekDeliveryStatus[] = [
+  SchemeWeekDeliveryStatus.IN_PROGRESS,
+  SchemeWeekDeliveryStatus.DELIVERED,
+  SchemeWeekDeliveryStatus.SKIPPED,
+  SchemeWeekDeliveryStatus.COMBINED,
+];
+
+const WEEK_NUMBER_TEMP_OFFSET = 10000;
 
 @Injectable()
 export class SchemeSpineService {
@@ -26,6 +53,10 @@ export class SchemeSpineService {
     private readonly prisma: PrismaService,
     private readonly schoolSettings: SchoolSettingsService,
   ) {}
+
+  isSilentReplaceStatus(status: SchemeOfWorkStatus) {
+    return SILENT_REPLACE_STATUSES.includes(status);
+  }
 
   async archiveLiveScheme(existingId: string, userId: string) {
     await this.prisma.schemeOfWork.update({
@@ -45,9 +76,49 @@ export class SchemeSpineService {
         schoolId,
         subjectId,
         termId,
-        classLevelId: classLevelId || undefined,
+        classLevelId: classLevelId ?? null,
         status: { not: SchemeOfWorkStatus.ARCHIVED },
       },
+    });
+  }
+
+  /**
+   * Archives a failed/queued leftover without asking, or requires forceOverwrite
+   * for a real live scheme. Also clears any leftover unique activeKey slot.
+   */
+  async occupyLiveSchemeSlot(params: {
+    schoolId: string;
+    subjectId: string;
+    termId: string;
+    classLevelId?: string | null;
+    userId: string;
+    forceOverwrite?: boolean;
+  }) {
+    const existing = await this.findLiveScheme(
+      params.schoolId,
+      params.subjectId,
+      params.termId,
+      params.classLevelId,
+    );
+
+    if (existing) {
+      if (!this.isSilentReplaceStatus(existing.status) && !params.forceOverwrite) {
+        throw new ConflictException(
+          'A Scheme of Work already exists for this subject and term. Pass forceOverwrite to replace it.',
+        );
+      }
+      await this.archiveLiveScheme(existing.id, params.userId);
+    }
+
+    const activeKey = schemeActiveKey(
+      params.schoolId,
+      params.subjectId,
+      params.termId,
+      params.classLevelId,
+    );
+    await this.prisma.schemeOfWork.updateMany({
+      where: { activeKey },
+      data: { activeKey: null },
     });
   }
 
@@ -92,9 +163,17 @@ export class SchemeSpineService {
     return { term, ranges };
   }
 
-  async persistPackedWeeks(schemeId: string, topics: PackableTopic[], schoolId: string, termId: string) {
-    const { ranges } = await this.buildWeekRanges(schoolId, termId);
-    const packed = packTopicsOntoCalendar(topics, ranges);
+  async persistPackedWeeks(
+    schemeId: string,
+    topics: PackableTopic[],
+    schoolId: string,
+    termId: string,
+    options?: { preserveSourceWeeks?: boolean },
+  ) {
+    const { term, ranges } = await this.buildWeekRanges(schoolId, termId);
+    const packed = options?.preserveSourceWeeks
+      ? packLibraryTopicsPreserveWeeks(topics, ranges, { termEnd: term.endDate })
+      : packTopicsOntoCalendar(topics, ranges);
 
     await this.prisma.schemeOfWorkWeek.deleteMany({ where: { schemeOfWorkId: schemeId } });
 
@@ -104,8 +183,8 @@ export class SchemeSpineService {
         data: {
           schemeOfWorkId: schemeId,
           weekNumber: week.weekNumber,
-          calendarStartDate: week.calendarStartDate,
-          calendarEndDate: week.calendarEndDate,
+          calendarStartDate: week.calendarStartDate ?? null,
+          calendarEndDate: week.calendarEndDate ?? null,
           topic: flat.topic,
           subTopics: flat.subTopics,
           learningOutcomes: flat.learningOutcomes,
@@ -166,20 +245,14 @@ export class SchemeSpineService {
       );
     }
 
-    const existing = await this.findLiveScheme(
-      params.schoolId,
-      params.subjectId,
-      params.termId,
-      params.classLevelId,
-    );
-    if (existing) {
-      if (!params.forceOverwrite) {
-        throw new ConflictException(
-          'A Scheme of Work already exists for this subject and term. Pass forceOverwrite to replace it.',
-        );
-      }
-      await this.archiveLiveScheme(existing.id, params.userId);
-    }
+    await this.occupyLiveSchemeSlot({
+      schoolId: params.schoolId,
+      subjectId: params.subjectId,
+      termId: params.termId,
+      classLevelId: params.classLevelId,
+      userId: params.userId,
+      forceOverwrite: params.forceOverwrite,
+    });
 
     const status = await this.resolveInitialStatus(params.schoolId, SchemeGenerationMode.AGORA_ONLY);
     const activeKey = schemeActiveKey(
@@ -222,7 +295,9 @@ export class SchemeSpineService {
       order: t.order,
     }));
 
-    await this.persistPackedWeeks(scheme.id, packable, params.schoolId, params.termId);
+    await this.persistPackedWeeks(scheme.id, packable, params.schoolId, params.termId, {
+      preserveSourceWeeks: true,
+    });
     return scheme;
   }
 
@@ -263,5 +338,173 @@ export class SchemeSpineService {
       added,
       removed,
     };
+  }
+
+  structureEditLock(scheme: {
+    status: SchemeOfWorkStatus;
+    weeks: Array<{
+      isDelivered: boolean;
+      deliveries?: Array<{ status: SchemeWeekDeliveryStatus }>;
+    }>;
+  }): { structureEditable: boolean; structureLockReason: string | null } {
+    if (!STRUCTURE_EDITABLE_STATUSES.includes(scheme.status)) {
+      return {
+        structureEditable: false,
+        structureLockReason: 'This scheme cannot be edited in its current status.',
+      };
+    }
+    const deliveryStarted =
+      scheme.weeks.some((w) => w.isDelivered) ||
+      scheme.weeks.some((w) =>
+        (w.deliveries || []).some((d) => DELIVERY_LOCK_STATUSES.includes(d.status)),
+      );
+    if (deliveryStarted) {
+      return {
+        structureEditable: false,
+        structureLockReason: 'Teaching has started on this scheme.',
+      };
+    }
+    return { structureEditable: true, structureLockReason: null };
+  }
+
+  async replaceContentWeeks(params: {
+    schoolId: string;
+    schemeId: string;
+    contentWeeks: RestampableContentWeek[];
+  }) {
+    if (!params.contentWeeks.length) {
+      throw new BadRequestException('A scheme needs at least one topic week.');
+    }
+
+    const scheme = await this.prisma.schemeOfWork.findFirst({
+      where: { id: params.schemeId, schoolId: params.schoolId },
+      include: {
+        weeks: { include: { topics: true, deliveries: true } },
+      },
+    });
+    if (!scheme) throw new NotFoundException('Scheme not found');
+    if (!scheme.termId) throw new BadRequestException('Scheme has no term.');
+
+    const lock = this.structureEditLock(scheme);
+    if (!lock.structureEditable) {
+      throw new BadRequestException(lock.structureLockReason || 'This scheme cannot be edited.');
+    }
+
+    const existingById = new Map(scheme.weeks.map((w) => [w.id, w]));
+    for (const week of params.contentWeeks) {
+      if (week.id && !existingById.has(week.id)) {
+        throw new BadRequestException(`Unknown week: ${week.id}`);
+      }
+    }
+
+    const { term, ranges } = await this.buildWeekRanges(params.schoolId, scheme.termId);
+    const packed = restampContentWeeksOntoCalendar(params.contentWeeks, ranges, {
+      termEnd: term.endDate,
+    });
+
+    const keepIds = new Set(
+      params.contentWeeks.map((w) => w.id).filter((id): id is string => !!id),
+    );
+
+    await this.prisma.$transaction(async (tx) => {
+      for (const w of scheme.weeks) {
+        await tx.schemeOfWorkWeek.update({
+          where: { id: w.id },
+          data: {
+            weekNumber: w.weekNumber + WEEK_NUMBER_TEMP_OFFSET,
+            order: w.weekNumber + WEEK_NUMBER_TEMP_OFFSET,
+          },
+        });
+      }
+
+      const toDelete = scheme.weeks.filter((w) => !keepIds.has(w.id));
+      if (toDelete.length) {
+        await tx.schemeOfWorkWeek.deleteMany({
+          where: { id: { in: toDelete.map((w) => w.id) } },
+        });
+      }
+
+      for (const week of packed) {
+        if (week.slotKind === 'CATCH_UP') {
+          const flat = flattenPackedWeekTopic(week);
+          await tx.schemeOfWorkWeek.create({
+            data: {
+              schemeOfWorkId: params.schemeId,
+              weekNumber: week.weekNumber,
+              calendarStartDate: week.calendarStartDate,
+              calendarEndDate: week.calendarEndDate,
+              topic: flat.topic,
+              subTopics: flat.subTopics,
+              learningOutcomes: flat.learningOutcomes,
+              studentFriendlyOutcomes: flat.studentFriendlyOutcomes,
+              suggestedActivities: flat.suggestedActivities,
+              resources: flat.resources,
+              assessmentType: flat.assessmentType,
+              order: week.weekNumber,
+            },
+          });
+          continue;
+        }
+
+        const source = params.contentWeeks[week.weekNumber - 1];
+        const flat = flattenContentWeek(source);
+        if (week.sourceId) {
+          await tx.schemeOfWorkWeek.update({
+            where: { id: week.sourceId },
+            data: {
+              weekNumber: week.weekNumber,
+              calendarStartDate: week.calendarStartDate,
+              calendarEndDate: week.calendarEndDate,
+              topic: flat.topic,
+              subTopics: flat.subTopics,
+              learningOutcomes: flat.learningOutcomes,
+              studentFriendlyOutcomes: flat.studentFriendlyOutcomes,
+              suggestedActivities: flat.suggestedActivities,
+              resources: flat.resources,
+              assessmentType: flat.assessmentType,
+              order: week.weekNumber,
+            },
+          });
+          const topicCount = await tx.schemeOfWorkWeekTopic.count({
+            where: { schemeOfWorkWeekId: week.sourceId },
+          });
+          if (!topicCount) {
+            await tx.schemeOfWorkWeekTopic.create({
+              data: {
+                schemeOfWorkWeekId: week.sourceId,
+                stableKey: `school-custom:${week.sourceId}`,
+                order: 0,
+              },
+            });
+          }
+        } else {
+          const created = await tx.schemeOfWorkWeek.create({
+            data: {
+              schemeOfWorkId: params.schemeId,
+              weekNumber: week.weekNumber,
+              calendarStartDate: week.calendarStartDate,
+              calendarEndDate: week.calendarEndDate,
+              topic: flat.topic,
+              subTopics: flat.subTopics,
+              learningOutcomes: flat.learningOutcomes,
+              studentFriendlyOutcomes: flat.studentFriendlyOutcomes,
+              suggestedActivities: flat.suggestedActivities,
+              resources: flat.resources,
+              assessmentType: flat.assessmentType,
+              order: week.weekNumber,
+            },
+          });
+          await tx.schemeOfWorkWeekTopic.create({
+            data: {
+              schemeOfWorkWeekId: created.id,
+              stableKey: `school-custom:${created.id}`,
+              order: 0,
+            },
+          });
+        }
+      }
+    });
+
+    return packed.length;
   }
 }

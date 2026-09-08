@@ -182,20 +182,70 @@ export const CLASS_LEVEL_MAPPING: Record<string, { name: string; schoolType: str
   SS_3: { name: 'SS 3', schoolType: 'SECONDARY' },
 };
 
+function compactGradeToken(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+/** Super-admin UI labels like "Pry 1" compact to pry1, not primary1. */
+const GRADE_COMPACT_ALIASES: Record<string, string> = Object.fromEntries(
+  [1, 2, 3, 4, 5, 6].map((n) => [`pry${n}`, `PRIMARY_${n}`]),
+);
+
+/**
+ * Resolve a class name or stored grade key to the canonical code (PRIMARY_1, JSS_1, …).
+ * Accepts "Primary 1", "Primary_1", "PRIMARY_1", and "Pry 1".
+ */
+export function resolveClassLevelCode(gradeLevel: string, schoolType?: string): string | null {
+  const trimmed = gradeLevel?.trim();
+  if (!trimmed) return null;
+
+  const compact = compactGradeToken(trimmed);
+
+  const matchCode = (code: string | undefined) => {
+    if (!code) return null;
+    const mapping = CLASS_LEVEL_MAPPING[code];
+    if (!mapping) return null;
+    if (schoolType && mapping.schoolType !== schoolType) return null;
+    return code;
+  };
+
+  const byCode = Object.keys(CLASS_LEVEL_MAPPING).find((code) => compactGradeToken(code) === compact);
+  const fromCode = matchCode(byCode);
+  if (fromCode) return fromCode;
+
+  for (const [code, mapping] of Object.entries(CLASS_LEVEL_MAPPING)) {
+    if (compactGradeToken(mapping.name) === compact) {
+      const fromName = matchCode(code);
+      if (fromName) return fromName;
+    }
+  }
+
+  return matchCode(GRADE_COMPACT_ALIASES[compact]);
+}
+
 // Reverse mapping: from class level name to code
 export function getClassLevelCode(name: string, schoolType: string): string | null {
-  for (const [code, mapping] of Object.entries(CLASS_LEVEL_MAPPING)) {
-    if (mapping.name.toLowerCase() === name.toLowerCase() && mapping.schoolType === schoolType) {
-      return code;
-    }
+  return resolveClassLevelCode(name, schoolType);
+}
+
+/**
+ * Grade keys a school-admin library lookup should accept for one class level.
+ * Super-admin packs store PRIMARY_1; class names become Primary_1; E2E seed uses Primary_1.
+ */
+export function agoraGradeLevelCandidates(gradeLevel: string): string[] {
+  const trimmed = gradeLevel?.trim();
+  if (!trimmed) return [];
+
+  const underscored = trimmed.replace(/\s+/g, '_');
+  const candidates = new Set<string>([trimmed, underscored, underscored.toUpperCase()]);
+
+  const code = resolveClassLevelCode(trimmed);
+  if (code) {
+    const mapping = CLASS_LEVEL_MAPPING[code];
+    candidates.add(code);
+    candidates.add(mapping.name);
+    candidates.add(mapping.name.replace(/\s+/g, '_'));
   }
-  // Try partial match
-  const normalized = name.toLowerCase().replace(/\s+/g, '');
-  for (const [code, mapping] of Object.entries(CLASS_LEVEL_MAPPING)) {
-    const mappingNormalized = mapping.name.toLowerCase().replace(/\s+/g, '');
-    if (mappingNormalized === normalized && mapping.schoolType === schoolType) {
-      return code;
-    }
-  }
-  return null;
+
+  return [...candidates];
 }
