@@ -23,6 +23,12 @@ export class CreateAgoraSubjectDto {
   @IsString({ each: true })
   schoolTypes: string[];
 
+  @ApiPropertyOptional({ description: 'PRIMARY, JUNIOR (JSS), and/or SENIOR (SS)' })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  levelStreams?: string[];
+
   @ApiPropertyOptional({ description: 'Brief description' })
   @IsOptional()
   @IsString()
@@ -50,6 +56,12 @@ export class UpdateAgoraSubjectDto {
   @IsArray()
   @IsString({ each: true })
   schoolTypes?: string[];
+
+  @ApiPropertyOptional({ description: 'PRIMARY, JUNIOR (JSS), and/or SENIOR (SS)' })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  levelStreams?: string[];
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -98,6 +110,31 @@ export class CreateAgoraCurriculumSourceDto {
   manualContent?: any;
 }
 
+/** Multipart body for /sources/upload-multiple. Supports one shared subject/grade or a per-file queue. */
+export class UploadMultipleCurriculumSourcesDto {
+  @ApiPropertyOptional({ description: 'Shared subject ID when all files belong to one subject' })
+  @IsOptional()
+  @IsString()
+  subjectId?: string;
+
+  @ApiPropertyOptional({ description: 'Shared grade(s), comma-separated, when not using entries' })
+  @IsOptional()
+  @IsString()
+  gradeLevel?: string;
+
+  @ApiPropertyOptional({ description: 'MANUAL or FILE_UPLOAD' })
+  @IsOptional()
+  @IsString()
+  sourceType?: string;
+
+  @ApiPropertyOptional({
+    description: 'JSON array of { fileIndex, subjectId, gradeLevel } for mixed-subject queues',
+  })
+  @IsOptional()
+  @IsString()
+  entries?: string;
+}
+
 export class ConsolidateCurriculumDto {
   @ApiProperty({ description: 'ID of the NerdcSubject' })
   @IsString()
@@ -112,6 +149,11 @@ export class ConsolidateCurriculumDto {
   @ApiProperty({ description: 'Array of source IDs to use' })
   @IsNotEmpty()
   sourceIds: string[];
+
+  @ApiPropertyOptional({ description: 'Mint a new version even if a complete draft already exists' })
+  @IsOptional()
+  @IsBoolean()
+  forceNewVersion?: boolean;
 }
 
 export class PublishCurriculumDto {

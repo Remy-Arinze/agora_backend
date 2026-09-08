@@ -27,6 +27,7 @@ export class QueueMonitorService implements OnModuleInit, OnModuleDestroy {
     @InjectQueue('{vector}') private readonly vectorQueue: Queue,
     @InjectQueue('curriculum-processing') private readonly curriculumQueue: Queue,
     @InjectQueue('curriculum-consolidation') private readonly consolidationQueue: Queue,
+    @InjectQueue('scheme-generation') private readonly schemeQueue: Queue,
     @InjectQueue('retention-queue') private readonly retentionQueue: Queue,
     private readonly oo: OpenObserveLogger,
   ) {}
@@ -45,9 +46,10 @@ export class QueueMonitorService implements OnModuleInit, OnModuleDestroy {
   private async poll() {
     const queues: Array<{ name: string; queue: Queue }> = [
       { name: '{vector}',                queue: this.vectorQueue },
-      { name: 'curriculum-processing',   queue: this.curriculumQueue },
+      { name: 'curriculum-processing',    queue: this.curriculumQueue },
       { name: 'curriculum-consolidation', queue: this.consolidationQueue },
-      { name: 'retention-queue',         queue: this.retentionQueue },
+      { name: 'scheme-generation',        queue: this.schemeQueue },
+      { name: 'retention-queue',          queue: this.retentionQueue },
     ];
 
     await Promise.all(queues.map(({ name, queue }) => this.snapshotQueue(name, queue)));

@@ -33,6 +33,11 @@ export class AgoraSubjectDto {
   @IsString({ each: true })
   schoolTypes: string[];
 
+  @ApiPropertyOptional({ example: ['JUNIOR', 'SENIOR'], description: 'PRIMARY, JUNIOR (JSS), SENIOR (SS)' })
+  @IsOptional()
+  @IsString({ each: true })
+  levelStreams?: string[];
+
   @ApiPropertyOptional({ description: 'Subject description' })
   @IsOptional()
   @IsString()

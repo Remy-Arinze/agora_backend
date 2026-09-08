@@ -322,6 +322,7 @@ export class NerdcCurriculumService {
       code: subject.code,
       category: subject.category,
       schoolTypes: subject.schoolTypes,
+      levelStreams: subject.levelStreams || [],
       description: subject.description,
       isActive: subject.isActive,
     };

@@ -9,7 +9,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { UserWithContext } from '../auth/types/user-with-context.type';
 import { ResponseDto } from '../common/dto/response.dto';
 import { AgoraCurriculumService } from './agora-curriculum.service';
-import { CreateAgoraCurriculumSourceDto, ConsolidateCurriculumDto, PublishCurriculumDto, CreateAgoraSubjectDto, UpdateAgoraSubjectDto } from './dto/agora-curriculum.dto';
+import { CreateAgoraCurriculumSourceDto, UploadMultipleCurriculumSourcesDto, ConsolidateCurriculumDto, PublishCurriculumDto, CreateAgoraSubjectDto, UpdateAgoraSubjectDto } from './dto/agora-curriculum.dto';
 import { Throttle } from '@nestjs/throttler';
 
 /**
@@ -33,9 +33,10 @@ export class AgoraCurriculumController {
   async getNerdcSubjects(
     @Query('schoolType') schoolType?: string,
     @Query('category') category?: string,
-    @Query('search') search?: string
+    @Query('search') search?: string,
+    @Query('levelStream') levelStream?: string
   ) {
-    const subjects = await this.agoraCurriculumService.getNerdcSubjects(schoolType, category, search);
+    const subjects = await this.agoraCurriculumService.getNerdcSubjects(schoolType, category, search, levelStream);
     return ResponseDto.ok(subjects, 'Subjects retrieved successfully');
   }
 
@@ -105,10 +106,10 @@ export class AgoraCurriculumController {
   @Post('sources/upload-multiple')
   @Throttle({ 'heavy-ai': { limit: 50, ttl: 60000 } })
   @ApiOperation({ summary: 'Upload multiple curriculum source documents as a batch' })
-  @UseInterceptors(FilesInterceptor('files', 10))
+  @UseInterceptors(FilesInterceptor('files', 40, { limits: { fileSize: 20 * 1024 * 1024 } }))
   async uploadMultipleSources(
     @UploadedFiles() files: Express.Multer.File[],
-    @Body() dto: CreateAgoraCurriculumSourceDto,
+    @Body() dto: UploadMultipleCurriculumSourcesDto,
     @CurrentUser() user: UserWithContext
   ) {
     if (!files || files.length === 0) throw new BadRequestException('Files are required');

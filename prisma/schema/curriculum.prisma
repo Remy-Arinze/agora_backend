@@ -110,6 +110,8 @@ model AgoraSubject {
   code        String   @unique // "ENG", "MTH", "BSC"
   category    String? // "CORE", "ELECTIVE", "VOCATIONAL"
   schoolTypes String[] // ["PRIMARY"], ["PRIMARY", "SECONDARY"], etc.
+  /// PRIMARY | JUNIOR | SENIOR — JSS vs SS (and primary) within a school type
+  levelStreams String[] @default([])
   description String?
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())

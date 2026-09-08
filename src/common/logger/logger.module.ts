@@ -16,6 +16,7 @@ import { JobEventsService } from './job-events.service';
       { name: '{vector}' },
       { name: 'curriculum-processing' },
       { name: 'curriculum-consolidation' },
+      { name: 'scheme-generation' },
       { name: 'retention-queue' },
       { name: 'school-lifecycle-queue' },
     ),

@@ -1,14 +1,17 @@
 import { Injectable, NotFoundException, BadRequestException, Logger, OnModuleInit } from '@nestjs/common';
 import { NotificationService } from '../notification/notification.service';
 import { PrismaService } from '../database/prisma.service';
-import { CreateAgoraCurriculumSourceDto, ConsolidateCurriculumDto, PublishCurriculumDto, CreateAgoraSubjectDto, UpdateAgoraSubjectDto } from './dto/agora-curriculum.dto';
+import { CreateAgoraCurriculumSourceDto, UploadMultipleCurriculumSourcesDto, ConsolidateCurriculumDto, PublishCurriculumDto, CreateAgoraSubjectDto, UpdateAgoraSubjectDto } from './dto/agora-curriculum.dto';
 import { AgoraCurriculumSourceStatus, AgoraCurriculumPublishStatus } from '@prisma/client';
 import { AiService } from '../ai/ai.service';
 import { CloudinaryService } from '../storage/cloudinary/cloudinary.service';
 
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
-import { CURRICULUM_PROCESSING_QUEUE, CURRICULUM_CONSOLIDATION_QUEUE, JOB_PROCESS_SOURCE, JOB_CONSOLIDATE_BATCH } from './curriculum.processor';
+import { CURRICULUM_PROCESSING_QUEUE, CURRICULUM_CONSOLIDATION_QUEUE, JOB_PROCESS_SOURCE, JOB_CONSOLIDATE_BATCH } from './curriculum-queues';
+import { nextCurriculumVersion, shouldReuseInFlightDraft } from './agora-curriculum-draft.util';
+import { FULL_YEAR_WEEKS, isCompleteFullYearSlots } from './full-year-curriculum.util';
+import { inferLevelStream, JUNIOR_SECONDARY_CODES, SENIOR_SECONDARY_CODES } from '../common/utils/subject-level-stream.util';
 import { v4 as uuidv4 } from 'uuid';
 
 @Injectable()
@@ -32,9 +35,11 @@ export class AgoraCurriculumService implements OnModuleInit {
   async onModuleInit() {
     try {
       const activeJobs = await this.curriculumQueue.getJobs(['active']);
-      if (activeJobs.length > 0) {
-        this.logger.warn(`[Startup] Found ${activeJobs.length} stale active job(s). Cleaning up...`);
-        for (const job of activeJobs) {
+      const staleConsolidation = await this.consolidationQueue.getJobs(['active']);
+      const staleActive = [...activeJobs, ...staleConsolidation];
+      if (staleActive.length > 0) {
+        this.logger.warn(`[Startup] Found ${staleActive.length} stale active job(s). Cleaning up...`);
+        for (const job of staleActive) {
           try {
             await job.moveToFailed(new Error('Worker crashed — job reset on startup'), job.token || 'restart');
           } catch (e) {
@@ -79,8 +84,8 @@ export class AgoraCurriculumService implements OnModuleInit {
   // SUBJECTS
   // ==========================================
 
-  async getNerdcSubjects(schoolType?: string, category?: string, search?: string) {
-    return this.prisma.agoraSubject.findMany({
+  async getNerdcSubjects(schoolType?: string, category?: string, search?: string, levelStream?: string) {
+    const subjects = await this.prisma.agoraSubject.findMany({
       where: {
         ...(schoolType && { schoolTypes: { has: schoolType } }),
         ...(category && { category }),
@@ -92,6 +97,23 @@ export class AgoraCurriculumService implements OnModuleInit {
         }),
       },
       orderBy: { name: 'asc' },
+    });
+
+    if (!levelStream) return subjects;
+
+    return subjects.filter((subject) => {
+      const streams = (subject as { levelStreams?: string[] }).levelStreams ?? [];
+      if (streams.length > 0) return streams.includes(levelStream);
+      if (levelStream === 'PRIMARY') return subject.schoolTypes.includes('PRIMARY');
+      if (levelStream === 'JUNIOR') {
+        return JUNIOR_SECONDARY_CODES.has(subject.code)
+          || (subject.schoolTypes.includes('SECONDARY') && !SENIOR_SECONDARY_CODES.has(subject.code));
+      }
+      if (levelStream === 'SENIOR') {
+        return SENIOR_SECONDARY_CODES.has(subject.code)
+          || (subject.schoolTypes.includes('SECONDARY') && !JUNIOR_SECONDARY_CODES.has(subject.code));
+      }
+      return inferLevelStream({ code: subject.code }) === levelStream;
     });
   }
 
@@ -236,9 +258,18 @@ export class AgoraCurriculumService implements OnModuleInit {
 
   async uploadMultipleSources(
     files: Express.Multer.File[],
-    dto: CreateAgoraCurriculumSourceDto,
+    dto: UploadMultipleCurriculumSourcesDto,
     userId: string
   ) {
+    const mappedEntries = this.parseQueueEntries(dto.entries);
+    if (mappedEntries) {
+      return this.uploadMappedSources(files, mappedEntries, userId);
+    }
+
+    if (!dto.subjectId || !dto.gradeLevel) {
+      throw new BadRequestException('Subject and grade level are required when entries are not provided');
+    }
+
     const batchId = uuidv4();
     const results = [];
     const grades = dto.gradeLevel.split(',').map(g => g.trim()).filter(g => g);
@@ -274,6 +305,89 @@ export class AgoraCurriculumService implements OnModuleInit {
         }, { priority: 1 });
         results.push(source);
       }
+    }
+
+    return { batchId, sources: results };
+  }
+
+  private parseQueueEntries(raw?: string): Array<{ fileIndex: number; subjectId: string; gradeLevel: string }> | null {
+    if (!raw || !raw.trim()) return null;
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      throw new BadRequestException('entries must be valid JSON');
+    }
+
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      throw new BadRequestException('entries must be a non-empty array');
+    }
+
+    return parsed.map((entry, i) => {
+      const fileIndex = Number(entry?.fileIndex);
+      const subjectId = typeof entry?.subjectId === 'string' ? entry.subjectId.trim() : '';
+      const gradeLevel = typeof entry?.gradeLevel === 'string' ? entry.gradeLevel.trim() : '';
+
+      if (!Number.isInteger(fileIndex) || fileIndex < 0) {
+        throw new BadRequestException(`entries[${i}].fileIndex must be a non-negative integer`);
+      }
+      if (!subjectId) throw new BadRequestException(`entries[${i}].subjectId is required`);
+      if (!gradeLevel) throw new BadRequestException(`entries[${i}].gradeLevel is required`);
+
+      return { fileIndex, subjectId, gradeLevel };
+    });
+  }
+
+  private async uploadMappedSources(
+    files: Express.Multer.File[],
+    entries: Array<{ fileIndex: number; subjectId: string; gradeLevel: string }>,
+    userId: string
+  ) {
+    const batchId = uuidv4();
+    const results = [];
+    const uploadCache = new Map<number, { url: string }>();
+    const subjectIds = [...new Set(entries.map((e) => e.subjectId))];
+    const subjects = await this.prisma.agoraSubject.findMany({
+      where: { id: { in: subjectIds } },
+      select: { id: true },
+    });
+    const knownSubjects = new Set(subjects.map((s) => s.id));
+
+    for (const [i, entry] of entries.entries()) {
+      if (!knownSubjects.has(entry.subjectId)) {
+        throw new NotFoundException(`Subject not found for entries[${i}]`);
+      }
+      const file = files[entry.fileIndex];
+      if (!file) {
+        throw new BadRequestException(`No file uploaded for entries[${i}].fileIndex ${entry.fileIndex}`);
+      }
+
+      let uploadResult = uploadCache.get(entry.fileIndex);
+      if (!uploadResult) {
+        uploadResult = await this.cloudinaryService.uploadRawFile(file, 'agora-curricula');
+        uploadCache.set(entry.fileIndex, uploadResult);
+      }
+
+      const source = await this.prisma.agoraCurriculumSource.create({
+        data: {
+          subjectId: entry.subjectId,
+          gradeLevel: entry.gradeLevel,
+          sourceType: 'FILE_UPLOAD',
+          fileName: file.originalname,
+          fileUrl: uploadResult.url,
+          fileType: file.mimetype.includes('pdf') ? 'PDF' : 'DOCX',
+          status: AgoraCurriculumSourceStatus.PENDING_PARSE,
+          createdBy: userId,
+          batchId,
+        },
+      });
+
+      await this.curriculumQueue.add(JOB_PROCESS_SOURCE, {
+        sourceId: source.id,
+        batchId: source.batchId,
+      }, { priority: 1 });
+      results.push(source);
     }
 
     return { batchId, sources: results };
@@ -368,8 +482,11 @@ export class AgoraCurriculumService implements OnModuleInit {
     const source = await this.prisma.agoraCurriculumSource.findUnique({ where: { id } });
     if (!source) throw new NotFoundException('Source not found');
 
-    if (source.status !== AgoraCurriculumSourceStatus.FAILED) {
-      throw new BadRequestException('Can only retry failed parsing jobs');
+    if (
+      source.status !== AgoraCurriculumSourceStatus.FAILED &&
+      source.status !== AgoraCurriculumSourceStatus.PENDING_PARSE
+    ) {
+      throw new BadRequestException('Can only retry failed or stuck queued parsing jobs');
     }
 
     await this.prisma.agoraCurriculumSource.update({
@@ -446,6 +563,35 @@ export class AgoraCurriculumService implements OnModuleInit {
   // CONSOLIDATED CURRICULUM
   // ==========================================
 
+  async autoConsolidateParsedSource(source: {
+    id: string;
+    subjectId: string;
+    gradeLevel: string;
+    createdBy: string;
+    batchId?: string | null;
+  }) {
+    const peers = await this.prisma.agoraCurriculumSource.findMany({
+      where: {
+        subjectId: source.subjectId,
+        gradeLevel: source.gradeLevel,
+        status: AgoraCurriculumSourceStatus.PARSED,
+      },
+      select: { id: true },
+    });
+
+    this.logger.log(
+      `Auto-consolidating ${source.subjectId} / ${source.gradeLevel} from ${peers.length} parsed source(s)`,
+    );
+
+    return this.enqueueConsolidation({
+      subjectId: source.subjectId,
+      gradeLevel: source.gradeLevel,
+      sourceIds: peers.map((peer) => peer.id),
+      userId: source.createdBy,
+      batchId: source.batchId || undefined,
+    });
+  }
+
   async consolidateSources(dto: ConsolidateCurriculumDto, userId: string) {
     const sources = await this.prisma.agoraCurriculumSource.findMany({
       where: { id: { in: dto.sourceIds }, status: AgoraCurriculumSourceStatus.PARSED },
@@ -455,35 +601,93 @@ export class AgoraCurriculumService implements OnModuleInit {
       throw new BadRequestException('No parsed sources found for consolidation');
     }
 
-    // Determine the next version
-    const existing = await this.prisma.agoraCurriculum.findFirst({
-      where: { subjectId: dto.subjectId, gradeLevel: dto.gradeLevel },
-      orderBy: { version: 'desc' },
+    return this.enqueueConsolidation({
+      subjectId: dto.subjectId,
+      gradeLevel: dto.gradeLevel,
+      sourceIds: dto.sourceIds,
+      userId,
+      forceNewVersion: dto.forceNewVersion,
     });
-    const nextVersion = existing ? existing.version + 1 : 1;
+  }
 
-    // Create draft curriculum version
-    const curriculum = await this.prisma.agoraCurriculum.create({
-      data: {
-        subjectId: dto.subjectId,
-        gradeLevel: dto.gradeLevel,
-        sourceIds: dto.sourceIds,
-        version: nextVersion,
-        status: AgoraCurriculumPublishStatus.DRAFT,
-        createdBy: userId,
+  /**
+   * One in-flight DRAFT per subject+grade. A new version is only minted after
+   * the latest draft is a complete 39-week year (or is published).
+   */
+  async enqueueConsolidation(params: {
+    subjectId: string;
+    gradeLevel: string;
+    sourceIds: string[];
+    userId: string;
+    batchId?: string;
+    forceNewVersion?: boolean;
+  }) {
+    const curriculum = await this.getOrCreateDraftForConsolidation(params);
+    const jobId = `consolidate-${curriculum.id}`;
+    const existingJob = await this.consolidationQueue.getJob(jobId);
+
+    if (existingJob) {
+      const state = await existingJob.getState();
+      if (state === 'waiting' || state === 'active' || state === 'delayed') {
+        this.logger.log(`Consolidation already ${state} for ${curriculum.id}; not queueing a second job`);
+        return curriculum;
+      }
+      await existingJob.remove().catch(() => undefined);
+    }
+
+    await this.consolidationQueue.add(
+      JOB_CONSOLIDATE_BATCH,
+      {
+        batchId: params.batchId,
+        curriculumId: curriculum.id,
+        sourceIds: params.sourceIds,
+        subjectId: params.subjectId,
+        gradeLevel: params.gradeLevel,
+        uploadedBy: params.userId,
+      },
+      { jobId, priority: 1 },
+    );
+
+    this.logger.log(`Queued DRAFT curriculum consolidation: ${curriculum.id} (Version ${curriculum.version})`);
+    return curriculum;
+  }
+
+  private async getOrCreateDraftForConsolidation(params: {
+    subjectId: string;
+    gradeLevel: string;
+    sourceIds: string[];
+    userId: string;
+    forceNewVersion?: boolean;
+  }) {
+    const latest = await this.prisma.agoraCurriculum.findFirst({
+      where: { subjectId: params.subjectId, gradeLevel: params.gradeLevel },
+      orderBy: { version: 'desc' },
+      include: {
+        _count: { select: { topics: { where: { deprecatedAt: null } } } },
       },
     });
 
-    // Queue for background consolidation
-    await this.consolidationQueue.add(JOB_CONSOLIDATE_BATCH, {
-      batchId: 'manual-trigger-' + uuidv4(), // Manual trigger doesn't have a single batchId necessarily
-      subjectId: dto.subjectId,
-      gradeLevel: dto.gradeLevel,
-      uploadedBy: userId,
-    });
+    if (shouldReuseInFlightDraft(
+      latest ? { status: latest.status, topicCount: latest._count.topics } : null,
+      { forceNewVersion: params.forceNewVersion },
+    )) {
+      return this.prisma.agoraCurriculum.update({
+        where: { id: latest!.id },
+        data: { sourceIds: params.sourceIds },
+      });
+    }
 
-    this.logger.log(`Queued DRAFT curriculum consolidation: ${curriculum.id} (Version ${nextVersion})`);
-    return curriculum;
+    const nextVersion = nextCurriculumVersion(latest);
+    return this.prisma.agoraCurriculum.create({
+      data: {
+        subjectId: params.subjectId,
+        gradeLevel: params.gradeLevel,
+        sourceIds: params.sourceIds,
+        version: nextVersion,
+        status: AgoraCurriculumPublishStatus.DRAFT,
+        createdBy: params.userId,
+      },
+    });
   }
 
   async getCurricula(subjectId?: string, gradeLevel?: string, status?: AgoraCurriculumPublishStatus) {
@@ -495,7 +699,9 @@ export class AgoraCurriculumService implements OnModuleInit {
       },
       include: {
         subject: true,
-        topics: true,
+        topics: {
+          where: { deprecatedAt: null },
+        },
       },
       orderBy: [
         { subjectId: 'asc' },
@@ -511,6 +717,7 @@ export class AgoraCurriculumService implements OnModuleInit {
       include: {
         subject: true,
         topics: {
+          where: { deprecatedAt: null },
           orderBy: { order: 'asc' },
         },
       },
@@ -524,10 +731,14 @@ export class AgoraCurriculumService implements OnModuleInit {
     if (!curriculum) throw new NotFoundException('Curriculum not found');
 
     if (dto.status === AgoraCurriculumPublishStatus.PUBLISHED) {
-      // Validate that it has topics before publishing
-      const topicsCount = await this.prisma.agoraCurriculumTopic.count({ where: { curriculumId: id } });
-      if (topicsCount === 0) {
-        throw new BadRequestException('Cannot publish a curriculum with no topics');
+      const topics = await this.prisma.agoraCurriculumTopic.findMany({
+        where: { curriculumId: id, deprecatedAt: null },
+        select: { term: true, weekNumber: true },
+      });
+      if (!isCompleteFullYearSlots(topics)) {
+        throw new BadRequestException(
+          `Cannot publish until the curriculum has ${FULL_YEAR_WEEKS} weeks (3 terms × 13). Currently ${topics.length}.`,
+        );
       }
     }
 

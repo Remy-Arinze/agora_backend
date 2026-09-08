@@ -98,24 +98,33 @@ export interface GenerateQuestionsOptions {
   }>;
 }
 
+export interface ParsedCurriculumWeek {
+  weekNumber: number;
+  title: string;
+  description?: string;
+  subTopics: string[];
+  learningOutcomes: string[];
+  studentFriendlyOutcomes: string[];
+  suggestedActivities: string[];
+  resources: string[];
+  assessmentType: string;
+}
+
+export interface ParsedCurriculumTerm {
+  term: number;
+  weeks: ParsedCurriculumWeek[];
+}
+
 export interface ParseCurriculumResult {
-  topics: {
-    topic: string;
-    subTopics: string[];
-    objectives: string[];
-    resources: string[];
-  }[];
+  terms?: ParsedCurriculumTerm[];
+  topics: Array<ParsedCurriculumWeek & { term?: number }>;
 }
 
 export interface MultiGradeParseResult {
   results: {
     gradeLevel: string;
-    topics: {
-      topic: string;
-      subTopics: string[];
-      objectives: string[];
-      resources: string[];
-    }[];
+    terms?: ParsedCurriculumTerm[];
+    topics: Array<ParsedCurriculumWeek & { term?: number }>;
   }[];
 }
 
@@ -140,6 +149,7 @@ export interface ConsolidateCurriculumResult {
     topics: {
       title: string;
       description: string;
+      weekNumber: number;
       subTopics: string[];
       learningOutcomes: string[];
       studentFriendlyOutcomes: string[];

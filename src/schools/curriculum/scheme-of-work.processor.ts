@@ -1,10 +1,12 @@
 import { Processor, WorkerHost, OnWorkerEvent } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
-import { CURRICULUM_PROCESSING_QUEUE } from '../../agora-curriculum/curriculum.processor';
 import { AiService } from '../../ai/ai.service';
 import { SubscriptionsService } from '../../subscriptions/subscriptions.service';
 import { PrismaService } from '../../database/prisma.service';
+import { MetricsService } from '../../common/metrics/metrics.service';
+
+export const SCHEME_GENERATION_QUEUE = 'scheme-generation';
 
 export interface GenerateSchemePayload {
   schemeId: string;
@@ -20,9 +22,7 @@ export interface GenerateYearlySchemePayload {
   userId: string;
 }
 
-import { MetricsService } from '../../common/metrics/metrics.service';
-
-@Processor(CURRICULUM_PROCESSING_QUEUE, {
+@Processor(SCHEME_GENERATION_QUEUE, {
   concurrency: 1, // AI generation is heavy, keep it serial for now
 })
 export class SchemeOfWorkProcessor extends WorkerHost {
@@ -50,19 +50,20 @@ export class SchemeOfWorkProcessor extends WorkerHost {
         this.logger.log(`Processing YEARLY scheme generation for ${schemeIds.length} terms at school ${schoolId}`);
         await this.aiService.generateYearlySchemeOfWork(schemeIds, schoolCurriculumDocIds);
       } else {
+        this.logger.warn(`Ignoring unexpected job ${job.name} on ${SCHEME_GENERATION_QUEUE}`);
         return;
       }
       
       const durationSec = (Date.now() - startTime) / 1000;
-      this.metricsService.bullmqJobsCompletedTotal.inc({ queue: CURRICULUM_PROCESSING_QUEUE, job_name: job.name });
-      this.metricsService.bullmqJobDurationSeconds.observe({ queue: CURRICULUM_PROCESSING_QUEUE, job_name: job.name }, durationSec);
+      this.metricsService.bullmqJobsCompletedTotal.inc({ queue: SCHEME_GENERATION_QUEUE, job_name: job.name });
+      this.metricsService.bullmqJobDurationSeconds.observe({ queue: SCHEME_GENERATION_QUEUE, job_name: job.name }, durationSec);
 
     } catch (error) {
       const failedId = job.name === 'generate-yearly-scheme' 
         ? `YEARLY BATCH (${(job.data as GenerateYearlySchemePayload).schemeIds?.join(',')})`
         : (job.data as GenerateSchemePayload).schemeId;
 
-      this.metricsService.bullmqJobsFailedTotal.inc({ queue: CURRICULUM_PROCESSING_QUEUE, job_name: job.name });
+      this.metricsService.bullmqJobsFailedTotal.inc({ queue: SCHEME_GENERATION_QUEUE, job_name: job.name });
       this.logger.error(`Failed to execute ${job.name} for identifier ${failedId}:`, error);
       
       // Check if we should refund (only on final attempt)

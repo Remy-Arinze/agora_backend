@@ -27,6 +27,19 @@ import {
 } from './ai.types';
 import { AiLlmClientService } from './ai-llm-client.service';
 import { NotificationService } from '../notification/notification.service';
+import {
+  CONSOLIDATION_FAILED_PREFIX,
+  assertFullYearCurriculum,
+  buildMappedYearSlots,
+  formatParseCoverage,
+  mergeParsedTerms,
+  normalizeConsolidateResult,
+  normalizeSourceParsedData,
+  preserveExtractedText,
+  structuredParsedData,
+  summarizeParseCoverage,
+  ParsedTerm,
+} from '../agora-curriculum/full-year-curriculum.util';
 
 /**
  * Curriculum parsing, consolidation, scheme-of-work generation, and school doc parsing.
@@ -144,7 +157,7 @@ export class AiCurriculumPipelineService {
         rawText = await DocumentExtractor.extractTextFromUrl(source.fileUrl, source.fileType);
       }
 
-      const cleanedText = rawText.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '').replace(/\s+/g, ' ').trim();
+      const cleanedText = preserveExtractedText(rawText);
 
       const MAX_CHUNK_LENGTH = 100000;
       const textChunks = [];
@@ -155,7 +168,28 @@ export class AiCurriculumPipelineService {
       this.logger.log(`Invoking AI for curriculum parsing (${textChunks.length} chunks)`);
       if (onProgress) await onProgress('AI is organizing content into structured topics...');
 
-      const allTopics = [];
+      const parseWeekProperties = {
+        weekNumber: { type: 'number' },
+        title: { type: 'string' },
+        subTopics: { type: 'array', items: { type: 'string' } },
+        learningOutcomes: { type: 'array', items: { type: 'string' } },
+        studentFriendlyOutcomes: { type: 'array', items: { type: 'string' } },
+        suggestedActivities: { type: 'array', items: { type: 'string' } },
+        resources: { type: 'array', items: { type: 'string' } },
+        assessmentType: { type: 'string' },
+      };
+      const parseWeekRequired = [
+        'weekNumber',
+        'title',
+        'subTopics',
+        'learningOutcomes',
+        'studentFriendlyOutcomes',
+        'suggestedActivities',
+        'resources',
+        'assessmentType',
+      ];
+
+      let mergedTerms: ParsedTerm[] = [];
 
       for (let i = 0; i < textChunks.length; i++) {
         const textChunk = textChunks[i];
@@ -163,21 +197,34 @@ export class AiCurriculumPipelineService {
           await onProgress(`AI is parsing chunk ${i + 1} of ${textChunks.length}...`);
         }
 
+        const coverageSoFar = summarizeParseCoverage(mergedTerms);
+        const continueHint =
+          i > 0 && coverageSoFar.lastTerm && coverageSoFar.lastWeek
+            ? `Continue extraction; previous chunk ended at Term ${coverageSoFar.lastTerm} Week ${coverageSoFar.lastWeek}. Do not repeat weeks already captured.\n\n`
+            : '';
+
         const response = await openai.chat.completions.create({
           model,
           messages: [
             {
               role: 'system',
-              content: `You are an expert academic curriculum parser. 
-              Your goal is to extract structured topics, subtopics, learning objectives, and suggested resources from the text.
-              
-              IMPORTANT RULE:
-              You must ONLY extract the curriculum data for the target grade: ${source.gradeLevel}.
-              If the document contains information for multiple classes or grades, STRICTLY IGNORE everything except ${source.gradeLevel}.
-              Do not extract other grades if the target is ${source.gradeLevel}.
+              content: `You are an expert academic curriculum parser for the Nigerian school year.
+              Extract a scheme-of-work outline: every week, with its term and week number.
+
+              TARGET GRADE ONLY: ${source.gradeLevel}.
+              If the document contains other classes or grades, STRICTLY IGNORE them.
+
+              The year has 3 terms. Each term typically has 13 weeks
+              (week 7 mid-term revision, week 12 end-of-term revision, week 13 examination).
+
+              CRITICAL RULES:
+              1. Extract EVERY week for the target grade across all 3 terms. Do not summarize a term into a handful of topics.
+              2. Preserve term and weekNumber from headings, tables, and labels (Term 1, Wk 5, Week 12, etc.).
+              3. If a week is revision or examination, still emit that week with that title.
+              4. Do not invent a full year when the source only covers some weeks — extract what is present with correct term and week numbers.
               `,
             },
-            { role: 'user', content: `Parse the following curriculum material:\n\n${textChunk}` },
+            { role: 'user', content: `${continueHint}Parse the following curriculum material:\n\n${textChunk}` },
           ],
           response_format: {
             type: 'json_schema',
@@ -193,33 +240,28 @@ export class AiCurriculumPipelineService {
                       type: 'object',
                       properties: {
                         gradeLevel: { type: 'string' },
-                        topics: {
+                        terms: {
                           type: 'array',
                           items: {
                             type: 'object',
                             properties: {
-                              title: { type: 'string' },
-                              subTopics: { type: 'array', items: { type: 'string' } },
-                              learningOutcomes: { type: 'array', items: { type: 'string' } },
-                              studentFriendlyOutcomes: { type: 'array', items: { type: 'string' } },
-                              suggestedActivities: { type: 'array', items: { type: 'string' } },
-                              resources: { type: 'array', items: { type: 'string' } },
-                              assessmentType: { type: 'string' },
+                              term: { type: 'number' },
+                              weeks: {
+                                type: 'array',
+                                items: {
+                                  type: 'object',
+                                  properties: parseWeekProperties,
+                                  required: parseWeekRequired,
+                                  additionalProperties: false,
+                                },
+                              },
                             },
-                            required: [
-                              'title',
-                              'subTopics',
-                              'learningOutcomes',
-                              'studentFriendlyOutcomes',
-                              'suggestedActivities',
-                              'resources',
-                              'assessmentType',
-                            ],
+                            required: ['term', 'weeks'],
                             additionalProperties: false,
                           },
                         },
                       },
-                      required: ['gradeLevel', 'topics'],
+                      required: ['gradeLevel', 'terms'],
                       additionalProperties: false,
                     },
                   },
@@ -238,9 +280,8 @@ export class AiCurriculumPipelineService {
         if (parsedData.results && parsedData.results.length > 0) {
           const primaryGradeResult =
             parsedData.results.find((res) => res.gradeLevel === source.gradeLevel) || parsedData.results[0];
-          if (primaryGradeResult && primaryGradeResult.topics) {
-            allTopics.push(...primaryGradeResult.topics);
-          }
+          const incoming = normalizeSourceParsedData(primaryGradeResult);
+          mergedTerms = mergeParsedTerms(mergedTerms, incoming);
         }
       }
 
@@ -249,14 +290,25 @@ export class AiCurriculumPipelineService {
         status: 'success',
       });
 
-      if (allTopics.length === 0) {
+      const structured = structuredParsedData(mergedTerms);
+      if (structured.topics.length === 0) {
         throw new Error('AI returned an empty results array for the curriculum across all chunks.');
+      }
+
+      const coverage = summarizeParseCoverage(mergedTerms);
+      this.logger.log(
+        `Parse coverage [${sourceId}] ${source.gradeLevel}: ${formatParseCoverage(coverage)}`,
+      );
+      if (coverage.isThin) {
+        this.logger.warn(
+          `Parse coverage thin for ${sourceId}: ${formatParseCoverage(coverage)}. Consolidate will fill standard revision/exam slots.`,
+        );
       }
 
       await this.prisma.agoraCurriculumSource.update({
         where: { id: sourceId },
         data: {
-          parsedData: { topics: allTopics } as any,
+          parsedData: structured as any,
           status: AgoraCurriculumSourceStatus.PARSED,
         },
       });
@@ -265,7 +317,7 @@ export class AiCurriculumPipelineService {
         `Parsed main Curriculum Source [${sourceId}] successfully using Lois. Target Grade: ${source.gradeLevel}`,
       );
 
-      return { results: [{ gradeLevel: source.gradeLevel, topics: allTopics }] };
+      return { results: [{ gradeLevel: source.gradeLevel, terms: mergedTerms, topics: structured.topics }] };
     } catch (error) {
       this.logger.error(`Error parsing curriculum: ${error}`);
       throw error;
@@ -292,6 +344,15 @@ export class AiCurriculumPipelineService {
       const subjectName = curriculum.subject?.name || 'Unknown Subject';
       const gradeLevel = curriculum.gradeLevel;
 
+      const parsedTerms = sources.flatMap((s: any) =>
+        normalizeSourceParsedData(typeof s.parsedData === 'string' ? JSON.parse(s.parsedData) : s.parsedData),
+      );
+      const mappedSlots = buildMappedYearSlots(parsedTerms);
+      const mappedFromSource = mappedSlots.filter((slot) => slot.status === 'MAP_FROM_SOURCE').length;
+      this.logger.log(
+        `Consolidate mapping [${curriculumId}] ${subjectName} ${gradeLevel}: ${mappedFromSource}/${mappedSlots.length} slots from parse`,
+      );
+
       const combinedPayloads = sources
         .map((s: any) => {
           const data = typeof s.parsedData === 'string' ? JSON.parse(s.parsedData) : s.parsedData;
@@ -308,35 +369,36 @@ export class AiCurriculumPipelineService {
             Your task is to consolidate multiple raw curriculum source materials into a FULL ACADEMIC SESSION curriculum for the Nigerian school year.
             
             The Nigerian school year has 3 terms (1st, 2nd, and 3rd). 
-            Each term has a configurable week template (default 13 weeks):
+            Each term MUST have exactly 13 weeks:
             - Weeks 1-6: Academic topics
-            - Week 7: Mid-term revision/break
-            - Weeks 8-12: Academic topics
-            - Week 13: Examination week
+            - Week 7: Mid-term revision
+            - Weeks 8-11: Academic topics
+            - Week 12: End-of-term revision
+            - Week 13: Examination
             
             Produce TWO layers of output:
             1. CURRICULUM OVERVIEW: A comprehensive session-wide strategy including:
                 - description: A detailed overview of the curriculum's scope and purpose.
                 - themes: The primary thematic units or focus areas.
-                - progressionNotes: A narrative describing how leaning progresses across Term 1, 2, and 3.
+                - progressionNotes: A narrative describing how learning progresses across Term 1, 2, and 3.
             2. TERM SCHEMES OF WORK: For each of the 3 terms, produce a detailed week-by-week breakdown.
 
             CRITICAL RULES:
             1. SUBJECT INTEGRITY: You MUST ONLY produce content related to ${subjectName}.
-            2. STRUCTURE: Every term must have topics for all 13 weeks.
-            3. OBJECTIVES: Each week MUST have formal "learningOutcomes" and "studentFriendlyOutcomes".
-            4. JSON SCHEMA: Return a JSON object with:
-                - "curriculumOverview": { "description": string, "themes": string[], "progressionNotes": string }
-                - "terms": Array of 3 objects, each with:
-                    - "term": number (1, 2, or 3)
-                    - "termTitle": string
-                    - "termSummary": string
-                    - "topics": Array of 13 objects, each with: "title", "subTopics", "learningOutcomes", "studentFriendlyOutcomes", "suggestedActivities", "resources", "assessmentType".
+            2. STRUCTURE: "terms" must contain exactly 3 items. Each term's "topics" must contain exactly 13 items, weekNumber 1 through 13.
+            3. MAP, DO NOT INVENT: When a mapped slot is MAP_FROM_SOURCE, keep that week's title and content. Only generate GENERATE slots (especially weeks 7, 12, and 13).
+            4. OBJECTIVES: Each week MUST have formal "learningOutcomes" and "studentFriendlyOutcomes".
+            5. Week 7 title must include mid-term revision. Week 12 title must include end-of-term revision. Week 13 title must include examination.
             `,
           },
           {
             role: 'user',
-            content: `Consolidate these ${subjectName} (${gradeLevel}) sources into a unified full-year curriculum:\n\n${combinedPayloads}`,
+            content: `Consolidate these ${subjectName} (${gradeLevel}) sources into a unified full-year curriculum.
+
+MAPPED 39 SLOTS (prefer MAP_FROM_SOURCE; fill GENERATE only):
+${JSON.stringify(mappedSlots)}
+
+${combinedPayloads}`,
           },
         ],
         response_format: {
@@ -372,6 +434,7 @@ export class AiCurriculumPipelineService {
                           properties: {
                             title: { type: 'string' },
                             description: { type: 'string' },
+                            weekNumber: { type: 'number' },
                             subTopics: { type: 'array', items: { type: 'string' } },
                             learningOutcomes: { type: 'array', items: { type: 'string' } },
                             studentFriendlyOutcomes: { type: 'array', items: { type: 'string' } },
@@ -383,6 +446,7 @@ export class AiCurriculumPipelineService {
                           required: [
                             'title',
                             'description',
+                            'weekNumber',
                             'subTopics',
                             'learningOutcomes',
                             'studentFriendlyOutcomes',
@@ -409,7 +473,17 @@ export class AiCurriculumPipelineService {
       });
 
       const resultText = response.choices[0]?.message?.content || '{}';
-      const result = JSON.parse(resultText) as ConsolidateCurriculumResult;
+      const result = normalizeConsolidateResult(JSON.parse(resultText) as ConsolidateCurriculumResult);
+
+      try {
+        assertFullYearCurriculum(result);
+      } catch (validationError) {
+        const termCounts = (result.terms || []).map((term) => `${term.term}:${term.topics?.length || 0}`).join(' ');
+        this.logger.error(
+          `Full-year validation failed for curriculum ${curriculumId} (${subjectName} ${gradeLevel}): ${termCounts}`,
+        );
+        throw validationError;
+      }
 
       const overview = result.curriculumOverview;
       const formattedOverview = `
@@ -444,9 +518,12 @@ ${overview.progressionNotes || ''}
         const upsertOps = [];
         for (const termBlock of result.terms) {
           if (!termBlock.topics) continue;
-          for (const [index, t] of termBlock.topics.entries()) {
+          const orderedTopics = [...termBlock.topics].sort(
+            (a, b) => (a.weekNumber || 0) - (b.weekNumber || 0),
+          );
+          for (const [index, t] of orderedTopics.entries()) {
             const term = termBlock.term || 1;
-            const weekNumber = index + 1;
+            const weekNumber = t.weekNumber || index + 1;
             const slot = existingBySlot.get(`${term}:${weekNumber}`);
             const payload = {
               title: t.title || 'Untitled Topic',
@@ -507,10 +584,16 @@ ${overview.progressionNotes || ''}
       }
 
       this.metricsService.loisCurationTotal.inc({ status: 'success' });
-      this.logger.log(`Lois successfully consolidated Agora Curriculum [${curriculumId}] into 3 terms.`);
+      this.logger.log(`Lois successfully consolidated Agora Curriculum [${curriculumId}] into 3 terms × 13 weeks.`);
     } catch (error) {
       this.metricsService.loisCurationTotal.inc({ status: 'failed' });
       this.logger.error(`Failed to consolidate curriculum ${curriculumId}:`, error);
+      const message = error instanceof Error ? error.message : String(error);
+      await this.prisma.agoraCurriculum.update({
+        where: { id: curriculumId },
+        data: { consolidationNotes: `${CONSOLIDATION_FAILED_PREFIX} ${message}` },
+      }).catch(() => undefined);
+      throw error;
     }
   }
 

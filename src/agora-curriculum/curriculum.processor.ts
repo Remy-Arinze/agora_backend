@@ -3,29 +3,16 @@ import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { PrismaService } from '../database/prisma.service';
 import { AiService } from '../ai/ai.service';
-import { InjectQueue } from '@nestjs/bullmq';
-import { Queue } from 'bullmq';
 import { AgoraCurriculumSourceStatus } from '@prisma/client';
-
+import { AgoraCurriculumService } from './agora-curriculum.service';
 import { MetricsService } from '../common/metrics/metrics.service';
-
-export const CURRICULUM_PROCESSING_QUEUE = 'curriculum-processing';
-export const CURRICULUM_CONSOLIDATION_QUEUE = 'curriculum-consolidation';
-
-export const JOB_PROCESS_SOURCE = 'process-source';
-export const JOB_CONSOLIDATE_BATCH = 'consolidate-batch';
-
-export interface ProcessSourcePayload {
-  sourceId: string;
-  batchId?: string;
-}
-
-export interface ConsolidateBatchPayload {
-  batchId: string;
-  subjectId: string;
-  gradeLevel: string;
-  uploadedBy: string;
-}
+import {
+  CURRICULUM_CONSOLIDATION_QUEUE,
+  CURRICULUM_PROCESSING_QUEUE,
+  JOB_PROCESS_SOURCE,
+  ConsolidateBatchPayload,
+  ProcessSourcePayload,
+} from './curriculum-queues';
 
 @Processor(CURRICULUM_PROCESSING_QUEUE, {
   concurrency: 1,
@@ -37,14 +24,19 @@ export class CurriculumProcessor extends WorkerHost {
     private readonly prisma: PrismaService,
     private readonly aiService: AiService,
     private readonly metricsService: MetricsService,
-    @InjectQueue(CURRICULUM_CONSOLIDATION_QUEUE) private readonly consolidationQueue: Queue,
+    private readonly agoraCurriculumService: AgoraCurriculumService,
   ) {
     super();
   }
 
   async process(job: Job<ProcessSourcePayload, void, string>): Promise<void> {
+    if (job.name !== JOB_PROCESS_SOURCE) {
+      this.logger.warn(`Skipping unexpected job ${job.name} on ${CURRICULUM_PROCESSING_QUEUE}`);
+      return;
+    }
+
     const startTime = Date.now();
-    const { sourceId, batchId } = job.data;
+    const { sourceId } = job.data;
 
     this.logger.log(`[Queue] Picking up job ${job.id} for source ${sourceId}`);
 
@@ -75,9 +67,9 @@ export class CurriculumProcessor extends WorkerHost {
       // 3. Mid-flight check: Was it successful?
       const finalCheck = await this.prisma.agoraCurriculumSource.findUnique({ where: { id: sourceId } });
 
-      // 4. Batch completion check
-      if (finalCheck?.status === AgoraCurriculumSourceStatus.PARSED && batchId) {
-        await this.checkBatchCompletion(batchId);
+      // 4. Each parsed source consolidates on its own subject + class — do not wait for the rest of the batch
+      if (finalCheck?.status === AgoraCurriculumSourceStatus.PARSED) {
+        await this.agoraCurriculumService.autoConsolidateParsedSource(finalCheck);
       }
 
       const durationSec = (Date.now() - startTime) / 1000;
@@ -92,57 +84,41 @@ export class CurriculumProcessor extends WorkerHost {
       this.metricsService.bullmqJobsFailedTotal.inc({ queue: CURRICULUM_PROCESSING_QUEUE, job_name: job.name });
       this.logger.error(`[Queue] Job ${job.id} failed:`, error);
 
-      try {
+      const maxAttempts = job.opts.attempts ?? 1;
+      const isFinalAttempt = job.attemptsMade + 1 >= maxAttempts;
+      const message = error instanceof Error ? error.message : String(error);
+
+      if (isFinalAttempt) {
+        try {
+          await this.prisma.agoraCurriculumSource.update({
+            where: { id: sourceId },
+            data: {
+              status: AgoraCurriculumSourceStatus.FAILED,
+              parseErrors: message,
+            },
+          });
+        } catch (dbError) {
+          this.logger.error(`Failed to update failure status in DB for ${sourceId}:`, dbError);
+        }
+      } else {
+        this.logger.warn(
+          `Parse attempt ${job.attemptsMade + 1}/${maxAttempts} failed for ${sourceId}; will retry. ${message}`,
+        );
         await this.prisma.agoraCurriculumSource.update({
           where: { id: sourceId },
-          data: {
-            status: AgoraCurriculumSourceStatus.FAILED,
-            parseErrors: error instanceof Error ? error.message : String(error)
-          },
-        });
-      } catch (dbError) {
-        this.logger.error(`Failed to update failure status in DB for ${sourceId}:`, dbError);
+          data: { parseErrors: `Attempt ${job.attemptsMade + 1} failed; retrying. ${message}` },
+        }).catch(() => undefined);
       }
 
       throw error; // Essential for BullMQ state tracking
     }
   }
 
-  private async checkBatchCompletion(batchId: string) {
-    const sources = await (this.prisma as any).agoraCurriculumSource.findMany({
-      where: { batchId },
-    });
-
-    const allSuccessful = sources.every((s: any) => s.status === AgoraCurriculumSourceStatus.PARSED);
-    const anyFailed = sources.some((s: any) => s.status === AgoraCurriculumSourceStatus.FAILED);
-
-    if (allSuccessful) {
-      this.logger.log(`Batch ${batchId} complete. Triggering consolidation.`);
-
-      // Group sources by grade level
-      const groups = sources.reduce((acc: any, source: any) => {
-        if (!acc[source.gradeLevel]) acc[source.gradeLevel] = [];
-        acc[source.gradeLevel].push(source);
-        return acc;
-      }, {});
-
-      for (const gradeLevel of Object.keys(groups)) {
-        const gradeSources = groups[gradeLevel];
-        await this.consolidationQueue.add(JOB_CONSOLIDATE_BATCH, {
-          batchId,
-          subjectId: gradeSources[0].subjectId,
-          gradeLevel: gradeLevel,
-          uploadedBy: gradeSources[0].createdBy,
-        }, { priority: 1 });
-      }
-    } else if (anyFailed) {
-      this.logger.warn(`Batch ${batchId} has failures. Consolidation will not trigger automatically.`);
-    }
-  }
 }
 
 @Processor(CURRICULUM_CONSOLIDATION_QUEUE, {
   concurrency: 1,
+  lockDuration: 15 * 60 * 1000,
 })
 export class ConsolidationProcessor extends WorkerHost {
   private readonly logger = new Logger(ConsolidationProcessor.name);
@@ -157,57 +133,58 @@ export class ConsolidationProcessor extends WorkerHost {
 
   async process(job: Job<ConsolidateBatchPayload, void, string>): Promise<void> {
     const startTime = Date.now();
-    const { batchId, subjectId, gradeLevel, uploadedBy } = job.data;
+    const { batchId, curriculumId, subjectId, gradeLevel, uploadedBy } = job.data;
 
-    this.logger.log(`Consolidating batch: ${batchId}`);
+    this.logger.log(`Consolidating ${curriculumId || `subject ${subjectId} / ${gradeLevel}`}`);
 
     try {
-      // 1. Find or create the AgoraCurriculum record for this subject/grade
-      // (This follows the pattern of having a master curriculum per subject/grade)
-      let curriculum = await (this.prisma as any).agoraCurriculum.findFirst({
-        where: { subjectId, gradeLevel },
-      });
+      let curriculum = curriculumId
+        ? await this.prisma.agoraCurriculum.findUnique({ where: { id: curriculumId } })
+        : await this.prisma.agoraCurriculum.findFirst({
+            where: { subjectId, gradeLevel },
+            orderBy: { version: 'desc' },
+          });
 
       if (!curriculum) {
-        curriculum = await (this.prisma as any).agoraCurriculum.create({
+        curriculum = await this.prisma.agoraCurriculum.create({
           data: {
             subjectId,
             gradeLevel,
             createdBy: uploadedBy,
             status: 'DRAFT',
             version: 1,
-            sourceIds: [], // Will be filled by consolidation logic
+            sourceIds: job.data.sourceIds ?? [],
           },
         });
       }
 
-      // 2. Gather all source IDs in this batch and gradeLevel
-      const sources = await (this.prisma as any).agoraCurriculumSource.findMany({
-        where: { batchId, gradeLevel, status: AgoraCurriculumSourceStatus.PARSED },
-        select: { id: true },
-      });
+      let sourceIds = (job.data.sourceIds ?? []).filter(Boolean);
+      if (sourceIds.length === 0 && batchId) {
+        const sources = await this.prisma.agoraCurriculumSource.findMany({
+          where: { batchId, gradeLevel, status: AgoraCurriculumSourceStatus.PARSED },
+          select: { id: true },
+        });
+        sourceIds = sources.map((s) => s.id);
+      }
 
-      const sourceIds = sources.map((s: any) => s.id);
+      if (sourceIds.length > 0) {
+        await this.prisma.agoraCurriculum.update({
+          where: { id: curriculum.id },
+          data: { sourceIds },
+        });
+      }
 
-      // 3. Update the curriculum's sources
-      await (this.prisma as any).agoraCurriculum.update({
-        where: { id: curriculum!.id },
-        data: { sourceIds },
-      });
-
-      // 4. Call AI Service to consolidate
-      // Note: Reusing existing AiService.consolidateAgoraCurriculum logic
-      await this.aiService.consolidateAgoraCurriculum(curriculum!.id);
+      await this.aiService.consolidateAgoraCurriculum(curriculum.id);
 
       const durationSec = (Date.now() - startTime) / 1000;
       this.metricsService.bullmqJobsCompletedTotal.inc({ queue: CURRICULUM_CONSOLIDATION_QUEUE, job_name: job.name });
       this.metricsService.bullmqJobDurationSeconds.observe({ queue: CURRICULUM_CONSOLIDATION_QUEUE, job_name: job.name }, durationSec);
 
-      this.logger.log(`Consolidation complete for batch ${batchId}. Master Curriculum: ${curriculum.id}`);
+      this.logger.log(`Consolidation complete. Master Curriculum: ${curriculum.id}`);
 
     } catch (error) {
       this.metricsService.bullmqJobsFailedTotal.inc({ queue: CURRICULUM_CONSOLIDATION_QUEUE, job_name: job.name });
-      this.logger.error(`Failed to consolidate batch ${batchId}:`, error);
+      this.logger.error(`Failed to consolidate ${curriculumId || batchId}:`, error);
       throw error;
     }
   }

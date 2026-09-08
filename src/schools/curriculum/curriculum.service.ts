@@ -36,7 +36,7 @@ import { SubscriptionsService } from '../../subscriptions/subscriptions.service'
 import { SubscriptionBillingService } from '../../subscriptions/subscription-billing.service';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
-import { CURRICULUM_PROCESSING_QUEUE, JOB_PROCESS_SOURCE } from '../../agora-curriculum/curriculum.processor';
+import { SCHEME_GENERATION_QUEUE } from './scheme-of-work.processor';
 import { SetupSchemeOfWorkDto } from './dto/scheme-of-work.dto';
 import { SchemeGenerationMode, SchemeOfWorkStatus } from '@prisma/client';
 import { AiService } from '../../ai/ai.service';
@@ -63,7 +63,7 @@ export class CurriculumService {
     private readonly aiService: AiService,
     private readonly cloudinaryService: CloudinaryService,
     private readonly schemeSpine: SchemeSpineService,
-    @InjectQueue(CURRICULUM_PROCESSING_QUEUE) private readonly curriculumQueue: Queue
+    @InjectQueue(SCHEME_GENERATION_QUEUE) private readonly schemeQueue: Queue
   ) { }
 
   /** Blocks billing-suspended teachers/admins from curriculum writes (curation, schemes, status). */
@@ -1318,15 +1318,15 @@ export class CurriculumService {
       for (const term of session.terms) {
         // Check for existing
         const existing = await (tx as any).schemeOfWork.findFirst({
-          where: { schoolId, subjectId, termId: term.id, classLevelId, status: { not: 'ARCHIVED' } }
+          where: { schoolId, subjectId, termId: term.id, classLevelId, status: { not: SchemeOfWorkStatus.ARCHIVED } }
         });
 
-        if (existing && existing.status !== 'ARCHIVED') {
+        if (existing && existing.status !== SchemeOfWorkStatus.ARCHIVED) {
           if (dto.forceOverwrite) {
             await (tx as any).schemeOfWork.update({
               where: { id: existing.id },
               data: {
-                status: 'ARCHIVED',
+                status: SchemeOfWorkStatus.ARCHIVED,
                 archivedAt: new Date(),
                 archivedBy: user.id,
                 activeKey: null,
@@ -1355,7 +1355,7 @@ export class CurriculumService {
       }
 
       // Enqueue a dedicated yearly generation job
-      await this.curriculumQueue.add('generate-yearly-scheme', {
+      await this.schemeQueue.add('generate-yearly-scheme', {
         schemeIds: schemes,
         schoolCurriculumDocIds: docIds,
         schoolId,
@@ -1446,7 +1446,7 @@ export class CurriculumService {
         });
 
         // 4. Enqueue BullMQ job
-        await this.curriculumQueue.add('generate-scheme', {
+        await this.schemeQueue.add('generate-scheme', {
           schemeId: scheme.id,
           schoolId,
           userId: user.id,
@@ -1478,7 +1478,7 @@ export class CurriculumService {
         schoolId,
         classLevelId,
         termId,
-        status: { not: 'ARCHIVED' },
+        status: { not: SchemeOfWorkStatus.ARCHIVED },
       },
       include: {
         weeks: {

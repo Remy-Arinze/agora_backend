@@ -124,7 +124,8 @@ import { VECTOR_QUEUE_NAME } from './vector.processor';
     BullModule.registerQueue({
       name: 'curriculum-processing',
       defaultJobOptions: {
-        attempts: 1,        // No retries: failed jobs should not re-run and block other jobs in the queue
+        attempts: 2,
+        backoff: { type: 'exponential', delay: 5000 },
         removeOnComplete: { count: 100 },
         removeOnFail: { count: 200 },
       },
@@ -133,6 +134,15 @@ import { VECTOR_QUEUE_NAME } from './vector.processor';
       name: 'curriculum-consolidation',
       defaultJobOptions: {
         attempts: 2,
+        backoff: { type: 'exponential', delay: 10000 },
+        removeOnComplete: { count: 50 },
+        removeOnFail: { count: 100 },
+      },
+    }),
+    BullModule.registerQueue({
+      name: 'scheme-generation',
+      defaultJobOptions: {
+        attempts: 3,
         backoff: { type: 'exponential', delay: 10000 },
         removeOnComplete: { count: 50 },
         removeOnFail: { count: 100 },
@@ -149,6 +159,10 @@ import { VECTOR_QUEUE_NAME } from './vector.processor';
       },
       {
         name: 'curriculum-consolidation',
+        adapter: BullMQAdapter,
+      },
+      {
+        name: 'scheme-generation',
         adapter: BullMQAdapter,
       },
     ),

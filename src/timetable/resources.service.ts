@@ -8,6 +8,11 @@ import { PrismaService } from '../database/prisma.service';
 import { SchoolRepository } from '../schools/domain/repositories/school.repository';
 import { SchoolSettingsService } from '../school-settings/school-settings.service';
 import {
+  inferLevelStream,
+  streamFromClassLevelCode,
+  subjectOfferedInStream,
+} from '../common/utils/subject-level-stream.util';
+import {
   ClassLevelDto,
   ClassArmDto,
   RoomDto,
@@ -481,11 +486,7 @@ export class ResourcesService {
       where.schoolType = schoolType;
     }
 
-    if (classLevelId) {
-      where.classLevelId = classLevelId;
-    }
-
-    const subjects = await this.subjectModel.findMany({
+    let subjects = await this.subjectModel.findMany({
       where,
       include: {
         classLevel: true,
@@ -499,6 +500,23 @@ export class ResourcesService {
         name: 'asc',
       },
     });
+
+    if (classLevelId) {
+      const classLevel = await this.classLevelModel.findUnique({ where: { id: classLevelId } });
+      const targetStream = streamFromClassLevelCode(classLevel?.code);
+      if (targetStream) {
+        subjects = subjects.filter((s: any) => {
+          if (s.classLevelId === classLevelId) return true;
+          const inferred = inferLevelStream({
+            levelStream: s.levelStream,
+            classLevelCode: s.classLevel?.code,
+            classLevelName: s.classLevel?.name,
+            code: s.code,
+          });
+          return subjectOfferedInStream(inferred, targetStream);
+        });
+      }
+    }
 
     // If termId is provided, fetch teacher workloads for that term
     const teacherWorkloads: Map<string, { periodCount: number; classCount: number }> = new Map();
@@ -1221,6 +1239,9 @@ export class ResourcesService {
           isAgoraStandard: true,
           category: globalSub.category,
           isActive: true,
+          levelStream: dto.schoolType === 'SECONDARY'
+            ? inferLevelStream({ code: globalSub.code })
+            : null,
         },
       });
 
