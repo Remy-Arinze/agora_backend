@@ -116,6 +116,9 @@ export class SubjectDto {
   @ApiProperty({ required: false })
   agoraSubjectId?: string;
 
+  @ApiProperty({ required: false, type: [String], description: 'PRIMARY / JUNIOR / SENIOR from the catalog' })
+  agoraLevelStreams?: string[];
+
   @ApiProperty({ required: false })
   category?: string;
 

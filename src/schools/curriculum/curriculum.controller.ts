@@ -32,7 +32,7 @@ import {
   SkipWeekDto,
 } from './dto/create-curriculum.dto';
 import { CreateSchoolCurriculumDocDto } from './dto/school-curriculum-doc.dto';
-import { SetupSchemeOfWorkDto, ReplaceSchemeWeeksDto } from './dto/scheme-of-work.dto';
+import { SetupSchemeOfWorkDto, SetupBulkSchemesDto, ReplaceSchemeWeeksDto } from './dto/scheme-of-work.dto';
 import { CurriculumDto, CurriculumSummaryDto, TimetableSubjectDto } from './dto/curriculum.dto';
 import {
   AgoraSubjectDto,
@@ -265,6 +265,20 @@ export class CurriculumController {
     return ResponseDto.ok(data, 'Scheme of Work setup initiated');
   }
 
+  @Post('schemes/setup-bulk')
+  @RequirePermission(PermissionResource.CURRICULUM, PermissionType.WRITE)
+  @ApiOperation({ summary: 'Import one or more Bud library templates as schemes for this class' })
+  @ApiParam({ name: 'schoolId', description: 'School ID' })
+  @ApiResponse({ status: 201, description: 'Bulk scheme setup completed' })
+  async setupSchemesBulk(
+    @Param('schoolId') schoolId: string,
+    @Body() dto: SetupBulkSchemesDto,
+    @CurrentUser() user: UserWithContext
+  ): Promise<ResponseDto<{ added: number; replaced: number; failed: { subjectId: string; error: string }[] }>> {
+    const data = await this.curriculumService.setupSchemesBulk(schoolId, dto, user);
+    return ResponseDto.ok(data, 'Bulk scheme setup completed');
+  }
+
   @Get('schemes/:schemeId/library-diff')
   @RequirePermission(PermissionResource.CURRICULUM, PermissionType.READ)
   @ApiOperation({ summary: 'Diff a live scheme against the current Bud library version' })
@@ -288,6 +302,21 @@ export class CurriculumController {
   ): Promise<ResponseDto<{ created: string[]; failed: { subjectId: string; error: string }[] }>> {
     const data = await this.curriculumService.bulkGenerateFromNerdc(schoolId, dto, user);
     return ResponseDto.ok(data, 'Bulk curriculum generation completed');
+  }
+
+  @Get('agora-catalog')
+  @RequirePermission(PermissionResource.CURRICULUM, PermissionType.READ)
+  @ApiOperation({ summary: 'Class-scoped Bud library catalog for timetable subjects' })
+  @ApiParam({ name: 'schoolId', description: 'School ID' })
+  @ApiQuery({ name: 'classLevelId', description: 'Class level ID' })
+  @ApiQuery({ name: 'termId', description: 'Term ID' })
+  async getAgoraCatalog(
+    @Param('schoolId') schoolId: string,
+    @Query('classLevelId') classLevelId: string,
+    @Query('termId') termId: string,
+  ): Promise<ResponseDto<any>> {
+    const data = await this.curriculumService.getAgoraCatalog(schoolId, classLevelId, termId);
+    return ResponseDto.ok(data, 'Bud library catalog retrieved successfully');
   }
 
   @Get('agora-library')

@@ -6,6 +6,7 @@ import {
   ConflictException,
   Logger,
   GoneException,
+  HttpException,
 } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { SchoolRepository } from '../domain/repositories/school.repository';
@@ -37,7 +38,7 @@ import { SubscriptionBillingService } from '../../subscriptions/subscription-bil
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { SCHEME_GENERATION_QUEUE } from './scheme-of-work.processor';
-import { SetupSchemeOfWorkDto, ReplaceSchemeWeeksDto } from './dto/scheme-of-work.dto';
+import { SetupSchemeOfWorkDto, SetupBulkSchemesDto, ReplaceSchemeWeeksDto } from './dto/scheme-of-work.dto';
 import { SchemeGenerationMode, SchemeOfWorkStatus } from '@prisma/client';
 import { AiService } from '../../ai/ai.service';
 import { CloudinaryService } from '../../storage/cloudinary/cloudinary.service';
@@ -1742,7 +1743,9 @@ export class CurriculumService {
       targetAgoraSubjectId = globalSub?.id;
     }
 
-    if (!targetAgoraSubjectId) return [];
+    if (!targetAgoraSubjectId) {
+      return [];
+    }
 
     // 3. Fetch published Agora curricula for that global subject.
     // Super-admin stores PRIMARY_1; class names arrive as "Primary 1" → Primary_1.
@@ -1776,6 +1779,293 @@ export class CurriculumService {
         totalTopics: c.topics.length
       };
     });
+  }
+
+  /**
+   * Class-scoped Bud library catalog: timetable subjects + one published-template query.
+   */
+  async getAgoraCatalog(schoolId: string, classLevelId: string, termId: string) {
+    if (!classLevelId) throw new BadRequestException('classLevelId is required');
+    if (!termId) throw new BadRequestException('termId is required');
+
+    const [classLevel, term, timetableSubjects] = await Promise.all([
+      (this.prisma as any).classLevel.findFirst({
+        where: { id: classLevelId, schoolId },
+        select: { name: true },
+      }),
+      (this.prisma as any).term.findUnique({
+        where: { id: termId },
+        select: { number: true },
+      }),
+      this.getSubjectsFromTimetable(schoolId, classLevelId, termId),
+    ]);
+
+    if (!classLevel) throw new NotFoundException('Class level not found');
+    if (!term) throw new BadRequestException('Invalid term');
+
+    if (timetableSubjects.length === 0) {
+      return {
+        instructionalWeeks: 0,
+        gradeLevel: classLevel.name,
+        termNumber: term.number,
+        subjects: [],
+        templates: [],
+      };
+    }
+
+    const subjectIds = timetableSubjects.map((s) => s.subjectId);
+
+    const [schemes, instructionalWeeks, schoolSubjects] = await Promise.all([
+      (this.prisma as any).schemeOfWork.findMany({
+        where: {
+          schoolId,
+          classLevelId,
+          termId,
+          status: { not: SchemeOfWorkStatus.ARCHIVED },
+        },
+        select: { id: true, subjectId: true, status: true, agoraCurriculumId: true },
+      }),
+      this.schemeSpine.buildWeekRanges(schoolId, termId)
+        .then(({ ranges }) => ranges.length)
+        .catch(() => 0),
+      (this.prisma as any).subject.findMany({
+        where: { id: { in: subjectIds } },
+        select: { id: true, agoraSubjectId: true, name: true, code: true },
+      }),
+    ]);
+
+    const schemeMap = new Map((schemes as any[]).map((s) => [s.subjectId, s]));
+    const agoraBySchoolSubject = await this.resolveAgoraSubjectIds(schoolSubjects);
+    const agoraIds = [...new Set([...agoraBySchoolSubject.values()])];
+    const gradeLevels = agoraGradeLevelCandidates(classLevel.name);
+
+    const curricula =
+      agoraIds.length > 0 && gradeLevels.length > 0
+        ? await (this.prisma as any).agoraCurriculum.findMany({
+            where: {
+              subjectId: { in: agoraIds },
+              gradeLevel: { in: gradeLevels },
+              status: 'PUBLISHED',
+            },
+            select: {
+              id: true,
+              version: true,
+              gradeLevel: true,
+              consolidationNotes: true,
+              subjectId: true,
+              subject: { select: { id: true, name: true } },
+            },
+          })
+        : [];
+
+    const topicCounts =
+      curricula.length > 0
+        ? await (this.prisma as any).agoraCurriculumTopic.groupBy({
+            by: ['curriculumId', 'term'],
+            where: {
+              curriculumId: { in: curricula.map((c: { id: string }) => c.id) },
+              deprecatedAt: null,
+            },
+            _count: { id: true },
+          })
+        : [];
+
+    const countsByCurriculum = new Map<string, { term: number; count: number }[]>();
+    for (const c of curricula) {
+      countsByCurriculum.set(c.id, [1, 2, 3].map((tNum) => ({ term: tNum, count: 0 })));
+    }
+    for (const row of topicCounts) {
+      const stats = countsByCurriculum.get(row.curriculumId);
+      if (!stats) continue;
+      const slot = stats.find((s) => s.term === row.term);
+      if (slot) slot.count = row._count.id;
+    }
+
+    const curriculaByAgoraSubject = new Map<string, any[]>();
+    for (const c of curricula) {
+      const list = curriculaByAgoraSubject.get(c.subjectId) || [];
+      list.push(c);
+      curriculaByAgoraSubject.set(c.subjectId, list);
+    }
+
+    const liveStatuses = new Set(['DRAFT', 'APPROVED', 'PUBLISHED', 'GENERATING']);
+    const templateCountBySubject = new Map<string, number>();
+    const templates: any[] = [];
+
+    const sortedSubjects = [...timetableSubjects].sort((a, b) =>
+      a.subjectName.localeCompare(b.subjectName, undefined, { sensitivity: 'base' }),
+    );
+
+    for (const row of sortedSubjects) {
+      const scheme = schemeMap.get(row.subjectId) as any;
+      const status = scheme?.status || 'NOT_SET_UP';
+      const agoraSubjectId = agoraBySchoolSubject.get(row.subjectId);
+      if (!agoraSubjectId) continue;
+      const matches = curriculaByAgoraSubject.get(agoraSubjectId) || [];
+      templateCountBySubject.set(row.subjectId, matches.length);
+      for (const c of matches) {
+        const termStats = countsByCurriculum.get(c.id) || [1, 2, 3].map((tNum) => ({ term: tNum, count: 0 }));
+        templates.push({
+          id: c.id,
+          version: c.version,
+          gradeLevel: c.gradeLevel,
+          consolidationNotes: c.consolidationNotes,
+          subject: c.subject,
+          schoolSubjectId: row.subjectId,
+          schoolSubjectName: row.subjectName,
+          schemeId: scheme?.id || null,
+          status,
+          agoraCurriculumId: scheme?.agoraCurriculumId || null,
+          onThisClass: liveStatuses.has(status) && scheme?.agoraCurriculumId === c.id,
+          termStats,
+          totalTopics: termStats.reduce((sum, t) => sum + t.count, 0),
+          termTopicCount: termStats.find((t) => t.term === term.number)?.count ?? 0,
+        });
+      }
+    }
+
+    const subjects = sortedSubjects.map((row) => {
+      const scheme = schemeMap.get(row.subjectId) as any;
+      return {
+        subjectId: row.subjectId,
+        subjectName: row.subjectName,
+        agoraSubjectId: agoraBySchoolSubject.get(row.subjectId) || null,
+        schemeId: scheme?.id || null,
+        status: scheme?.status || 'NOT_SET_UP',
+        agoraCurriculumId: scheme?.agoraCurriculumId || null,
+        templateCount: templateCountBySubject.get(row.subjectId) || 0,
+      };
+    });
+
+    return {
+      instructionalWeeks,
+      gradeLevel: classLevel.name,
+      termNumber: term.number,
+      subjects,
+      templates,
+    };
+  }
+
+  async setupSchemesBulk(
+    schoolId: string,
+    dto: SetupBulkSchemesDto,
+    user: UserWithContext,
+  ) {
+    await this.assertStaffMayMutateCurriculum(schoolId, user);
+    if (!dto.termId) throw new BadRequestException('termId is required');
+    if (!dto.items?.length) {
+      throw new BadRequestException('At least one template is required');
+    }
+
+    const seen = new Set<string>();
+    for (const item of dto.items) {
+      if (seen.has(item.subjectId)) {
+        throw new BadRequestException('Only one template per subject can be imported.');
+      }
+      seen.add(item.subjectId);
+    }
+
+    let added = 0;
+    let replaced = 0;
+    const failed: { subjectId: string; error: string }[] = [];
+
+    for (const item of dto.items) {
+      try {
+        const existing = await this.schemeSpine.findLiveScheme(
+          schoolId,
+          item.subjectId,
+          dto.termId,
+          dto.classLevelId,
+        );
+        const hadLive =
+          !!existing && !this.schemeSpine.isSilentReplaceStatus(existing.status);
+
+        await this.schemeSpine.snapshotAgoraOnly({
+          schoolId,
+          subjectId: item.subjectId,
+          termId: dto.termId,
+          classLevelId: dto.classLevelId,
+          classId: dto.classId,
+          agoraCurriculumId: item.agoraCurriculumId,
+          userId: user.id,
+          forceOverwrite: dto.forceOverwrite,
+        });
+
+        if (hadLive) replaced += 1;
+        else added += 1;
+      } catch (e) {
+        failed.push({ subjectId: item.subjectId, error: this.bulkErrorMessage(e) });
+      }
+    }
+
+    return { added, replaced, failed };
+  }
+
+  private bulkErrorMessage(e: unknown): string {
+    if (e instanceof HttpException) {
+      const res = e.getResponse();
+      if (typeof res === 'string') return res;
+      if (res && typeof res === 'object' && 'message' in res) {
+        const message = (res as { message?: string | string[] }).message;
+        if (Array.isArray(message)) return message.join(', ');
+        if (typeof message === 'string') return message;
+      }
+      return e.message;
+    }
+    return e instanceof Error ? e.message : 'Failed to import';
+  }
+
+  /**
+   * Resolve school subjects → Bud library subject IDs (agoraSubjectId, then code/name).
+   */
+  private async resolveAgoraSubjectIds(
+    schoolSubjects: Array<{
+      id: string;
+      agoraSubjectId?: string | null;
+      name: string;
+      code: string | null;
+    }>,
+  ): Promise<Map<string, string>> {
+    const result = new Map<string, string>();
+    const unmatched: typeof schoolSubjects = [];
+
+    for (const subject of schoolSubjects) {
+      if (subject.agoraSubjectId) result.set(subject.id, subject.agoraSubjectId);
+      else unmatched.push(subject);
+    }
+
+    if (unmatched.length === 0) return result;
+
+    const or: Array<Record<string, unknown>> = [];
+    for (const subject of unmatched) {
+      if (subject.code) or.push({ code: subject.code });
+      if (subject.name) or.push({ name: { contains: subject.name, mode: 'insensitive' } });
+    }
+    if (or.length === 0) return result;
+
+    const globals = await (this.prisma as any).agoraSubject.findMany({
+      where: { isActive: true, OR: or },
+      select: { id: true, name: true, code: true },
+    });
+
+    for (const subject of unmatched) {
+      const byCode = subject.code
+        ? globals.find(
+            (g: { code?: string | null }) =>
+              g.code && g.code.toLowerCase() === subject.code!.toLowerCase(),
+          )
+        : null;
+      const byExactName = globals.find(
+        (g: { name?: string }) => g.name?.toLowerCase() === subject.name.toLowerCase(),
+      );
+      const byContains = globals.find((g: { name?: string }) =>
+        g.name?.toLowerCase().includes(subject.name.toLowerCase()),
+      );
+      const match = byCode || byExactName || byContains;
+      if (match) result.set(subject.id, match.id);
+    }
+
+    return result;
   }
 
   /**

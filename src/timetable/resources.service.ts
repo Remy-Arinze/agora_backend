@@ -9,6 +9,8 @@ import { SchoolRepository } from '../schools/domain/repositories/school.reposito
 import { SchoolSettingsService } from '../school-settings/school-settings.service';
 import {
   inferLevelStream,
+  resolveSchoolSubjectStream,
+  streamFromAgoraLevelStreams,
   streamFromClassLevelCode,
   subjectOfferedInStream,
 } from '../common/utils/subject-level-stream.util';
@@ -50,6 +52,32 @@ export class ResourcesService {
 
   private get subjectModel() {
     return (this.prisma as any)['subject'];
+  }
+
+  private async resolveCatalogLevelStream(opts: {
+    schoolType?: string | null;
+    agoraSubjectId?: string | null;
+    code?: string | null;
+    levelStream?: string | null;
+  }): Promise<string | null | undefined> {
+    if (opts.schoolType !== 'SECONDARY') {
+      return opts.levelStream ?? null;
+    }
+    if (opts.agoraSubjectId) {
+      const agora = await (this.prisma as any).agoraSubject.findUnique({
+        where: { id: opts.agoraSubjectId },
+        select: { levelStreams: true, code: true },
+      });
+      const fromCatalog = streamFromAgoraLevelStreams(agora?.levelStreams);
+      if (fromCatalog) return fromCatalog;
+      if (agora?.code) {
+        return inferLevelStream({ code: agora.code, levelStream: opts.levelStream });
+      }
+    }
+    return inferLevelStream({
+      code: opts.code,
+      levelStream: opts.levelStream,
+    });
   }
 
   // ClassLevels
@@ -490,6 +518,9 @@ export class ResourcesService {
       where,
       include: {
         classLevel: true,
+        agoraSubject: {
+          select: { levelStreams: true },
+        },
         subjectTeachers: {
           include: {
             teacher: true,
@@ -506,8 +537,8 @@ export class ResourcesService {
       const targetStream = streamFromClassLevelCode(classLevel?.code);
       if (targetStream) {
         subjects = subjects.filter((s: any) => {
-          if (s.classLevelId === classLevelId) return true;
-          const inferred = inferLevelStream({
+          const inferred = resolveSchoolSubjectStream({
+            agoraLevelStreams: s.agoraSubject?.levelStreams,
             levelStream: s.levelStream,
             classLevelCode: s.classLevel?.code,
             classLevelName: s.classLevel?.name,
@@ -595,6 +626,7 @@ export class ResourcesService {
       classLevelName: s.classLevel?.name,
       description: s.description,
       agoraSubjectId: s.agoraSubjectId,
+      agoraLevelStreams: s.agoraSubject?.levelStreams,
       isAgoraStandard: s.isAgoraStandard,
       category: s.category,
       isActive: s.isActive,
@@ -662,6 +694,13 @@ export class ResourcesService {
       }
     }
 
+    const levelStream = await this.resolveCatalogLevelStream({
+      schoolType: dto.schoolType,
+      agoraSubjectId: dto.agoraSubjectId,
+      code: dto.code,
+      levelStream: dto.levelStream,
+    });
+
     const subject = await this.subjectModel.create({
       data: {
         name: dto.name,
@@ -673,7 +712,7 @@ export class ResourcesService {
         agoraSubjectId: dto.agoraSubjectId,
         isAgoraStandard: dto.isAgoraStandard || false,
         category: dto.category,
-        levelStream: dto.levelStream,
+        levelStream,
         isActive: true,
       },
       include: {
@@ -766,6 +805,17 @@ export class ResourcesService {
       }
     }
 
+    const schoolTypeToWrite = dto.schoolType !== undefined ? dto.schoolType : subject.schoolType;
+    const agoraSubjectIdToWrite =
+      dto.agoraSubjectId !== undefined ? dto.agoraSubjectId : subject.agoraSubjectId;
+    const codeToWrite = dto.code !== undefined ? dto.code : subject.code;
+    const levelStream = await this.resolveCatalogLevelStream({
+      schoolType: schoolTypeToWrite,
+      agoraSubjectId: agoraSubjectIdToWrite,
+      code: codeToWrite,
+      levelStream: dto.levelStream !== undefined ? dto.levelStream : subject.levelStream,
+    });
+
     const updated = await this.subjectModel.update({
       where: { id: subjectId },
       data: {
@@ -778,7 +828,7 @@ export class ResourcesService {
         isAgoraStandard: dto.isAgoraStandard,
         category: dto.category,
         isActive: dto.isActive,
-        levelStream: dto.levelStream,
+        levelStream,
       },
       include: {
         classLevel: true,
@@ -1207,6 +1257,7 @@ export class ResourcesService {
       name: string;
       code: string;
       category?: string | null;
+      levelStreams?: string[];
     }>;
 
     if (dto.agoraSubjectIds) {
@@ -1240,7 +1291,7 @@ export class ResourcesService {
           category: globalSub.category,
           isActive: true,
           levelStream: dto.schoolType === 'SECONDARY'
-            ? inferLevelStream({ code: globalSub.code })
+            ? (streamFromAgoraLevelStreams(globalSub.levelStreams) || inferLevelStream({ code: globalSub.code }))
             : null,
         },
       });

@@ -76,6 +76,47 @@ export class SetupSchemeOfWorkDto {
   mergeWeightSchool?: number;
 }
 
+export class SetupBulkSchemeItemDto {
+  @ApiProperty({ description: 'School subject ID' })
+  @IsString()
+  @IsNotEmpty()
+  subjectId: string;
+
+  @ApiProperty({ description: 'Published Bud library curriculum ID' })
+  @IsString()
+  @IsNotEmpty()
+  agoraCurriculumId: string;
+}
+
+export class SetupBulkSchemesDto {
+  @ApiProperty({ description: 'Class level ID' })
+  @IsString()
+  @IsNotEmpty()
+  classLevelId: string;
+
+  @ApiProperty({ description: 'Term ID' })
+  @IsString()
+  @IsNotEmpty()
+  termId: string;
+
+  @ApiPropertyOptional({ description: 'Specific class ID (for tertiary or arms)' })
+  @IsString()
+  @IsOptional()
+  classId?: string;
+
+  @ApiPropertyOptional({ description: 'Force overwrite existing live schemes via archiving' })
+  @IsOptional()
+  @IsBoolean()
+  forceOverwrite?: boolean;
+
+  @ApiProperty({ type: [SetupBulkSchemeItemDto] })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => SetupBulkSchemeItemDto)
+  items: SetupBulkSchemeItemDto[];
+}
+
 export class UpdateSchemeOfWorkStatusDto {
   @ApiProperty({ description: 'New status' })
   @IsString()
