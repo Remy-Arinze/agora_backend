@@ -26,6 +26,12 @@ export function toLoisStreamErrorPayload(err: unknown): LoisStreamErrorPayload {
     const msg =
       typeof res === 'string' ? res : (res as { message?: string | string[] })?.message;
     const text = Array.isArray(msg) ? msg.join(' ') : msg || 'You do not have permission for this action.';
+    if (
+      text.includes('Upgrade to Pro') ||
+      text.includes('Lois Auto-Fill is included with Pro')
+    ) {
+      return { code: 'LOIS_CREDITS', message: text, title: 'Pro required' };
+    }
     return { code: 'LOIS_PERMISSION', message: text, title: 'Permission needed' };
   }
 

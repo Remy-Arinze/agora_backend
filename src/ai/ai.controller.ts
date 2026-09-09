@@ -16,6 +16,8 @@ import { KnowledgeIndexingService } from './knowledge-indexing.service';
 import { PrismaService } from '../database/prisma.service';
 import { AiInsightsService } from './ai-insights.service';
 import { AiStaffPermissionCheckerService } from './ai-staff-permission-checker.service';
+import { AiCuratorToolsService } from './ai-curator-tools.service';
+import { LoisPendingPlanService } from './lois-pending-plan.service';
 import {
     GenerateQuizDto,
     GenerateAssessmentDto,
@@ -44,6 +46,8 @@ export class AiController {
         private readonly prisma: PrismaService,
         private readonly insightsService: AiInsightsService,
         private readonly staffPermissions: AiStaffPermissionCheckerService,
+        private readonly curatorTools: AiCuratorToolsService,
+        private readonly pendingPlans: LoisPendingPlanService,
     ) { }
 
     /**
@@ -300,6 +304,50 @@ export class AiController {
         return this.aiService.deleteConversation(conversationId, req.user.id, schoolId);
     }
 
+    /**
+     * Apply a Lois pending plan by id (button → HTTP). Solver writes; the model does not apply.
+     * Timetable apply does not spend AI credits. Scheme apply uses setupSchemeOfWork (credits for SCHOOL_ONLY/MERGED).
+     */
+    @Post('plans/:planId/apply')
+    @Roles(UserRole.SCHOOL_ADMIN)
+    @RequirePermission(PermissionResource.OVERVIEW, PermissionType.READ)
+    @ApiOperation({ summary: 'Apply a Lois pending timetable or scheme plan by id' })
+    async applyPendingPlan(
+        @Request() req: any,
+        @Param('schoolId') schoolId: string,
+        @Param('planId') planId: string,
+        @Body() body: { conversationId?: string },
+    ) {
+        await this.assertAiBillingForRequest(req, schoolId);
+        const plan = await this.pendingPlans.peek(planId, req.user.id, schoolId);
+        await this.staffPermissions.assertLoisPlanWrite({
+            kind: plan.kind,
+            userRole: req.user.role,
+            userId: req.user.id,
+            schoolId,
+        });
+        const data = await this.curatorTools.applyPlan(planId, {
+            schoolId,
+            userId: req.user.id,
+            user: req.user,
+            conversationId: body?.conversationId,
+        });
+        return { success: true, data };
+    }
+
+    @Post('plans/:planId/cancel')
+    @Roles(UserRole.SCHOOL_ADMIN)
+    @RequirePermission(PermissionResource.OVERVIEW, PermissionType.READ)
+    @ApiOperation({ summary: 'Cancel a Lois pending plan' })
+    async cancelPendingPlan(
+        @Request() req: any,
+        @Param('schoolId') schoolId: string,
+        @Param('planId') planId: string,
+    ) {
+        const data = await this.pendingPlans.cancel(planId, req.user.id, schoolId);
+        return { success: true, data };
+    }
+
     @Get('insights')
     @Roles(UserRole.SCHOOL_ADMIN)
     @ApiOperation({ summary: 'Latest Lois background insights this admin is allowed to see' })
@@ -317,6 +365,7 @@ export class AiController {
             schoolId,
             limit ? parseInt(limit, 10) : 8,
             types,
+            req.user?.id,
         );
         return { success: true, data: insights };
     }
@@ -334,7 +383,29 @@ export class AiController {
             schoolId,
             req.user?.role,
         );
-        const insight = await this.insightsService.getById(schoolId, insightId, types);
+        const insight = await this.insightsService.getById(schoolId, insightId, types, req.user?.id);
+        return { success: true, data: insight };
+    }
+
+    @Post('insights/:insightId/read')
+    @Roles(UserRole.SCHOOL_ADMIN)
+    @ApiOperation({ summary: 'Mark a Lois briefing as read for this admin' })
+    async markInsightRead(
+        @Request() req: any,
+        @Param('schoolId') schoolId: string,
+        @Param('insightId') insightId: string,
+    ) {
+        const types = await this.staffPermissions.allowedInsightTypes(
+            req.user?.id,
+            schoolId,
+            req.user?.role,
+        );
+        const insight = await this.insightsService.markRead(
+            schoolId,
+            insightId,
+            req.user.id,
+            types,
+        );
         return { success: true, data: insight };
     }
 

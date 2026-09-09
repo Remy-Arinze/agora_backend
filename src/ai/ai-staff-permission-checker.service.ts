@@ -31,9 +31,19 @@ const STUDENT_BLOCKED_TOOLS = [
   'draft_parent_message',
   'generate_assessment',
   'grade_essay',
+  'inspect_scheduling_context',
+  'inspect_curriculum_options',
+  'propose_timetable',
+  'propose_scheme',
 ];
 
-const TEACHER_BLOCKED_TOOLS = ['list_lois_insights', 'list_fee_debtors', 'list_admissions'];
+const TEACHER_BLOCKED_TOOLS = [
+  'list_lois_insights',
+  'list_fee_debtors',
+  'list_admissions',
+  'propose_timetable',
+  'propose_scheme',
+];
 
 /**
  * Hierarchical staff permission checks (aligned with {@link PermissionGuard}).
@@ -210,6 +220,36 @@ export class AiStaffPermissionCheckerService {
           throw new ForbiddenException('You need Students (read) access to draft parent messages.');
         }
         return;
+      case 'inspect_scheduling_context':
+        if (!(await this.schoolAdminHasPermission(id, PermissionResource.TIMETABLES, PermissionType.READ))) {
+          throw new ForbiddenException('You need Timetables (read) access to inspect scheduling.');
+        }
+        return;
+      case 'inspect_curriculum_options':
+        if (
+          !(await this.schoolAdminHasAny(id, [
+            { resource: PermissionResource.CURRICULUM, type: PermissionType.READ },
+            { resource: PermissionResource.SCHEME_OF_WORK, type: PermissionType.READ },
+          ]))
+        ) {
+          throw new ForbiddenException('You need Curriculum or Scheme of Work (read) access.');
+        }
+        return;
+      case 'propose_timetable':
+        if (!(await this.schoolAdminHasPermission(id, PermissionResource.TIMETABLES, PermissionType.WRITE))) {
+          throw new ForbiddenException('You need Timetables (write) access to propose a timetable.');
+        }
+        return;
+      case 'propose_scheme':
+        if (
+          !(await this.schoolAdminHasAny(id, [
+            { resource: PermissionResource.CURRICULUM, type: PermissionType.WRITE },
+            { resource: PermissionResource.SCHEME_OF_WORK, type: PermissionType.WRITE },
+          ]))
+        ) {
+          throw new ForbiddenException('You need Curriculum or Scheme of Work (write) access to propose a scheme.');
+        }
+        return;
       case 'grade_essay':
         if (!(await this.schoolAdminHasPermission(id, PermissionResource.GRADES, PermissionType.READ))) {
           throw new ForbiddenException('You need Grades (read) access to use essay grading.');
@@ -229,10 +269,48 @@ export class AiStaffPermissionCheckerService {
     }
   }
 
-  /**
-   * Same semantics as PermissionGuard for non-principal school admins:
-   * ADMIN on resource wins; otherwise READ allows READ; WRITE allows WRITE+READ.
-   */
+  /** WRITE check for HTTP apply of a stored Lois plan (not a chat tool). */
+  async assertLoisPlanWrite(params: {
+    kind: 'TIMETABLE' | 'SCHEME';
+    userRole?: string;
+    userId?: string;
+    schoolId?: string;
+  }): Promise<void> {
+    const { kind, userRole, userId, schoolId } = params;
+    if (userRole === 'SUPER_ADMIN') return;
+    if (userRole === 'TEACHER' || userRole === 'STUDENT') {
+      throw new ForbiddenException('Applying a Lois plan is available to school administrators.');
+    }
+    if (userRole !== 'SCHOOL_ADMIN' || !userId || !schoolId) {
+      throw new ForbiddenException('School context is required to apply this plan.');
+    }
+
+    const admin = await this.prisma.schoolAdmin.findFirst({
+      where: { userId, schoolId },
+      select: { id: true, role: true },
+    });
+    if (!admin) {
+      throw new ForbiddenException('School admin profile not found for this school.');
+    }
+    if (isPrincipalRole(admin.role)) return;
+
+    if (kind === 'TIMETABLE') {
+      if (!(await this.schoolAdminHasPermission(admin.id, PermissionResource.TIMETABLES, PermissionType.WRITE))) {
+        throw new ForbiddenException('You need Timetables (write) access to apply this timetable.');
+      }
+      return;
+    }
+
+    if (
+      !(await this.schoolAdminHasAny(admin.id, [
+        { resource: PermissionResource.CURRICULUM, type: PermissionType.WRITE },
+        { resource: PermissionResource.SCHEME_OF_WORK, type: PermissionType.WRITE },
+      ]))
+    ) {
+      throw new ForbiddenException('You need Curriculum or Scheme of Work (write) access to apply this scheme.');
+    }
+  }
+
   async schoolAdminHasPermission(
     adminId: string,
     resource: PermissionResource,

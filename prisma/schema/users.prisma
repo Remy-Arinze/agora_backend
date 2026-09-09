@@ -44,6 +44,8 @@ model User {
   errors              ApplicationError[]
   aiUsageLogs         AiUsageLog[]
   chatConversations   ChatConversation[]
+  loisPendingPlans    LoisPendingPlan[]
+  loisInsightReads    LoisInsightRead[]
   budSubscriptions    BudSubscription[]
   budPayments         BudPayment[]
 

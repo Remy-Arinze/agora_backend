@@ -7,6 +7,8 @@ import {
   Logger,
   GoneException,
   HttpException,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { SchoolRepository } from '../domain/repositories/school.repository';
@@ -37,7 +39,7 @@ import { SubscriptionsService } from '../../subscriptions/subscriptions.service'
 import { SubscriptionBillingService } from '../../subscriptions/subscription-billing.service';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
-import { SCHEME_GENERATION_QUEUE } from './scheme-of-work.processor';
+import { SCHEME_GENERATION_QUEUE } from './scheme-generation.queue';
 import { SetupSchemeOfWorkDto, SetupBulkSchemesDto, ReplaceSchemeWeeksDto } from './dto/scheme-of-work.dto';
 import { SchemeGenerationMode, SchemeOfWorkStatus } from '@prisma/client';
 import { AiService } from '../../ai/ai.service';
@@ -65,6 +67,7 @@ export class CurriculumService {
     private readonly nerdcService: NerdcCurriculumService,
     private readonly subscriptionsService: SubscriptionsService,
     private readonly subscriptionBilling: SubscriptionBillingService,
+    @Inject(forwardRef(() => AiService))
     private readonly aiService: AiService,
     private readonly cloudinaryService: CloudinaryService,
     private readonly schemeSpine: SchemeSpineService,

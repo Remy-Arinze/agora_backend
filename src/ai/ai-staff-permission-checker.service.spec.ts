@@ -7,6 +7,7 @@ describe('Lois typed tools', () => {
   it('does not expose execute_sql', () => {
     const names = AGORA_TOOLS.map((t) => t.function.name);
     expect(names).not.toContain('execute_sql');
+    expect(names).not.toContain('create_period');
     expect(names).toEqual(
       expect.arrayContaining([
         'list_students',
@@ -26,6 +27,10 @@ describe('Lois typed tools', () => {
         'list_lois_insights',
         'draft_parent_message',
         'get_academic_risk_summary',
+        'inspect_scheduling_context',
+        'inspect_curriculum_options',
+        'propose_timetable',
+        'propose_scheme',
       ]),
     );
   });
@@ -95,6 +100,17 @@ describe('AiStaffPermissionCheckerService', () => {
     ).resolves.toBeUndefined();
     expect(prisma.staffPermission.findFirst).toHaveBeenCalled();
     void PermissionResource.STUDENTS;
+  });
+
+  it('blocks teachers from proposing timetables', async () => {
+    await expect(
+      checker.assertLoisToolAllowed({
+        toolName: 'propose_timetable',
+        userRole: 'TEACHER',
+        userId: 'u1',
+        schoolId: 's1',
+      }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it('blocks teachers from fee debtors and admissions', async () => {

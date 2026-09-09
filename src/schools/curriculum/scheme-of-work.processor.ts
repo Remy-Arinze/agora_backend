@@ -1,12 +1,13 @@
 import { Processor, WorkerHost, OnWorkerEvent } from '@nestjs/bullmq';
-import { Logger } from '@nestjs/common';
+import { Inject, Logger, forwardRef } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { AiService } from '../../ai/ai.service';
 import { SubscriptionsService } from '../../subscriptions/subscriptions.service';
 import { PrismaService } from '../../database/prisma.service';
 import { MetricsService } from '../../common/metrics/metrics.service';
+import { SCHEME_GENERATION_QUEUE } from './scheme-generation.queue';
 
-export const SCHEME_GENERATION_QUEUE = 'scheme-generation';
+export { SCHEME_GENERATION_QUEUE };
 
 export interface GenerateSchemePayload {
   schemeId: string;
@@ -29,6 +30,7 @@ export class SchemeOfWorkProcessor extends WorkerHost {
   private readonly logger = new Logger(SchemeOfWorkProcessor.name);
 
   constructor(
+    @Inject(forwardRef(() => AiService))
     private readonly aiService: AiService,
     private readonly subscriptionsService: SubscriptionsService,
     private readonly prisma: PrismaService,

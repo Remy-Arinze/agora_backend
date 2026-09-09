@@ -69,7 +69,7 @@ import { SchoolLifecycleModule } from './lifecycle/school-lifecycle.module';
     DatabaseModule,
     forwardRef(() => AuthModule),
     EmailModule,
-    CurriculumModule,
+    forwardRef(() => CurriculumModule),
     SchemeOfWorkModule,
     CloudinaryModule,
     SubscriptionsModule,

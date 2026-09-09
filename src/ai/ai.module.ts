@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { AiAgentToolsService } from './ai-agent-tools.service';
 import { AiChatPromptService } from './ai-chat-prompt.service';
@@ -28,6 +28,9 @@ import { LoisConfigService } from './lois-config.service';
 import { LoisConfigAdminController } from './lois-config-admin.controller';
 import { SystemPromptConfigService } from './system-prompt-config.service';
 import { LoisSkillsService } from './lois-skills.service';
+import { LoisPendingPlanService } from './lois-pending-plan.service';
+import { AiCuratorToolsService } from './ai-curator-tools.service';
+import { TimetableModule } from '../timetable/timetable.module';
 
 @Module({
   imports: [
@@ -36,6 +39,7 @@ import { LoisSkillsService } from './lois-skills.service';
     DatabaseModule,
     VectorQueueModule,
     NotificationModule,
+    forwardRef(() => TimetableModule),
   ],
   controllers: [AiController, LoisConfigAdminController],
   providers: [
@@ -44,6 +48,8 @@ import { LoisSkillsService } from './lois-skills.service';
     LoisConfigService,
     SystemPromptConfigService,
     LoisSkillsService,
+    LoisPendingPlanService,
+    AiCuratorToolsService,
     AiSchoolInsightsService,
     AiStaffPermissionCheckerService,
     AiSchoolQueryService,

@@ -1,4 +1,9 @@
-export type AgentToolContext = { schoolId?: string; userRole?: string; userId?: string };
+export type AgentToolContext = {
+  schoolId?: string;
+  userRole?: string;
+  userId?: string;
+  conversationId?: string | null;
+};
 
 /** Grounding chips attached to Lois tool / RAG results. */
 

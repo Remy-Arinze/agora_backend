@@ -147,7 +147,7 @@ export class AiChatStreamService {
       const currentMessages: any[] = [{ role: 'system', content: systemPrompt }, ...messages];
 
       let turn = 0;
-      const MAX_TURNS = 5;
+      const MAX_TURNS = 10;
       let streamedFinalAssistant = false;
 
       while (turn < MAX_TURNS) {
@@ -248,6 +248,7 @@ export class AiChatStreamService {
               schoolId,
               userRole,
               userId,
+              conversationId: finalConversationId,
             });
             toolResult = result.data;
             if (result.sources?.length) {

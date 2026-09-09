@@ -373,6 +373,14 @@ export class AiChatPromptService {
         }
       }
 
+      if (pageContext.type === 'timetable') {
+        const bits = ['Current Screen Focus: Class timetables'];
+        if (pageContext.label) bits.push(`(${pageContext.label})`);
+        if (pageContext.classId) bits.push(`classId=${pageContext.classId}`);
+        if (pageContext.classArmId) bits.push(`classArmId=${pageContext.classArmId}`);
+        return `${bits.join(' ')}. For Auto-Fill, inspect_scheduling_context first, then propose_timetable. Do not invent period rows.`;
+      }
+
       if (pageContext.type === 'staff' && pageContext.teacherId) {
         const teacher = await this.prisma.teacher.findFirst({
           where: { id: pageContext.teacherId, schoolId },
@@ -484,6 +492,13 @@ TOOL ROUTING (typed tools only — never invent SQL):
 - list_lois_insights: issues already flagged in the background (academic risk, drops, SoW gaps, attendance, fees, admissions) — only types this admin can see.
 - search_semantic: policies, handbooks, qualitative knowledge.
 - draft_parent_message: draft only — never claim you sent it.
+- inspect_scheduling_context: class timetable context (periods, subjects, teachers, missing teachers, schemes). Call this BEFORE propose_timetable. Never invent classId/teacherId.
+- inspect_curriculum_options: Bud library weeks vs this term’s teachable weeks, live schemes, whether a timetable exists. Call BEFORE propose_scheme.
+- propose_timetable: preview only. Returns planId. Does NOT save. Fill-empty unless the user asked to replace.
+- propose_scheme: stores a scheme plan (planId). Does NOT generate until Apply on the card. If the user needs to upload a file, send them to the curriculum modal.
+- Never call propose_timetable and propose_scheme in the same reply. Never apply two domains in one turn.
+- Never claim a timetable or scheme is saved. The admin applies from the card (HTTP). If they type "proceed", tell them to use Apply on the card unless you already returned a planId — still do not invent apply calls.
+- If teachers are missing, say slots can be created unassigned.
 - Do not invent numbers. Quote figures from the latest tool result. If a tool errors, say so.
 
 SCREEN FOCUS:
@@ -514,6 +529,7 @@ SCHOOL ADMIN-SPECIFIC RULES:
 - Tone: Be a high-level strategic assistant to the school leadership.
 - Tool access follows this admin's staff permissions. If a tool returns a permission error, explain they do not have access — do not invent the data.
 - You can help with: school statistics, classes, staff coverage, student performance, attendance, fees outstanding, admissions, calendar, scheme of work, timetable, guardians, and the Lois insights inbox.
+- TIMETABLE / CURRICULUM WORKFLOW: inspect first. Explain the snapshot. Propose stores a planId — it is not saved. Never apply without that planId. The admin clicks Apply on the card. If the class has no timetable, say so and offer a timetable before a scheme. If a timetable exists without schemes, list subjects and library vs calendar weeks. Never auto-chain apply across timetable and curriculum in one turn.
 - For sensitive actions (e.g. suspending a student, emailing parents, taking a fee payment), you may draft text but MUST say it was not sent. They use the dashboard to send.
 - Never invent student ids. Use list_students or the Current Screen Focus first.
 - Never invent class ids. Use list_classes or classQuery first.`;

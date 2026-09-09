@@ -448,4 +448,82 @@ export const AGORA_TOOLS: Array<{
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'inspect_scheduling_context',
+      description:
+        'Inspect a class timetable context: existing periods, subjects, teachers and loads, class teacher, missing teachers, scheme presence. Call this BEFORE proposing a timetable. Never invent class ids — pass classQuery like "Primary 1".',
+      parameters: {
+        type: 'object',
+        properties: {
+          classId: { type: 'string' },
+          classArmId: { type: 'string' },
+          classQuery: { type: 'string', description: 'Class name such as "Primary 1" or "JSS 2A"' },
+          termId: { type: 'string' },
+        },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'inspect_curriculum_options',
+      description:
+        'Inspect Bud library templates vs this term’s teachable weeks, existing schemes, and whether a timetable exists. Call before proposing a scheme. If there is no timetable, tell the user and offer to create one first — do not auto-apply both.',
+      parameters: {
+        type: 'object',
+        properties: {
+          classId: { type: 'string' },
+          classArmId: { type: 'string' },
+          classQuery: { type: 'string' },
+          classLevelId: { type: 'string' },
+          termId: { type: 'string' },
+        },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'propose_timetable',
+      description:
+        'Generate a timetable PREVIEW only (does not save). Requires inspect first. Returns planId. The admin applies it from the card. Fill-empty by default.',
+      parameters: {
+        type: 'object',
+        properties: {
+          classId: { type: 'string' },
+          classArmId: { type: 'string' },
+          classQuery: { type: 'string', description: 'Class name such as "Primary 1" if ids are unknown' },
+          termId: { type: 'string', description: 'Active term id from inspect' },
+          mode: { type: 'string', enum: ['FILL_EMPTY', 'REPLACE'] },
+        },
+        required: ['termId'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'propose_scheme',
+      description:
+        'Propose a scheme of work (does not generate yet). Returns planId. Use inspect_curriculum_options first. File upload stays in the dashboard.',
+      parameters: {
+        type: 'object',
+        properties: {
+          classLevelId: { type: 'string' },
+          classId: { type: 'string' },
+          subjectId: { type: 'string' },
+          termId: { type: 'string' },
+          mode: { type: 'string', enum: ['AGORA_ONLY', 'SCHOOL_ONLY', 'MERGED'] },
+          agoraCurriculumId: { type: 'string' },
+          schoolCurriculumDocId: { type: 'string' },
+          forceOverwrite: { type: 'boolean' },
+          mergeWeightAgora: { type: 'number' },
+          mergeWeightSchool: { type: 'number' },
+        },
+        required: ['classLevelId', 'subjectId', 'termId', 'mode'],
+      },
+    },
+  },
 ];

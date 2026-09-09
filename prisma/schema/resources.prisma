@@ -112,6 +112,7 @@ model ChatConversation {
 
   user     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   messages ChatMessage[]
+  pendingPlans LoisPendingPlan[]
 
   @@index([userId])
   @@index([schoolId])
@@ -130,6 +131,40 @@ model ChatMessage {
 
   @@index([conversationId])
   @@index([createdAt])
+}
+
+enum LoisPendingPlanKind {
+  TIMETABLE
+  SCHEME
+}
+
+enum LoisPendingPlanStatus {
+  PROPOSED
+  APPLIED
+  CANCELLED
+  EXPIRED
+}
+
+/// Server-issued confirmation for Lois curator writes. Apply requires this id.
+model LoisPendingPlan {
+  id             String                @id @default(cuid())
+  conversationId String?
+  userId         String
+  schoolId       String
+  kind           LoisPendingPlanKind
+  payload        Json
+  summary        String                @db.Text
+  expiresAt      DateTime
+  status         LoisPendingPlanStatus @default(PROPOSED)
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversation ChatConversation? @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([userId, schoolId, status])
+  @@index([conversationId])
+  @@index([expiresAt])
 }
 
 model KnowledgeChunk {
@@ -212,10 +247,25 @@ model LoisInsight {
   updatedAt   DateTime @updatedAt
 
   school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  reads  LoisInsightRead[]
 
   @@unique([schoolId, fingerprint])
   @@index([schoolId, createdAt])
   @@index([schoolId, type])
+}
+
+/// Per-admin read receipt so the Ask Lois badge is unread-only.
+model LoisInsightRead {
+  id        String   @id @default(cuid())
+  insightId String
+  userId    String
+  readAt    DateTime @default(now())
+
+  insight LoisInsight @relation(fields: [insightId], references: [id], onDelete: Cascade)
+  user    User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([insightId, userId])
+  @@index([userId, readAt])
 }
 
 /// Per-school Lois configuration.

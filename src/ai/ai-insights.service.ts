@@ -1,4 +1,5 @@
 import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import { AdmissionStatus, Prisma, SchemeOfWorkStatus } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 import { NotificationService } from '../notification/notification.service';
@@ -43,6 +44,7 @@ export type LoisInsightDto = {
   href: string | null;
   askPrompt: string | null;
   createdAt: Date;
+  unread: boolean;
 };
 
 function weekStartYmd(d = new Date()): string {
@@ -58,6 +60,12 @@ function todayYmd(d = new Date()): string {
 
 function insightDeepLink(id: string): string {
   return `/dashboard/school/overview?loisInsight=${encodeURIComponent(id)}`;
+}
+
+const UNREAD_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
+
+function isRecentInsight(createdAt: Date, now = Date.now()): boolean {
+  return now - createdAt.getTime() <= UNREAD_WINDOW_MS;
 }
 
 /**
@@ -79,6 +87,7 @@ export class AiInsightsService {
     schoolId: string,
     limit = 8,
     types?: string[],
+    userId?: string,
   ): Promise<LoisInsightDto[]> {
     if (types && types.length === 0) return [];
 
@@ -90,10 +99,19 @@ export class AiInsightsService {
       orderBy: { createdAt: 'desc' },
       take: Math.min(Math.max(limit, 1), 15),
     });
-    return rows.map((r) => this.toDto(r));
+    const unreadIds = await this.unreadIdSet(
+      userId,
+      rows.map((r) => r.id),
+    );
+    return rows.map((r) => this.toDto(r, unreadIds.has(r.id)));
   }
 
-  async getById(schoolId: string, insightId: string, allowedTypes: string[]): Promise<LoisInsightDto> {
+  async getById(
+    schoolId: string,
+    insightId: string,
+    allowedTypes: string[],
+    userId?: string,
+  ): Promise<LoisInsightDto> {
     const row = await this.prisma.loisInsight.findFirst({
       where: { id: insightId, schoolId },
     });
@@ -103,7 +121,20 @@ export class AiInsightsService {
     if (!allowedTypes.includes(row.type)) {
       throw new ForbiddenException('You do not have access to this insight.');
     }
-    return this.toDto(row);
+    const unreadIds = await this.unreadIdSet(userId, [row.id]);
+    return this.toDto(row, unreadIds.has(row.id));
+  }
+
+  async markRead(
+    schoolId: string,
+    insightId: string,
+    userId: string,
+    allowedTypes: string[],
+  ): Promise<LoisInsightDto> {
+    const insight = await this.getById(schoolId, insightId, allowedTypes, userId);
+    await this.upsertReadReceipt(insightId, userId);
+    await this.markMatchingInboxRead(userId, schoolId, insightId);
+    return { ...insight, unread: false };
   }
 
   async listForTool(args: { limit?: number }, context?: AgentToolContext): Promise<AgentToolResult> {
@@ -116,7 +147,7 @@ export class AiInsightsService {
       schoolId,
       context?.userRole,
     );
-    const insights = await this.listForSchool(schoolId, args.limit ?? 8, types);
+    const insights = await this.listForSchool(schoolId, args.limit ?? 8, types, context?.userId);
     return {
       data: { count: insights.length, insights },
       usage: null,
@@ -209,17 +240,75 @@ export class AiInsightsService {
     }
   }
 
-  private toDto(r: {
-    id: string;
-    type: string;
-    severity: string;
-    title: string;
-    summary: string;
-    evidence: unknown;
-    href: string | null;
-    askPrompt: string | null;
-    createdAt: Date;
-  }): LoisInsightDto {
+  private async unreadIdSet(userId: string | undefined, insightIds: string[]): Promise<Set<string>> {
+    if (!userId || insightIds.length === 0) return new Set(insightIds);
+    try {
+      const reads = await this.prisma.$queryRaw<{ insightId: string }[]>`
+        SELECT "insightId" FROM "LoisInsightRead"
+        WHERE "userId" = ${userId}
+        AND "insightId" IN (${Prisma.join(insightIds)})
+      `;
+      const readIds = new Set(reads.map((r) => r.insightId));
+      return new Set(insightIds.filter((id) => !readIds.has(id)));
+    } catch (err) {
+      this.logger.warn(`LoisInsightRead lookup failed: ${err}`);
+      return new Set(insightIds);
+    }
+  }
+
+  private async upsertReadReceipt(insightId: string, userId: string): Promise<void> {
+    try {
+      await this.prisma.$executeRaw`
+        INSERT INTO "LoisInsightRead" (id, "insightId", "userId", "readAt")
+        VALUES (${randomUUID()}, ${insightId}, ${userId}, NOW())
+        ON CONFLICT ("insightId", "userId") DO UPDATE SET "readAt" = NOW()
+      `;
+    } catch (err) {
+      this.logger.warn(`LoisInsightRead upsert failed: ${err}`);
+    }
+  }
+
+  private async markMatchingInboxRead(userId: string, schoolId: string, insightId: string): Promise<void> {
+    try {
+      const rows = await this.prisma.inAppNotification.findMany({
+        where: {
+          userId,
+          schoolId,
+          type: 'LOIS_INSIGHT',
+          readAt: null,
+        },
+        select: { id: true, metadata: true },
+      });
+      const ids = rows
+        .filter((row) => {
+          const meta = row.metadata;
+          return !!meta && typeof meta === 'object' && !Array.isArray(meta) && (meta as { insightId?: unknown }).insightId === insightId;
+        })
+        .map((row) => row.id);
+      if (ids.length === 0) return;
+      await this.prisma.inAppNotification.updateMany({
+        where: { id: { in: ids } },
+        data: { readAt: new Date() },
+      });
+    } catch (err) {
+      this.logger.warn(`Failed to mark matching inbox rows for insight ${insightId}: ${err}`);
+    }
+  }
+
+  private toDto(
+    r: {
+      id: string;
+      type: string;
+      severity: string;
+      title: string;
+      summary: string;
+      evidence: unknown;
+      href: string | null;
+      askPrompt: string | null;
+      createdAt: Date;
+    },
+    unread: boolean,
+  ): LoisInsightDto {
     return {
       id: r.id,
       type: r.type,
@@ -230,6 +319,7 @@ export class AiInsightsService {
       href: r.href,
       askPrompt: r.askPrompt,
       createdAt: r.createdAt,
+      unread: unread && isRecentInsight(r.createdAt),
     };
   }
 

@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { DatabaseModule } from '../../database/database.module';
 import { SubscriptionsModule } from '../../subscriptions/subscriptions.module';
 import { VectorQueueModule } from '../../ai/vector-queue.module';
@@ -18,7 +18,7 @@ import { SchoolSettingsModule } from '../../school-settings/school-settings.modu
     DatabaseModule,
     SubscriptionsModule,
     VectorQueueModule,
-    AiModule,
+    forwardRef(() => AiModule),
     CloudinaryModule,
     SchoolSettingsModule,
   ],

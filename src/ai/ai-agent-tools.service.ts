@@ -7,6 +7,7 @@ import { AgentToolContext, AgentToolResult, toolSource } from './ai-lois-source'
 import { AiSchoolInsightsService } from './ai-school-insights.service';
 import { AiSchoolQueryService } from './ai-school-query.service';
 import { AiStaffPermissionCheckerService } from './ai-staff-permission-checker.service';
+import { AiCuratorToolsService } from './ai-curator-tools.service';
 
 export type { AgentToolContext };
 
@@ -25,6 +26,7 @@ export class AiAgentToolsService {
     private readonly schoolQuery: AiSchoolQueryService,
     private readonly insights: AiInsightsService,
     private readonly staffPermissionChecker: AiStaffPermissionCheckerService,
+    private readonly curatorTools: AiCuratorToolsService,
   ) {}
 
   getToolDisplayName(toolName: string): string {
@@ -54,6 +56,10 @@ export class AiAgentToolsService {
       get_guardians: 'Guardians',
       list_lois_insights: 'Lois insights',
       draft_parent_message: 'Parent message draft',
+      inspect_scheduling_context: 'Scheduling inspect',
+      inspect_curriculum_options: 'Curriculum inspect',
+      propose_timetable: 'Timetable proposal',
+      propose_scheme: 'Scheme proposal',
     };
     return names[toolName] || toolName.replace(/_/g, ' ');
   }
@@ -85,6 +91,10 @@ export class AiAgentToolsService {
       get_guardians: 'Looking up parent contacts...',
       list_lois_insights: 'Opening what Lois already noticed...',
       draft_parent_message: 'Drafting a parent update (will not send)...',
+      inspect_scheduling_context: 'Checking this class timetable, subjects, and teachers...',
+      inspect_curriculum_options: 'Checking Bud library weeks against your term calendar...',
+      propose_timetable: 'Drafting a timetable preview (not saved yet)...',
+      propose_scheme: 'Drafting a scheme proposal (not generated yet)...',
     };
     return messages[toolName] || 'Processing your request...';
   }
@@ -238,6 +248,18 @@ export class AiAgentToolsService {
 
       case 'draft_parent_message':
         return this.schoolQuery.draftParentMessage(args || {}, context);
+
+      case 'inspect_scheduling_context':
+        return this.curatorTools.inspectScheduling(args || {}, context);
+
+      case 'inspect_curriculum_options':
+        return this.curatorTools.inspectCurriculum(args || {}, context);
+
+      case 'propose_timetable':
+        return this.curatorTools.proposeTimetable(args || {}, context);
+
+      case 'propose_scheme':
+        return this.curatorTools.proposeScheme(args || {}, context);
 
       case 'search_semantic':
         return this.searchSemantic(

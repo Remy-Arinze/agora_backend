@@ -14,6 +14,8 @@ import {
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { TimetableService } from './timetable.service';
 import { ResourcesService } from './resources.service';
+import { TimetableCuratorService } from './timetable-curator.service';
+import { CurateApplyTimetableDto, CurateTimetableDto } from './dto/curate-timetable.dto';
 import {
   CreateTimetablePeriodDto,
   CreateMasterScheduleDto,
@@ -52,7 +54,8 @@ import { PermissionResource, PermissionType } from '../schools/dto/permission.dt
 export class TimetableController {
   constructor(
     private readonly timetableService: TimetableService,
-    private readonly resourcesService: ResourcesService
+    private readonly resourcesService: ResourcesService,
+    private readonly curator: TimetableCuratorService,
   ) {}
 
   @Post('periods')
@@ -221,6 +224,32 @@ export class TimetableController {
   ): Promise<ResponseDto<{ replaced: number }>> {
     const data = await this.timetableService.replaceTimetable(schoolId, dto);
     return ResponseDto.ok(data, `Timetable replaced: ${data.replaced} periods saved`);
+  }
+
+  @Post('curate/preview')
+  @RequirePermission(PermissionResource.TIMETABLES, PermissionType.WRITE)
+  @ApiOperation({ summary: 'Lois Auto-Fill preview (Pro). Generates a timetable without writing.' })
+  @ApiResponse({ status: 200, description: 'Preview generated' })
+  @ApiResponse({ status: 403, description: 'School is not on Pro / agora-ai' })
+  async curatePreview(
+    @Param('schoolId') schoolId: string,
+    @Body() dto: CurateTimetableDto,
+  ) {
+    const data = await this.curator.preview(schoolId, dto);
+    return ResponseDto.ok(data, 'Timetable preview generated');
+  }
+
+  @Post('curate/apply')
+  @RequirePermission(PermissionResource.TIMETABLES, PermissionType.WRITE)
+  @ApiOperation({ summary: 'Lois Auto-Fill apply (Pro). Fills empty slots or replaces the class timetable.' })
+  @ApiResponse({ status: 200, description: 'Timetable applied' })
+  @ApiResponse({ status: 403, description: 'School is not on Pro / agora-ai' })
+  async curateApply(
+    @Param('schoolId') schoolId: string,
+    @Body() dto: CurateApplyTimetableDto,
+  ) {
+    const data = await this.curator.apply(schoolId, dto);
+    return ResponseDto.ok(data, `Timetable applied: ${data.replaced} periods saved`);
   }
 
   @Delete('class/:classId')
